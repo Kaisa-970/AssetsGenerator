@@ -1,0 +1,56 @@
+operators:
+  - name: prepare_observation
+    version: 1
+    inputs:
+      image: {kind: rgb_image, carriers: [artifact_ref]}
+      mask: {kind: binary_mask, carriers: [artifact_ref]}
+    outputs:
+      bundle: {kind: observation_bundle, carriers: [structured], persist: true}
+      rgba: {kind: rgba_image, carriers: [artifact_ref]}
+      image_warp: {kind: image_warp, carriers: [structured]}
+  - name: shape_generation
+    version: 1
+    inputs:
+      image: {kind: rgba_image, carriers: [artifact_ref]}
+    outputs:
+      mesh: {kind: triangle_mesh, carriers: [artifact_ref], requires_frame: true, requires_unit: true}
+      material: {kind: pbr_material, carriers: [structured]}
+      native_frame: {kind: backend_native_frame, carriers: [structured]}
+  - name: canonicalize
+    version: 1
+    inputs:
+      mesh: {kind: triangle_mesh, carriers: [artifact_ref], requires_frame: true, requires_unit: true}
+      native_frame: {kind: backend_native_frame, carriers: [structured]}
+    outputs:
+      mesh: {kind: triangle_mesh, carriers: [artifact_ref], requires_frame: true, requires_unit: true}
+      canonical_frame: {kind: frame, carriers: [structured]}
+      transform: {kind: spatial_transform, carriers: [structured]}
+      spatial_info: {kind: asset_spatial_info, carriers: [structured]}
+  - name: validation
+    version: 1
+    inputs:
+      mesh: {kind: triangle_mesh, carriers: [artifact_ref], requires_frame: true, requires_unit: true}
+      material: {kind: pbr_material, carriers: [structured]}
+    outputs:
+      report: {kind: quality_report, carriers: [structured], persist: true}
+  - name: assemble_asset
+    version: 1
+    inputs:
+      mesh: {kind: triangle_mesh, carriers: [artifact_ref], requires_frame: true, requires_unit: true}
+      material: {kind: pbr_material, carriers: [structured]}
+      spatial: {kind: asset_spatial_info, carriers: [structured]}
+      quality: {kind: quality_report, carriers: [artifact_ref]}
+      observations: {kind: observation_bundle, carriers: [artifact_ref]}
+      semantics: {kind: semantic_info, cardinality: zero_or_one, carriers: [structured]}
+    outputs:
+      asset: {kind: asset_definition, carriers: [structured], persist: true}
+  - name: export
+    version: 1
+    inputs:
+      asset: {kind: asset_definition, carriers: [artifact_ref]}
+      mesh: {kind: triangle_mesh, carriers: [artifact_ref], requires_frame: true, requires_unit: true}
+      quality: {kind: quality_report, carriers: [artifact_ref]}
+      profile: {kind: export_profile, carriers: [structured]}
+    outputs:
+      glb: {kind: gltf_asset, carriers: [artifact_ref], requires_frame: true, requires_unit: true}
+      release: {kind: asset_release, carriers: [structured], persist: true}

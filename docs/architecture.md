@@ -162,6 +162,10 @@ Phase 1 只实现：
 backend_native -> asset_canonical -> gltf_export frame 链
 ```
 
+Phase 1 的真实 Shape Backend 使用本地独立进程适配器。Core 通过临时 JSON 请求和本地
+Artifact 路径与 Backend 进程通信，并设置有限超时；这不是远程 Worker 服务协议。远程作业、
+取消、健康检查和统一部署接口仍属于后续阶段。
+
 Phase 1 不实现：
 
 ```text

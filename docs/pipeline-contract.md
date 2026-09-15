@@ -377,6 +377,9 @@ backend unavailable    create revised plan if policy allows
 
 Phase 1 使用本地同步或进程适配器。后续远程 Worker 使用相同的 `PortValue` 请求和响应语义：
 
+当前 TRELLIS.2 适配器是本地过渡实现：Core 使用独立 Python 环境启动子进程，通过临时 JSON
+文件和本地 Artifact 路径交换数据，并设置执行超时。它不等同于以下远程 Worker API。
+
 ```http
 POST /v1/jobs
 GET /v1/jobs/{job_id}

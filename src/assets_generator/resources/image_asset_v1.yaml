@@ -1,0 +1,43 @@
+pipeline: image_asset_v1
+version: 1
+inputs:
+  source_image: {kind: rgb_image, carriers: [artifact_ref]}
+  source_mask: {kind: binary_mask, carriers: [artifact_ref]}
+  semantics: {kind: semantic_info, cardinality: zero_or_one, carriers: [structured]}
+  export_profile: {kind: export_profile, carriers: [structured]}
+nodes:
+  prepare_observation:
+    operator: prepare_observation@1
+    inputs:
+      image: pipeline.inputs.source_image
+      mask: pipeline.inputs.source_mask
+  generate_shape:
+    operator: shape_generation@1
+    inputs:
+      image: prepare_observation.outputs.rgba
+  canonicalize:
+    operator: canonicalize@1
+    inputs:
+      mesh: generate_shape.outputs.mesh
+      native_frame: generate_shape.outputs.native_frame
+  validate:
+    operator: validation@1
+    inputs:
+      mesh: canonicalize.outputs.mesh
+      material: generate_shape.outputs.material
+  assemble_asset:
+    operator: assemble_asset@1
+    inputs:
+      mesh: canonicalize.outputs.mesh
+      material: generate_shape.outputs.material
+      spatial: canonicalize.outputs.spatial_info
+      quality: validate.outputs.report
+      observations: prepare_observation.outputs.bundle
+      semantics: pipeline.inputs.semantics?
+  export:
+    operator: export@1
+    inputs:
+      asset: assemble_asset.outputs.asset
+      mesh: canonicalize.outputs.mesh
+      quality: validate.outputs.report
+      profile: pipeline.inputs.export_profile
