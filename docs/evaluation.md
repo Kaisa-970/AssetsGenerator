@@ -1,0 +1,117 @@
+# Validation and Evaluation
+
+**版本**：v0.4.1
+
+## 1. Per-asset QualityReport
+
+```python
+@dataclass
+class QualityCheck:
+    check_id: str
+    applicable: bool
+    value: float | int | str | None
+    threshold_profile: str
+    status: str  # pass | warn | fail | skipped
+    reason: str | None
+    evidence_artifacts: list[ArtifactRef]
+
+@dataclass
+class QualityReport:
+    profile: str
+    checks: list[QualityCheck]
+    overall_status: str
+```
+
+可选输入缺失时，对应检查必须设置 `applicable=false` 和 `status=skipped`。
+
+## 2. V1 Geometry QA
+
+V1 fail 条件：
+
+```text
+GLB 无法加载
+Blob digest 校验失败
+空间 Artifact 缺少 frame 或 unit
+Mesh 为空或包含非有限坐标
+mandatory provenance 缺失
+Pipeline 必需节点失败
+```
+
+V1 warn 条件：
+
+```text
+non-manifold
+connected components 超出阈值
+forward_status 为 estimated 或 unknown
+scale_status 不是 metric
+```
+
+## 3. Render-back QA
+
+Render-back 依赖：
+
+```text
+原始 CameraRecord（若已知）
+ImageWarp
+Backend camera hint（若有）
+CameraRegistration 结果
+```
+
+Phase 1 不要求实现 camera registration，所有 render-back 检查可以输出：
+
+```json
+{
+  "applicable": false,
+  "status": "skipped",
+  "reason": "camera registration is not implemented in Phase 1"
+}
+```
+
+Phase 5 引入最小 registration gate。具体算法可以变化，但 profile 必须显式定义：
+
+```text
+registration metric name and version
+threshold
+minimum visible area
+maximum reprojection or silhouette error
+failure behavior: skipped or warn
+```
+
+只有 gate 通过才计算 Silhouette IoU、LPIPS、SSIM、Depth consistency 等像素级指标。未经校准的注册输出使用 `score`，不能称为 confidence。
+
+## 4. Offline Benchmark
+
+接入第二个 Shape Backend 前建立：
+
+```text
+BenchmarkDataset
+EvaluationRun
+MetricSuite
+ComparisonReport
+```
+
+BenchmarkDataset 至少覆盖：
+
+```text
+常见刚性物体
+薄结构和细杆
+对称物体
+反光或低纹理表面
+遮挡和截断
+复杂背景
+透明背景
+```
+
+比较必须固定：
+
+```text
+数据版本和 mask
+预处理
+canonicalization
+GLTF2 Export Profile
+渲染器
+QA profile
+硬件与 seed 策略
+```
+
+报告包含成功率、质量指标、耗时、峰值显存、失败分布、固定视角 turntable 和预定义人工评分。

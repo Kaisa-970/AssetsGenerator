@@ -1,0 +1,405 @@
+# Asset IR Specification
+
+**版本**：v0.4.1
+
+本文定义 Real-to-Sim Asset Compiler 的核心领域对象、Artifact 身份和 V1 资产输出契约。
+
+## 1. 领域对象
+
+系统区分以下对象：
+
+```text
+ObservationBundle
+    原始 RGB、Mask、Depth、Camera 等输入观测
+
+BuildRun
+    一次 Pipeline 编译和执行记录
+
+AssetDefinition
+    可复用、可版本化的 canonical asset
+
+AssetInstance
+    AssetDefinition 在场景中的一次实例化
+
+SceneDefinition
+    AssetInstance、环境和对象关系的集合
+```
+
+`world_pose` 和 `instance_id` 属于 `AssetInstance`，不属于可复用的 `AssetDefinition`。
+
+## 2. Blob、Artifact 和执行身份
+
+系统使用三层身份：
+
+```text
+Blob
+    原始不可变字节
+
+Artifact
+    对 Blob 的稳定语义解释
+
+ExecutionOutput
+    某次节点执行产生或复用 Artifact 的事件
+```
+
+### 2.1 Blob identity 与 location
+
+```python
+@dataclass(frozen=True)
+class BlobIdentity:
+    digest: str
+    byte_size: int
+
+@dataclass(frozen=True)
+class BlobLocation:
+    digest: str
+    uri: str
+```
+
+```text
+blob digest = hash(raw bytes)
+```
+
+`BlobLocation.uri` 只是访问提示，不参与 Blob 或 Artifact identity，也不是唯一地址。Artifact Store 通过 `resolve(digest)` 返回当前可用位置；文件从本地目录迁移到 NAS 或对象存储不会改变身份。
+
+### 2.2 Artifact identity
+
+```python
+@dataclass(frozen=True)
+class ArtifactIdentity:
+    kind: str
+    schema_name: str
+    schema_version: str
+    blob_digest: str
+    identity_metadata: dict
+
+@dataclass(frozen=True)
+class ArtifactAnnotations:
+    labels: dict
+    created_at: str | None
+    debug: dict
+
+@dataclass(frozen=True)
+class ArtifactManifest:
+    artifact_id: str
+    identity: ArtifactIdentity
+    annotations: ArtifactAnnotations
+
+@dataclass(frozen=True)
+class ArtifactRef:
+    artifact_id: str
+```
+
+```text
+artifact_id = hash(canonical ArtifactIdentity)
+```
+
+只有改变 Artifact 语义的稳定字段进入 `identity_metadata`，例如：
+
+```text
+media type and encoding
+frame_id
+unit
+channel layout
+triangle winding
+normal convention
+Gaussian SH degree
+texture color space
+```
+
+以下字段属于 annotations，不参与 identity：
+
+```text
+created_at
+hostname
+UI label
+debug information
+temporary path
+storage location
+```
+
+同一 Blob 在不同 frame、unit 或 encoding 语义下形成不同 Artifact。同一 Artifact 可以位于多个存储位置。
+
+### 2.3 ExecutionOutput
+
+```python
+@dataclass(frozen=True)
+class ExecutionOutput:
+    output_id: str
+    run_id: str
+    node_id: str
+    attempt: int
+    port_name: str
+    artifact_id: str
+    provenance_id: str
+    cache_status: str  # executed | cache_hit
+```
+
+```text
+output_id = unique(run_id, node_id, attempt, port_name)
+```
+
+两次 Run 即使产生相同字节和相同 Artifact，也拥有不同的 `ExecutionOutput` 和 provenance 记录。
+
+## 3. Provenance
+
+```python
+@dataclass
+class ProvenanceRecord:
+    provenance_id: str
+    output_id: str
+    output_artifact_id: str
+    derived_from_artifact_ids: list[str]
+
+    operator: str
+    operator_version: str
+    backend: str
+    backend_version: str
+    model_digest: str | None
+    container_digest: str | None
+
+    parameters: dict
+    seed: int | None
+    run_id: str
+    node_id: str
+    attempt: int
+
+    source: str
+    confidence: Confidence | None
+    score: float | None
+    score_method: str | None
+```
+
+`derived_from_artifact_ids` 描述数据派生关系，`output_id` 锚定具体执行事件。
+
+来源枚举：
+
+```text
+observed
+reconstructed
+generated
+estimated
+derived
+mixed
+user
+database
+unknown
+```
+
+当一个 Artifact 内不同组件或区域来源不同时，Artifact 可以引用 component/region provenance map。例如可见表面为 `reconstructed`，遮挡面补全为 `generated`。V1 若 Backend 无法提供可靠区域映射，只记录 Artifact 级 `mixed`，不伪造逐面标签。
+
+`confidence` 只用于有校准方法的可靠度：
+
+```python
+@dataclass
+class Confidence:
+    value: float
+    method: str
+    method_version: str
+    calibration_domain: str | None
+    evidence_ids: list[str]
+```
+
+未经校准的模型输出称为 `score`。不能说明方法和证据时，只保存 `source` 和定性状态。
+
+## 4. ObservationBundle
+
+```python
+@dataclass
+class ObservationBundle:
+    observation_id: str
+    views: list[ObservationView]
+
+@dataclass
+class ObservationView:
+    view_id: str
+    image: ArtifactRef
+    mask: ArtifactRef | None
+    depth: ArtifactRef | None
+    camera: CameraRecord | None
+```
+
+图像、Mask、Depth 和 Camera 通过 `view_id` 对齐，不能依赖列表下标隐式对应。
+
+最小 CameraRecord：
+
+```python
+@dataclass(frozen=True)
+class CameraRecord:
+    camera_id: str
+    image_view_id: str
+    model: str  # pinhole | opencv
+    width: int
+    height: int
+    fx: float
+    fy: float
+    cx: float
+    cy: float
+    distortion: list[float]
+    camera_frame_id: str
+    T_world_camera: SpatialTransform | None
+    source: str
+    confidence: Confidence | None
+    score: float | None
+    score_method: str | None
+```
+
+Phase 1 不要求提供 CameraRecord。Backend 的 camera hint 若存在，也必须满足此 schema；未知外参时 `T_world_camera = None`。
+
+## 5. AssetDefinition
+
+```python
+@dataclass
+class AssetDefinition:
+    asset_id: str
+    asset_version: str
+    name: str | None
+
+    geometry: GeometrySet
+    appearance: AppearanceSet
+    spatial: AssetSpatialInfo
+    semantics: SemanticInfo
+    physics: PhysicsInfo | None
+
+    source_observation_ids: list[str]
+    quality_report_ids: list[str]
+```
+
+`AssetSpatialInfo` 的最小字段在 [coordinate-system.md](coordinate-system.md) 中定义。
+
+```python
+@dataclass
+class GeometrySet:
+    visual_meshes: list[ArtifactRef]
+    gaussians: list[ArtifactRef]
+    point_clouds: list[ArtifactRef]
+    collision_meshes: list[ArtifactRef]
+
+@dataclass
+class AppearanceSet:
+    materials: list[PBRMaterial]
+
+@dataclass
+class PBRMaterial:
+    base_color_factor: list[float]
+    base_color_texture: ArtifactRef | None
+    normal_texture: ArtifactRef | None
+    metallic_roughness_texture: ArtifactRef | None
+    emissive_texture: ArtifactRef | None
+    alpha_mode: str
+```
+
+V1 Artifact kind 使用封闭枚举：
+
+```text
+rgb_image
+rgba_image
+binary_mask
+depth_map
+texture_2d
+normal_map
+metallic_roughness_map
+triangle_mesh
+gltf_asset
+point_cloud
+gaussian_splat
+quality_evidence
+zip_bundle
+```
+
+`PBRMaterial` 是结构化材质值，可以只包含颜色因子，也可以引用纹理 Artifact。V1 只要求资产可正确渲染，不强制完整 BaseColor、Normal、Roughness、Metallic 通道。
+
+`SemanticInfo` 允许未知值：
+
+```python
+@dataclass
+class SemanticInfo:
+    semantic_class: str | None
+    source: str  # user | detector | vlm | backend | unknown
+```
+
+## 6. AssetRelease
+
+资产发布包不是单个 Artifact，也不使用 `asset_package` kind。它是由 `asset.json` 定义的一组 ArtifactRef 的发布视图：
+
+```python
+@dataclass
+class AssetRelease:
+    asset_definition: ArtifactRef
+    files: dict[str, ArtifactRef]
+    export_profile: str
+```
+
+`AssetRelease` 没有独立的资产语义身份，它只描述某个 `AssetDefinition` 如何物化和交付。Release manifest 可以持久化为 Artifact 以获得 digest 和跨 Run 引用能力，但 AssetDefinition 仍是资产语义的权威来源。
+
+```text
+asset.json                  权威清单
+geometry/visual.glb         GLTF2 导出结果
+materials/                  外部纹理（如有）
+qa/quality-report.json      质量报告
+provenance/                 Provenance 记录
+run.json                    BuildRun 摘要
+```
+
+目录结构只是 `AssetRelease` 的物化形式。需要单文件下载时可以额外生成 `zip_bundle` Artifact，但 ZIP 不取代 `AssetDefinition` 的身份。
+
+## 7. Schema 策略
+
+V1 使用固定 schema 版本和精确版本匹配，不实现通用 migration framework。后续版本遵循以下规则：
+
+```text
+新增可选字段          可以保持主版本
+删除字段              提升主版本
+改变字段含义或单位    提升主版本
+跨主版本读取          使用显式 migration
+```
+
+## 8. V1 输出契约
+
+V1 mandatory：
+
+```text
+Visual Mesh
+Renderable Material
+Deterministic Local Frame
+Bounding Box
+Provenance
+Build Metadata
+Geometry QA
+GLTF2 Export
+```
+
+V1 optional：
+
+```text
+Semantic Label
+Full PBR Channels
+Gaussian
+Collision Mesh
+Metric Scale
+Render-back QA
+```
+
+V1 不要求为了补全 Semantic 或完整 PBR 而引入额外模型。
+
+## 9. StructuredValue 持久化边界
+
+`StructuredValue` 用于 Run 内的小型结构化数据，默认没有独立 Artifact identity。满足以下任一条件时必须持久化：
+
+```text
+进入 AssetRelease
+跨 Run 引用
+作为 provenance 或 QA evidence
+需要独立版本和 digest
+需要从 run.json 之外恢复
+```
+
+Runtime 使用 `ArtifactStore.persist_structured(value)` 将其规范化序列化，并创建 Blob、ArtifactManifest 和 ArtifactRef。Pipeline 端口可用 `persist: true` 声明该边界。持久化后的下游端口接收 `ArtifactRef`，原 StructuredValue 仍可保留在当前 Run 的节点记录中。
+
+V1 至少持久化：
+
+```text
+QualityReport
+AssetDefinition
+GLTF2 export
+```
