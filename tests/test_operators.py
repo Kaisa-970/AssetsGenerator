@@ -1,15 +1,16 @@
 from __future__ import annotations
 
 import io
-import subprocess
 import sys
 from pathlib import Path
 
 import numpy as np
 import pytest
 import trimesh
+from PIL import Image
 
 from assets_generator.artifact_store import LocalArtifactStore
+from assets_generator.errors import ErrorCode, PipelineError
 from assets_generator.models import (
     SCHEMA_VERSION,
     ArtifactRef,
@@ -17,7 +18,7 @@ from assets_generator.models import (
     ProvenanceRecord,
 )
 from assets_generator.operators import (
-    OperatorExecutionError,
+    BiRefNetSegmentationBackend,
     Trellis2Backend,
     canonicalize_glb,
     validate_geometry,
@@ -188,9 +189,35 @@ def test_backend_timeout_is_reported(tmp_path, monkeypatch) -> None:
     rgba = store.persist_bytes(b"rgba", kind="rgba_image", schema_name="test", schema_version="1.0")
     backend = Trellis2Backend(Path(sys.executable), tmp_path, timeout_seconds=0.01)
 
-    def timeout(*args, **kwargs):
-        raise subprocess.TimeoutExpired(args[0], 0.01)
+    runner = tmp_path / "slow_runner.py"
+    runner.write_text("import time; time.sleep(1)\n", encoding="utf-8")
+    monkeypatch.setattr(backend, "_runner_path", lambda: runner)
 
-    monkeypatch.setattr("assets_generator.operators.subprocess.run", timeout)
-    with pytest.raises(OperatorExecutionError, match="timed out after 0.01 seconds"):
+    with pytest.raises(PipelineError) as captured:
         backend.generate(store, rgba)
+    assert captured.value.code == ErrorCode.BACKEND_TIMEOUT
+
+
+def test_segmentation_backend_publishes_binary_mask_and_reuses_cache(tmp_path, monkeypatch) -> None:
+    image_path = tmp_path / "image.png"
+    Image.new("RGB", (12, 8), (20, 40, 60)).save(image_path)
+    store = LocalArtifactStore(tmp_path / "store")
+    image = store.persist_bytes(
+        image_path.read_bytes(),
+        kind="rgb_image",
+        schema_name="raster_image",
+        schema_version="1.0",
+    )
+    runner = (Path(__file__).parent / "fixtures" / "segmentation_path_runner.py").resolve()
+    backend = BiRefNetSegmentationBackend(Path(sys.executable))
+    monkeypatch.setattr(backend, "_runner_path", lambda: runner)
+
+    first = backend.segment(store, image)
+    second = backend.segment(store, image)
+
+    assert not first.cache_hit
+    assert second.cache_hit
+    assert first.mask == second.mask
+    with Image.open(store.blob_path(first.mask)) as mask:
+        assert mask.size == (12, 8)
+        assert set(np.unique(np.asarray(mask))) <= {0, 255}

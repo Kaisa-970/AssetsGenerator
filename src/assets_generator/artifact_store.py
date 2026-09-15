@@ -116,7 +116,8 @@ class LocalArtifactStore:
         self.blobs_dir = self.root / "blobs" / "sha256"
         self.manifests_dir = self.root / "manifests" / "sha256"
         self.staging_dir = self.root / "staging"
-        for path in (self.blobs_dir, self.manifests_dir, self.staging_dir):
+        self.cache_dir = self.root / "cache" / "sha256"
+        for path in (self.blobs_dir, self.manifests_dir, self.staging_dir, self.cache_dir):
             path.mkdir(parents=True, exist_ok=True)
 
     def transaction(self) -> StoreTransaction:
@@ -220,6 +221,27 @@ class LocalArtifactStore:
         raw = read_json(self.root / "runs" / f"{run_id}.json")
         reference = ArtifactRef(str(raw["artifact_id"]))
         return self.read_structured(reference)
+
+    def get_cache(self, cache_key: str) -> dict[str, Any] | None:
+        path = _digest_path(self.cache_dir, cache_key).with_suffix(".json")
+        if not path.is_file():
+            return None
+        value = read_json(path)
+        if value.get("cache_key") != cache_key:
+            return None
+        artifacts = value.get("artifact_ids", [])
+        if not isinstance(artifacts, list):
+            return None
+        if not all(self.verify_digest(ArtifactRef(str(item))) for item in artifacts):
+            return None
+        return value
+
+    def put_cache(self, cache_key: str, value: dict[str, Any]) -> None:
+        target = _digest_path(self.cache_dir, cache_key).with_suffix(".json")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        temporary = target.with_name(f".{target.name}.{uuid.uuid4().hex}.tmp")
+        temporary.write_bytes(canonical_json_bytes({**value, "cache_key": cache_key}))
+        os.replace(temporary, target)
 
     @staticmethod
     def _publish_tree(source: Path, destination: Path) -> None:

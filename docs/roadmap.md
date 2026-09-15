@@ -68,6 +68,11 @@ camera registration
 
 加入 Primary Segmentation Backend，使 mask 成为可选输入；同时补充 Worker 异步状态、staging/commit、错误分类和基础缓存。
 
+当前实现使用固定 revision 的 `ZhengPeng7/BiRefNet_lite` 作为唯一 Primary Segmentation
+Backend。Core 通过本地进程 Worker 调用隔离环境，记录异步状态、幂等键、超时、取消和结构化
+错误。基础缓存仅覆盖能够由固定模型 revision、参数和输入 Artifact 身份完整描述的分割结果；
+TRELLIS Shape Backend 暂不缓存，因为模型名可能指向可变快照，执行前无法获得可信的模型 digest。
+
 ## 4. Phase 3：Benchmark 基线
 
 在第二个 Shape Backend 之前完成：

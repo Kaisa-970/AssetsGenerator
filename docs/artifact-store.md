@@ -84,6 +84,10 @@ best_effort  不声明输入决定唯一输出
 
 `best_effort` 的输出 digest 仍是该次内容的稳定指纹，也可以缓存；实验重跑不能用 cache hit 代替。
 
+Phase 2 的基础缓存先用于固定 revision 的 Primary Segmentation Backend。缓存项同时保存自身
+`cache_key`，读取时验证引用 Artifact 的 manifest identity 和 Blob digest；无效项按 cache miss
+处理。Shape Backend 只有在执行前能够把不可变模型身份纳入 key 时才允许启用缓存。
+
 ## 6. Phase 1 范围
 
 Phase 1 使用本地文件系统和简单索引，只实现写入、解析、校验和原子提交。不实现跨集群 Store、垃圾回收、复杂淘汰策略或远程复制。

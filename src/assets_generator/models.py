@@ -45,6 +45,7 @@ STRUCTURED_KINDS = frozenset(
         "semantic_info",
         "quality_report",
         "export_profile",
+        "segmentation_result",
     }
 )
 

@@ -23,7 +23,7 @@ def _parser() -> argparse.ArgumentParser:
 
     build = subparsers.add_parser("build")
     build.add_argument("--image", type=Path, required=True)
-    build.add_argument("--mask", type=Path, required=True)
+    build.add_argument("--mask", type=Path)
     build.add_argument("--store", type=Path, default=Path("artifact-store"))
     build.add_argument("--output", type=Path, required=True)
     build.add_argument("--name")
@@ -41,6 +41,13 @@ def _parser() -> argparse.ArgumentParser:
     )
     build.add_argument("--trellis-model", default="microsoft/TRELLIS.2-4B")
     build.add_argument("--backend-timeout", type=float, default=1800.0)
+    build.add_argument(
+        "--segmentation-python",
+        type=Path,
+        default=Path("/home/ypkwsl/DevTools/miniconda3/envs/TRELLTS/bin/python"),
+    )
+    build.add_argument("--segmentation-threshold", type=int, default=128)
+    build.add_argument("--segmentation-timeout", type=float, default=300.0)
     return parser
 
 
@@ -54,7 +61,7 @@ def main() -> int:
         compile_pipeline(pipeline, specs)
         print(f"{pipeline.name}@{pipeline.version}: valid")
         return 0
-    from .operators import Trellis2Backend
+    from .operators import BiRefNetSegmentationBackend, Trellis2Backend
     from .workflow import build_image_asset
 
     backend = Trellis2Backend(
@@ -63,12 +70,18 @@ def main() -> int:
         args.trellis_model,
         timeout_seconds=args.backend_timeout,
     )
+    segmentation_backend = BiRefNetSegmentationBackend(
+        args.segmentation_python,
+        threshold=args.segmentation_threshold,
+        timeout_seconds=args.segmentation_timeout,
+    )
     result = build_image_asset(
         image_path=args.image,
         mask_path=args.mask,
         store_path=args.store,
         output_path=args.output,
         backend=backend,
+        segmentation_backend=segmentation_backend,
         seed=args.seed,
         pipeline_type=args.pipeline_type,
         asset_name=args.name,

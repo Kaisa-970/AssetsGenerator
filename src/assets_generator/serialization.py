@@ -39,6 +39,10 @@ def sha256_bytes(data: bytes) -> str:
     return f"sha256:{hashlib.sha256(data).hexdigest()}"
 
 
+def cache_key(value: Any) -> str:
+    return sha256_bytes(canonical_json_bytes(value))
+
+
 def read_json(path: Path) -> dict[str, Any]:
     value = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(value, dict):

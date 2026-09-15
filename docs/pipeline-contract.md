@@ -296,7 +296,10 @@ nodes:
         persist: true
 ```
 
-Phase 1 要求 `source_mask`。Phase 2 才增加没有 mask 时的 SegmentationOperator 分支。`PrepareObservationOperator` 负责验证 image/mask 尺寸、生成 RGBA 和 ImageWarp，并创建供 BuildRun 与 AssetDefinition 引用的 ObservationBundle。
+Phase 1 要求 `source_mask`。Phase 2 的 `image_asset_v2` 将其改为可选输入，并通过固定的
+`resolve_mask` / `segmentation@1` 节点统一产生 binary mask：提供 mask 时验证并复用，缺失时调用
+Primary Segmentation Backend。`PrepareObservationOperator` 负责验证 image/mask 尺寸、生成 RGBA
+和 ImageWarp，并创建供 BuildRun 与 AssetDefinition 引用的 ObservationBundle。
 
 `AssembleAssetOperator` 只组装 AssetDefinition，不执行格式导出。若没有 semantic 输入，它写入 `semantic_class = null, source = unknown`，不调用额外识别模型。geometry、material、spatial、observation 和 quality 引用各自已有 provenance；组装操作本身另有一条 provenance 记录。
 
@@ -377,7 +380,7 @@ backend unavailable    create revised plan if policy allows
 
 Phase 1 使用本地同步或进程适配器。后续远程 Worker 使用相同的 `PortValue` 请求和响应语义：
 
-当前 TRELLIS.2 适配器是本地过渡实现：Core 使用独立 Python 环境启动子进程，通过临时 JSON
+当前 TRELLIS.2 和 BiRefNet_lite 适配器是本地过渡实现：Core 使用独立 Python 环境启动子进程，通过临时 JSON
 文件和本地 Artifact 路径交换数据，并设置执行超时。它不等同于以下远程 Worker API。
 
 ```http

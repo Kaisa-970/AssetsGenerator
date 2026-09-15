@@ -29,7 +29,7 @@ def test_packaged_and_repository_pipeline_contracts_match() -> None:
     repository_specs = load_operator_specs(
         __import__("pathlib").Path("pipelines/operators-v1.yaml")
     )
-    repository_pipeline = load_pipeline(__import__("pathlib").Path("pipelines/image_asset_v1.yaml"))
+    repository_pipeline = load_pipeline(__import__("pathlib").Path("pipelines/image_asset_v2.yaml"))
 
     assert load_default_operator_specs() == repository_specs
     assert load_default_pipeline() == repository_pipeline

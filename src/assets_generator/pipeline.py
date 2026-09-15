@@ -75,7 +75,7 @@ def load_default_operator_specs() -> dict[str, OperatorSpec]:
 
 
 def load_default_pipeline() -> PipelineDefinition:
-    resource = files("assets_generator.resources").joinpath("image_asset_v1.yaml")
+    resource = files("assets_generator.resources").joinpath("image_asset_v2.yaml")
     raw = yaml.safe_load(resource.read_text(encoding="utf-8"))
     return _pipeline_from_raw(raw)
 

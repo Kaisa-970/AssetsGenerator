@@ -11,6 +11,7 @@ from .contracts import (
     validate_operator_outputs,
     validate_port_value,
 )
+from .errors import classify_error
 from .models import NodeAttempt, PortValue
 from .pipeline import PipelineDefinition
 
@@ -53,6 +54,7 @@ class Phase1Runtime:
         execute: Callable[[], tuple[T, dict[str, PortValue | list[PortValue]]]],
         *,
         backend: str | None = None,
+        execution_mode: str | Callable[[T], str] = "executed",
     ) -> T:
         node = self.pipeline.nodes[node_id]
         operator_key = str(node["operator"])
@@ -63,7 +65,7 @@ class Phase1Runtime:
             operator=operator_key,
             backend=backend,
             status="running",
-            execution_mode="executed",
+            execution_mode=execution_mode if isinstance(execution_mode, str) else "executed",
             started_at=utc_now(),
             finished_at=None,
             error_code=None,
@@ -73,12 +75,14 @@ class Phase1Runtime:
             validate_operator_inputs(spec, inputs, self.store)
             result, outputs = execute()
             validate_operator_outputs(spec, outputs, self.store)
+            if callable(execution_mode):
+                attempt.execution_mode = execution_mode(result)
             attempt.outputs = outputs
             attempt.status = "succeeded"
             return result
         except Exception as error:
             attempt.status = "failed"
-            attempt.error_code = type(error).__name__
+            attempt.error_code = classify_error(error).value
             raise
         finally:
             attempt.finished_at = utc_now()

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import io
 import json
-import subprocess
 import tempfile
 import uuid
 from dataclasses import dataclass
@@ -14,6 +13,7 @@ import trimesh
 from PIL import Image
 
 from .artifact_store import ArtifactStoreError, LocalArtifactStore
+from .errors import ErrorCode, PipelineError
 from .models import (
     SCHEMA_VERSION,
     AppearanceSet,
@@ -28,8 +28,9 @@ from .models import (
     SemanticInfo,
     StructuredValue,
 )
-from .serialization import to_primitive
+from .serialization import cache_key, to_primitive
 from .spatial import CanonicalizationResult, canonicalize_vertices
+from .worker import LocalProcessWorker, ProcessJobRequest
 
 
 class OperatorExecutionError(RuntimeError):
@@ -49,6 +50,15 @@ class ShapeOutput:
     material: StructuredValue
     native_frame: StructuredValue
     backend_metadata: dict[str, Any]
+    cache_hit: bool = False
+
+
+@dataclass(frozen=True)
+class SegmentationOutput:
+    mask: ArtifactRef
+    result: StructuredValue
+    backend_metadata: dict[str, Any]
+    cache_hit: bool = False
 
 
 @dataclass(frozen=True)
@@ -58,6 +68,31 @@ class CanonicalOutput:
     transform: StructuredValue
     spatial_info: StructuredValue
     result: CanonicalizationResult
+
+
+def validate_binary_mask(
+    store: LocalArtifactStore, image_ref: ArtifactRef, mask_ref: ArtifactRef
+) -> None:
+    try:
+        with Image.open(store.blob_path(image_ref)) as image:
+            image_size = image.size
+        with Image.open(store.blob_path(mask_ref)) as mask:
+            values = np.asarray(mask.convert("L"), dtype=np.uint8)
+            mask_size = mask.size
+    except (ArtifactStoreError, OSError) as error:
+        raise PipelineError(
+            ErrorCode.OUTPUT_INVALID, f"invalid segmentation mask: {error}"
+        ) from error
+    if mask_size != image_size:
+        raise PipelineError(
+            ErrorCode.OUTPUT_INVALID,
+            f"segmentation mask dimensions differ: {mask_size} != {image_size}",
+        )
+    if not np.isin(values, [0, 255]).all():
+        raise PipelineError(
+            ErrorCode.OUTPUT_INVALID,
+            "segmentation mask contains values other than 0 and 255",
+        )
 
 
 def prepare_observation(
@@ -125,6 +160,7 @@ class Trellis2Backend:
         model: str = "microsoft/TRELLIS.2-4B",
         *,
         timeout_seconds: float = 1800.0,
+        worker: LocalProcessWorker | None = None,
     ) -> None:
         if timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be positive")
@@ -132,6 +168,7 @@ class Trellis2Backend:
         self.repo = repo.expanduser().resolve()
         self.model = model
         self.timeout_seconds = timeout_seconds
+        self.worker = worker or LocalProcessWorker()
 
     def _runner_path(self) -> Path:
         return (Path(__file__).parent / "backends" / "trellis2_runner.py").resolve()
@@ -163,23 +200,16 @@ class Trellis2Backend:
                 "texture_size": texture_size,
             }
             request_path.write_text(json.dumps(request), encoding="utf-8")
-            try:
-                completed = subprocess.run(
+            job = self.worker.run(
+                ProcessJobRequest(
                     [str(self.python), str(runner), str(request_path), str(response_path)],
-                    cwd=self.repo,
-                    text=True,
-                    capture_output=True,
-                    check=False,
-                    timeout=self.timeout_seconds,
+                    self.repo,
+                    self.timeout_seconds,
+                    request_path.resolve().as_uri(),
                 )
-            except subprocess.TimeoutExpired as error:
-                raise OperatorExecutionError(
-                    f"TRELLIS.2 backend timed out after {self.timeout_seconds:g} seconds"
-                ) from error
-            if completed.returncode != 0:
-                detail = completed.stderr.strip() or completed.stdout.strip()
-                raise OperatorExecutionError(f"TRELLIS.2 backend failed: {detail}")
+            )
             response = json.loads(response_path.read_text(encoding="utf-8"))
+            response["worker_job_id"] = job.job_id
             mesh = store.persist_bytes(
                 output_path.read_bytes(),
                 kind="triangle_mesh",
@@ -205,6 +235,121 @@ class Trellis2Backend:
                 "BackendNativeFrame",
                 SCHEMA_VERSION,
                 to_primitive(native_frame),
+            ),
+            response,
+        )
+
+
+class BiRefNetSegmentationBackend:
+    MODEL_ID = "ZhengPeng7/BiRefNet_lite"
+    MODEL_REVISION = "aa62cd87eafb9cc43056d08ef3615a14628b831d"
+
+    def __init__(
+        self,
+        python: Path,
+        *,
+        threshold: int = 128,
+        timeout_seconds: float = 300.0,
+        worker: LocalProcessWorker | None = None,
+    ) -> None:
+        if not 0 <= threshold <= 255:
+            raise ValueError("threshold must be between 0 and 255")
+        if timeout_seconds <= 0:
+            raise ValueError("timeout_seconds must be positive")
+        self.python = python.expanduser().absolute()
+        self.threshold = threshold
+        self.timeout_seconds = timeout_seconds
+        self.worker = worker or LocalProcessWorker()
+
+    def _runner_path(self) -> Path:
+        return (Path(__file__).parent / "backends" / "birefnet_runner.py").resolve()
+
+    def segment(self, store: LocalArtifactStore, image: ArtifactRef) -> SegmentationOutput:
+        key_payload = {
+            "operator": "segmentation@1",
+            "backend": "birefnet_lite",
+            "model_revision": self.MODEL_REVISION,
+            "threshold": self.threshold,
+            "input_artifact_id": image.artifact_id,
+        }
+        key = cache_key(key_payload)
+        cached = store.get_cache(key)
+        if cached is not None:
+            mask = ArtifactRef(str(cached["mask_artifact_id"]))
+            validate_binary_mask(store, image, mask)
+            metadata = dict(cached["backend_metadata"])
+            return SegmentationOutput(
+                mask,
+                StructuredValue(
+                    "segmentation_result",
+                    "SegmentationResult",
+                    SCHEMA_VERSION,
+                    {"source": "cache", "threshold": self.threshold},
+                ),
+                metadata,
+                True,
+            )
+
+        with tempfile.TemporaryDirectory(prefix="birefnet-", dir=store.root) as temporary:
+            work = Path(temporary).resolve()
+            request_path = work / "request.json"
+            response_path = work / "response.json"
+            output_path = work / "mask.png"
+            request = {
+                "model": self.MODEL_ID,
+                "revision": self.MODEL_REVISION,
+                "input_image": str(store.blob_path(image).resolve()),
+                "output_mask": str(output_path),
+                "threshold": self.threshold,
+            }
+            request_path.write_text(json.dumps(request), encoding="utf-8")
+            job = self.worker.run(
+                ProcessJobRequest(
+                    [
+                        str(self.python),
+                        str(self._runner_path()),
+                        str(request_path),
+                        str(response_path),
+                    ],
+                    Path.cwd(),
+                    self.timeout_seconds,
+                    key,
+                )
+            )
+            if not response_path.is_file() or not output_path.is_file():
+                raise PipelineError(
+                    ErrorCode.OUTPUT_INVALID,
+                    "BiRefNet backend did not produce its declared outputs",
+                )
+            response = json.loads(response_path.read_text(encoding="utf-8"))
+            response["worker_job_id"] = job.job_id
+            mask = store.persist_bytes(
+                output_path.read_bytes(),
+                kind="binary_mask",
+                schema_name="png",
+                schema_version="1.0",
+                identity_metadata={
+                    "media_type": "image/png",
+                    "channel_layout": "L",
+                    "threshold": self.threshold,
+                },
+            )
+            validate_binary_mask(store, image, mask)
+        store.put_cache(
+            key,
+            {
+                "artifact_ids": [mask.artifact_id],
+                "mask_artifact_id": mask.artifact_id,
+                "backend_metadata": response,
+            },
+        )
+        return SegmentationOutput(
+            mask,
+            StructuredValue(
+                "segmentation_result",
+                "SegmentationResult",
+                SCHEMA_VERSION,
+                {"source": "generated", "threshold": self.threshold},
             ),
             response,
         )

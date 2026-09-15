@@ -91,3 +91,24 @@ def test_manifest_identity_tampering_is_rejected(tmp_path) -> None:
     with pytest.raises(ArtifactStoreError, match="identity mismatch"):
         store.get_manifest(reference.artifact_id)
     assert not store.verify_digest(reference)
+
+
+def test_cache_rejects_missing_or_tampered_artifacts(tmp_path) -> None:
+    store = LocalArtifactStore(tmp_path / "store")
+    reference = store.persist_bytes(
+        b"content",
+        kind="quality_evidence",
+        schema_name="text",
+        schema_version="1.0",
+    )
+    key = "sha256:" + "a" * 64
+    store.put_cache(key, {"artifact_ids": [reference.artifact_id], "value": "valid"})
+    assert store.get_cache(key) == {
+        "artifact_ids": [reference.artifact_id],
+        "cache_key": key,
+        "value": "valid",
+    }
+
+    store.blob_path(reference).unlink()
+
+    assert store.get_cache(key) is None

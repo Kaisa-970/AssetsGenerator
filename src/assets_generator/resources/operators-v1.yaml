@@ -1,4 +1,13 @@
 operators:
+  - name: segmentation
+    version: 1
+    inputs:
+      image: {kind: rgb_image, carriers: [artifact_ref]}
+      mask: {kind: binary_mask, cardinality: zero_or_one, carriers: [artifact_ref]}
+    outputs:
+      mask: {kind: binary_mask, carriers: [artifact_ref]}
+      result: {kind: segmentation_result, carriers: [structured]}
+
   - name: prepare_observation
     version: 1
     inputs:

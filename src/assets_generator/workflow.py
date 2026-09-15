@@ -20,14 +20,17 @@ from .models import (
     StructuredValue,
 )
 from .operators import (
+    BiRefNetSegmentationBackend,
     CanonicalOutput,
     PreparedObservation,
+    SegmentationOutput,
     ShapeOutput,
     Trellis2Backend,
     assemble_asset,
     canonicalize_glb,
     export_release,
     prepare_observation,
+    validate_binary_mask,
     validate_geometry,
 )
 from .pipeline import compile_pipeline, load_default_operator_specs, load_default_pipeline
@@ -162,10 +165,11 @@ def _materialize_release(
 def build_image_asset(
     *,
     image_path: Path,
-    mask_path: Path,
+    mask_path: Path | None,
     store_path: Path,
     output_path: Path,
     backend: Trellis2Backend,
+    segmentation_backend: BiRefNetSegmentationBackend | None = None,
     seed: int = 42,
     pipeline_type: str = "512",
     asset_name: str | None = None,
@@ -182,16 +186,67 @@ def build_image_asset(
     provenance: list[ArtifactRef] = []
     try:
         image_ref = _import_image(store, image_path, "rgb_image")
-        mask_ref = _import_image(store, mask_path, "binary_mask")
+        provided_mask_ref = (
+            _import_image(store, mask_path, "binary_mask") if mask_path is not None else None
+        )
         export_profile = StructuredValue(
             "export_profile", "GLTF2Profile", SCHEMA_VERSION, {"profile": "gltf2-v1"}
         )
         run.inputs = {
             "source_image": image_ref,
-            "source_mask": mask_ref,
             "export_profile": export_profile,
         }
+        if provided_mask_ref is not None:
+            run.inputs["source_mask"] = provided_mask_ref
         runtime.validate_pipeline_inputs(run.inputs)
+
+        def execute_resolve_mask() -> tuple[SegmentationOutput, dict[str, Any]]:
+            if provided_mask_ref is not None:
+                validate_binary_mask(store, image_ref, provided_mask_ref)
+                value = SegmentationOutput(
+                    provided_mask_ref,
+                    StructuredValue(
+                        "segmentation_result",
+                        "SegmentationResult",
+                        SCHEMA_VERSION,
+                        {"source": "provided", "threshold": None},
+                    ),
+                    {"backend": "user", "backend_version": "provided-mask"},
+                )
+            else:
+                if segmentation_backend is None:
+                    raise ValueError("mask is required when no segmentation backend is configured")
+                value = segmentation_backend.segment(store, image_ref)
+            return value, {"mask": value.mask, "result": value.result}
+
+        mask_inputs: dict[str, Any] = {"image": image_ref}
+        if provided_mask_ref is not None:
+            mask_inputs["mask"] = provided_mask_ref
+        resolved_mask = runtime.run_node(
+            "resolve_mask",
+            mask_inputs,
+            execute_resolve_mask,
+            backend="user" if provided_mask_ref is not None else "birefnet_lite",
+            execution_mode=lambda value: "cache_hit" if value.cache_hit else "executed",
+        )
+        mask_ref = resolved_mask.mask
+        provenance.append(
+            _persist_provenance(
+                store,
+                run_id=run_id,
+                node_id="resolve_mask",
+                port_name="mask",
+                artifact=mask_ref,
+                derived_from=[image_ref] if provided_mask_ref is None else [],
+                operator="segmentation",
+                backend=str(resolved_mask.backend_metadata["backend"]),
+                backend_version=str(resolved_mask.backend_metadata["backend_version"]),
+                parameters={"threshold": resolved_mask.result.value.get("threshold")},
+                seed=None,
+                source="user" if provided_mask_ref is not None else "generated",
+                model_digest=resolved_mask.backend_metadata.get("model_digest"),
+            )
+        )
 
         def execute_prepare() -> tuple[PreparedObservation, dict[str, Any]]:
             value = prepare_observation(store, image_ref, mask_ref)
@@ -233,7 +288,11 @@ def build_image_asset(
             }
 
         generated = runtime.run_node(
-            "generate_shape", {"image": prepared.rgba}, execute_generate, backend="trellis2"
+            "generate_shape",
+            {"image": prepared.rgba},
+            execute_generate,
+            backend="trellis2",
+            execution_mode=lambda value: "cache_hit" if value.cache_hit else "executed",
         )
         provenance.append(
             _persist_provenance(
@@ -422,7 +481,9 @@ def build_image_asset(
             _materialize_release(store, output_path, release_ref, release, run_ref)
         except Exception as error:
             runtime.attempts[-1].status = "failed"
-            runtime.attempts[-1].error_code = type(error).__name__
+            from .errors import classify_error
+
+            runtime.attempts[-1].error_code = classify_error(error).value
             raise
         return BuildResult(run_id, asset_ref, release_ref, glb_ref, report_ref, output_path)
     except Exception:

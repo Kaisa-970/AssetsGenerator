@@ -50,7 +50,10 @@ strict = true
 packages = ["assets_generator"]
 
 [[tool.mypy.overrides]]
-module = "assets_generator.backends.trellis2_runner"
+module = [
+    "assets_generator.backends.trellis2_runner",
+    "assets_generator.backends.birefnet_runner",
+]
 ignore_errors = true
 
 [[tool.mypy.overrides]]
