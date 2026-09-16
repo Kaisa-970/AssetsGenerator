@@ -49,3 +49,34 @@ Benchmark 数据、模型权重和生成资产不提交 Git。运行时应保存
 访问 http://localhost:8765/review.html 。查看器优先使用输出目录的
 `viewer-assets/model-viewer.min.js`，缺失时使用固定版本的 CDN（model-viewer 4.0.0）。
 这只是交互检查，不构成固定相机的 render-back QA。
+
+## 主要刚性对象候选集
+
+```bash
+.venv/bin/python -m assets_generator.voc_candidates \
+  --root /home/ypkwsl/Data/Datasets/VOCdevkit/VOC2012 \
+  --output /home/ypkwsl/Data/Datasets/voc-rigid-candidates-v1.json \
+  --exclude-manifest /home/ypkwsl/Data/Datasets/voc-instances-v2.json \
+  --limit 12 --min-side 96 --min-fraction 0.05
+```
+
+类别由 SegmentationClass 在实例 mask 内的有效标签多数票确定。候选类别为飞机、
+自行车、船、瓶子、公交车、汽车、椅子、餐桌、摩托车、沙发、火车、显示器。
+每张图仅保留符合类别及尺寸要求的最大前景实例，类别轮流取样，同类别按文件名排序。
+可用排除清单避免重复原图；不会读取生成结果或人工模型评价来选择输入。
+
+默认目标框短边至少 96 像素，前景占原图至少 5%。这两个参数是输入筛选启发式，
+不是模型质量门槛；会排除一些可生成的小物体。遮挡、模糊、截断和目标语义仍需人工确认。
+候选 manifest 保存图像与 mask digest、类别、尺寸、前景面积和触边标记，
+同名 `.audit.json` 保存全部实例及筛选原因，便于审查选择偏差。
+输出文件已存在时拒绝覆盖，应使用新版本名。该集用于输入预审，不能替代覆盖困难样本的正式基准。
+
+候选预览使用独立输出目录，避免与已有模型的 case 索引混淆：
+
+```bash
+.venv/bin/python -m assets_generator.benchmark \
+  --manifest /home/ypkwsl/Data/Datasets/voc-rigid-candidates-v1.json \
+  --output /home/ypkwsl/Data/Datasets/voc-baseline-smoke/candidates-v1 --preview-only
+```
+
+预览的“保留/待改进/淘汰”评价对象是输入原图与 mask，而非尚未生成的模型。

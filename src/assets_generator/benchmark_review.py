@@ -90,11 +90,25 @@ def collect(cases: list[dict[str, Any]], manifest: Path, output: Path) -> None:
             '<div class="model-status" role="status"></div></div>'
             for p in sorted((output / f"case-{index:03d}").glob("**/geometry/visual.glb"))
         )
+        metadata = {
+            key: case[key]
+            for key in (
+                "category",
+                "image_size",
+                "bbox_size",
+                "foreground_fraction",
+                "touches_image_boundary",
+                "selection_reason",
+                "review_status",
+            )
+            if key in case
+        }
         cards.append(
             f"<article><h2>{html.escape(case['id'])}</h2>"
             f'<img alt="original" src="{thumbnail(image)}"> '
             f'<img alt="target mask" src="{thumbnail(mask)}">'
             f"<p>{html.escape(row['status'])}</p>{links}"
+            f"<pre>{html.escape(json.dumps(metadata, ensure_ascii=False, indent=2))}</pre>"
             f"<pre>{html.escape(json.dumps(metrics, indent=2))}</pre></article>"
         )
     write_json(output / "review-summary.json", rows)
