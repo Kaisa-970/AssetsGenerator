@@ -23,15 +23,15 @@
 
 开始实现或修改契约前，按任务范围阅读以下文档：
 
-- `docs/architecture.md`：系统目标、总体架构、V1 边界和验收标准。
-- `docs/asset-ir.md`：Blob、Artifact、ExecutionOutput、AssetDefinition 和 AssetRelease。
-- `docs/coordinate-system.md`：坐标系、Frame、canonicalization 和 Export Profile。
-- `docs/pipeline-contract.md`：PortValue、OperatorSpec、Backend、DAG、BuildRun 和 Worker 契约。
-- `docs/artifact-store.md`：内容寻址、位置解析、原子提交和缓存语义。
-- `docs/evaluation.md`：Geometry QA、QualityReport、render-back 和 benchmark。
-- `docs/roadmap.md`：分阶段范围和模型接入顺序。
+- `docs/design/architecture.md`：系统目标、总体架构、V1 边界和验收标准。
+- `docs/design/asset-ir.md`：Blob、Artifact、ExecutionOutput、AssetDefinition 和 AssetRelease。
+- `docs/design/coordinate-system.md`：坐标系、Frame、canonicalization 和 Export Profile。
+- `docs/design/pipeline-contract.md`：PortValue、OperatorSpec、Backend、DAG、BuildRun 和 Worker 契约。
+- `docs/design/artifact-store.md`：内容寻址、位置解析、原子提交和缓存语义。
+- `docs/design/evaluation.md`：Geometry QA、QualityReport、render-back 和 benchmark。
+- `docs/planning/roadmap.md`：分阶段范围和模型接入顺序。
 
-契约存在冲突时，以更具体的专项文档为准，并同步修正 `docs/architecture.md` 中的高层表述。
+契约存在冲突时，以更具体的专项文档为准，并同步修正 `docs/design/architecture.md` 中的高层表述。
 
 ## 项目特定约束
 
@@ -63,10 +63,15 @@
 - 优先复用项目已有的框架、工具和辅助函数；仅在确实降低复杂度时新增抽象。
 - 不猜测缺失的业务规则。能够从代码和文档确认时先自行调查，关键条件仍不明确时再询问。
 - 不覆盖、撤销或删除用户已有的未提交改动。
+- 如果因为权限或其他问题导致某一项工作未能执行或需要用户协助，要说明白产生问题的原因，以及希望用户怎么做，最好提供可直接运行的命令。
 
 ## 目录与文件
 
 - 新文件放入职责匹配的现有目录，不随意增加新的顶层目录。
+- 文档必须按职责归类：`docs/design/` 存放架构和契约，`docs/planning/` 存放路线图与实施计划，`docs/guides/` 存放使用和操作指南，`docs/reports/` 存放注明日期、数据范围及证据的评测和审查报告。
+- `docs/` 根目录只保留文档索引 `README.md`；新增文档优先使用现有分类。确需新增分类时，按长期职责命名，并同步更新索引。
+- 新增、移动或重命名文档时，必须同步更新 `docs/README.md`、项目 README、AGENTS.md 及其他引用位置，并检查相对链接有效性。
+- 文档应独立于对话，描述可验证的事实、契约、方法、证据、限制和可复用的操作步骤；不得写入聊天过程、助手行动汇报或临时承诺（如“无新增 GPU 运行”“我接下来会……”）。计划应明确标为计划，实验观察与推测必须区分。
 - 生产代码与测试代码保持清晰对应。
 - 临时文件、构建产物、缓存和本地配置不得提交到仓库。
 - 不提交密钥、令牌、密码或包含敏感信息的日志。

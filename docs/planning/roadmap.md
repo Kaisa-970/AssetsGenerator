@@ -157,3 +157,9 @@ articulation in later iterations
 - SAM 3D Objects: https://github.com/facebookresearch/sam-3d-objects
 - VGGT: https://github.com/facebookresearch/vggt
 - Hunyuan3D: https://github.com/hunyuan3d/hunyuan3d
+
+## 当前进展（2026-09-16）
+
+Phase 3 已整理 13 次真实 VOC 实例运行（12 成功、1 失败）与用户选出的 4 个相对完整模型。
+[初版报告](../reports/phase3-baseline-v1.md)明确记录采样、分辨率和人工评价局限；
+代表性数据选择及统一人工评分仍待完善。暂未进入 Phase 4。

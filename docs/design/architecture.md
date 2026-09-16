@@ -102,7 +102,7 @@ AssetRelease
 - [Pipeline and Backend Contract](pipeline-contract.md)
 - [Artifact Store](artifact-store.md)
 - [Validation and Evaluation](evaluation.md)
-- [Roadmap](roadmap.md)
+- [Roadmap](../planning/roadmap.md)
 
 ## 4. V1 Pipeline
 

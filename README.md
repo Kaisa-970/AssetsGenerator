@@ -17,13 +17,14 @@ Single RGB
 
 设计入口：
 
-- [Architecture](docs/architecture.md)
-- [Asset IR](docs/asset-ir.md)
-- [Coordinate System](docs/coordinate-system.md)
-- [Pipeline Contract](docs/pipeline-contract.md)
-- [Artifact Store](docs/artifact-store.md)
-- [Evaluation](docs/evaluation.md)
-- [Roadmap](docs/roadmap.md)
+- [文档分类索引](docs/README.md)
+- [Architecture](docs/design/architecture.md)
+- [Asset IR](docs/design/asset-ir.md)
+- [Coordinate System](docs/design/coordinate-system.md)
+- [Pipeline Contract](docs/design/pipeline-contract.md)
+- [Artifact Store](docs/design/artifact-store.md)
+- [Evaluation](docs/design/evaluation.md)
+- [Roadmap](docs/planning/roadmap.md)
 
 ## 当前实现
 

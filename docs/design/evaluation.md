@@ -115,3 +115,7 @@ QA profile
 ```
 
 报告包含成功率、质量指标、耗时、峰值显存、失败分布、固定视角 turntable 和预定义人工评分。
+
+当前 Phase 3 观察结果与下一轮人工评分规范见
+[初版 VOC 基线报告](../reports/phase3-baseline-v1.md)。本轮为排序抽样的流程验证，
+不视为代表性 BenchmarkDataset，也不把用户精选结果当作无偏质量评测集。
