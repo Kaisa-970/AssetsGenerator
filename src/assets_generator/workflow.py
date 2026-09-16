@@ -387,6 +387,8 @@ def build_image_asset(
                             "validated_vertex_count",
                             "validated_face_count",
                             "native_frame_validation",
+                            "native_frame_validation_evidence_digest",
+                            "native_frame_backend_source_digest",
                         )
                         if key in generated.backend_metadata
                     },

@@ -121,3 +121,14 @@ export TORCH_CUDA_ARCH_LIST="12.0"
 3. 在 Phase 3 保留的飞机与自行车输入上串行运行，通过同一 review 页面与 TRELLIS.2 比较。
 
 这些真实运行结果应进入 `docs/reports/`，外部输入与生成资产以 `<DATASET_ROOT>` 等占位符引用，不提交二进制文件。
+
+native frame 验证工具：
+
+```bash
+.venv/bin/python -m assets_generator.backends.triposr_frame_validation \
+  --python "$TRIPOSR_PYTHON" \
+  --repo "$TRIPOSR_REPO" \
+  --output <LOCAL_EVIDENCE_DIR>/triposr-frame-validation.json
+```
+
+该工具在 Backend 环境中通过官方 `MarchingCubeHelper` 生成三个位置与尺寸均不同的标记体，导出 GLB 后由 Core 环境独立 reload，并检查轴向、符号、所有 geometry node transform 和有向体积。证据绑定 Backend checkout source digest、Python/PyTorch/CUDA/torchmcubes 环境 fingerprint、fixture 和 validator 摘要；Backend 执行前后会重新核对这些身份。它不加载模型权重。

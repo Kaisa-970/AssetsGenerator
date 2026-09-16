@@ -42,6 +42,8 @@ response_path.write_text(
             "vertex_count": 4,
             "face_count": 4,
             "peak_cuda_memory_mb": 123.5,
+            "backend_environment": request["backend_environment"],
+            "backend_source": request["backend_source"],
             "request": request,
         },
         sort_keys=True,

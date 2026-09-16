@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import tempfile
@@ -13,7 +14,9 @@ import trimesh
 from PIL import Image
 
 from .artifact_store import ArtifactStoreError, LocalArtifactStore
+from .backends.environment_identity import backend_environment_identity
 from .backends.model_identity import snapshot_digest, snapshot_state
+from .backends.source_identity import backend_source_identity
 from .errors import ErrorCode, PipelineError
 from .models import (
     SCHEMA_VERSION,
@@ -29,7 +32,7 @@ from .models import (
     SemanticInfo,
     StructuredValue,
 )
-from .serialization import cache_key, to_primitive
+from .serialization import cache_key, sha256_bytes, to_primitive
 from .spatial import CanonicalizationResult, canonicalize_vertices
 from .worker import LocalProcessWorker, ProcessJobRequest
 
@@ -247,6 +250,8 @@ class Trellis2Backend:
 
 
 class TripoSRBackend:
+    FRAME_VALIDATION_RULE = "triposr-marching-cubes-glb-roundtrip-v1"
+
     def __init__(
         self,
         python: Path,
@@ -257,6 +262,7 @@ class TripoSRBackend:
         chunk_size: int = 8192,
         mc_resolution: int = 256,
         foreground_ratio: float = 0.85,
+        frame_validation: Path | None = None,
         worker: LocalProcessWorker | None = None,
     ) -> None:
         if timeout_seconds <= 0:
@@ -278,7 +284,62 @@ class TripoSRBackend:
         self.chunk_size = chunk_size
         self.mc_resolution = mc_resolution
         self.foreground_ratio = foreground_ratio
+        self.frame_validation = (
+            frame_validation.expanduser().resolve() if frame_validation is not None else None
+        )
         self.worker = worker or LocalProcessWorker()
+
+    def _frame_validation_identity(self) -> dict[str, Any]:
+        if self.frame_validation is None:
+            raise PipelineError(
+                ErrorCode.BACKEND_UNAVAILABLE,
+                "TripoSR requires frame validation evidence",
+            )
+        try:
+            evidence_bytes = self.frame_validation.read_bytes()
+            evidence = json.loads(evidence_bytes)
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise PipelineError(
+                ErrorCode.BACKEND_UNAVAILABLE,
+                f"invalid TripoSR frame validation evidence: {error}",
+            ) from error
+        if not isinstance(evidence, dict):
+            raise PipelineError(
+                ErrorCode.BACKEND_UNAVAILABLE,
+                "invalid TripoSR frame validation evidence: expected a JSON object",
+            )
+        try:
+            source = backend_source_identity(self.repo)
+            environment = backend_environment_identity(self.python)
+        except ValueError as error:
+            raise PipelineError(ErrorCode.BACKEND_UNAVAILABLE, str(error)) from error
+        required = {
+            "rule": self.FRAME_VALIDATION_RULE,
+            "status": "pass",
+            "backend_python": str(self.python),
+            "triposr_repo": str(self.repo),
+            "backend_source": source,
+            "backend_environment": environment,
+            "fixture_digest": self._frame_tool_digest("triposr_frame_fixture.py"),
+            "validator_digest": self._frame_tool_digest("triposr_frame_validation.py"),
+        }
+        if any(evidence.get(key) != value for key, value in required.items()):
+            raise PipelineError(
+                ErrorCode.BACKEND_UNAVAILABLE,
+                "TripoSR frame validation evidence does not match the configured environment",
+            )
+        return {
+            "rule": self.FRAME_VALIDATION_RULE,
+            "evidence_digest": sha256_bytes(evidence_bytes),
+            "backend_source_digest": source["source_digest"],
+            "backend_source": source,
+            "backend_environment": environment,
+        }
+
+    @staticmethod
+    def _frame_tool_digest(name: str) -> str:
+        path = Path(__file__).parent / "backends" / name
+        return f"sha256:{hashlib.sha256(path.read_bytes()).hexdigest()}"
 
     def _runner_path(self) -> Path:
         return (Path(__file__).parent / "backends" / "triposr_runner.py").resolve()
@@ -294,6 +355,7 @@ class TripoSRBackend:
         texture_size: int = 2048,
     ) -> ShapeOutput:
         del decimation_target, texture_size
+        frame_validation = self._frame_validation_identity()
         with tempfile.TemporaryDirectory(prefix="triposr-", dir=store.root) as temporary:
             work = Path(temporary).resolve()
             request_path = work / "request.json"
@@ -309,6 +371,8 @@ class TripoSRBackend:
                 "chunk_size": self.chunk_size,
                 "mc_resolution": self.mc_resolution,
                 "foreground_ratio": self.foreground_ratio,
+                "backend_environment": frame_validation["backend_environment"],
+                "backend_source": frame_validation["backend_source"],
             }
             request_path.write_text(json.dumps(request), encoding="utf-8")
             job = self.worker.run(
@@ -337,6 +401,15 @@ class TripoSRBackend:
                 ) from error
             self._validate_response(response, request)
             try:
+                source_after = backend_source_identity(self.repo)
+            except ValueError as error:
+                raise PipelineError(ErrorCode.BACKEND_UNAVAILABLE, str(error)) from error
+            if source_after != frame_validation["backend_source"]:
+                raise PipelineError(
+                    ErrorCode.BACKEND_UNAVAILABLE,
+                    "TripoSR checkout changed during Backend execution",
+                )
+            try:
                 glb = output_path.read_bytes()
                 scene = _load_scene(glb)
                 vertices = _scene_vertices(scene)
@@ -350,7 +423,13 @@ class TripoSRBackend:
             response["worker_job_id"] = job.job_id
             response["validated_vertex_count"] = int(len(vertices))
             response["validated_face_count"] = int(face_count)
-            response["native_frame_validation"] = "triposr-z-up-export-reload-v1"
+            response["native_frame_validation"] = frame_validation["rule"]
+            response["native_frame_validation_evidence_digest"] = frame_validation[
+                "evidence_digest"
+            ]
+            response["native_frame_backend_source_digest"] = frame_validation[
+                "backend_source_digest"
+            ]
             mesh = store.persist_bytes(
                 glb,
                 kind="triangle_mesh",
@@ -399,6 +478,8 @@ class TripoSRBackend:
             "vertex_count",
             "face_count",
             "peak_cuda_memory_mb",
+            "backend_environment",
+            "backend_source",
         }
         missing = sorted(required - response.keys())
         if missing:
@@ -410,6 +491,16 @@ class TripoSRBackend:
             raise PipelineError(ErrorCode.OUTPUT_INVALID, "unexpected TripoSR backend identity")
         if not isinstance(response["backend_version"], str) or not response["backend_version"]:
             raise PipelineError(ErrorCode.OUTPUT_INVALID, "missing TripoSR backend version")
+        if response["backend_environment"] != request["backend_environment"]:
+            raise PipelineError(
+                ErrorCode.BACKEND_UNAVAILABLE,
+                "TripoSR environment changed since frame validation",
+            )
+        if response["backend_source"] != request["backend_source"]:
+            raise PipelineError(
+                ErrorCode.BACKEND_UNAVAILABLE,
+                "TripoSR checkout changed during Backend execution",
+            )
         digest = response["model_digest"]
         if not isinstance(digest, str) or len(digest) != 71 or not digest.startswith("sha256:"):
             raise PipelineError(ErrorCode.OUTPUT_INVALID, "missing TripoSR model digest")

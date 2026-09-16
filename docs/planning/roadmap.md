@@ -107,9 +107,13 @@ Phase 3 的目标是建立可复核的单 Backend 工程基线，不是对模型
 
 接入第二个 Shape Backend，并加入 Model Registry、Router 和 ResolvedPlan。两个 Backend 必须满足相同 OperatorSpec，并在同一 benchmark 上生成可比较报告。
 
+状态：已于 2026-09-16 收口。当前实现完成 Backend Registry、不可变 `ResolvedPlan`、配置驱动绑定、TRELLIS.2 与 TripoSR 两个真实 Shape Backend，以及相同飞机/自行车输入上的串行 GPU 回归。Phase 4 的 Router 范围限于显式 Backend 选择和绑定解析；自动资源调度不属于本阶段关闭条件。自动工程指标和可交互输出已经记录，人工视觉评价仍作为后续评审活动，不构成 Backend 可运行性的阻塞项。
+
 ## 6. Phase 5：扩展 QA
 
 加入 CameraRegistration、registration gate 和 render-back QA。注册失败时像素级指标为 skipped 或 warn。
+
+状态：按当前开发顺序显式延期，先进入 Phase 6。Phase 6 不得假设 CameraRegistration 或 render-back QA 已实现；依赖注册质量门槛的功能暂不接入。
 
 ## 7. Phase 6：多图与 Hybrid
 
@@ -174,6 +178,6 @@ articulation in later iterations
 
 Phase 3 已整理 13 次真实 VOC 实例运行（12 成功、1 失败）与用户选出的 4 个相对完整模型。
 [初版报告](../reports/phase3-baseline-v1.md)明确记录采样、分辨率和人工评价局限；
-[已筛选输入基线](../reports/phase3-approved-baseline-v1.md)已完成最小工程基线：3 例执行成功，人工保留飞机和自行车、淘汰瓶子；两个成功样本可作为开发回归输入。Phase 4 已完成 Registry、带契约摘要的不可变 ResolvedPlan、Pipeline 默认绑定和 BuildRun 绑定记录；当前 CLI registry 只有 TRELLIS.2，第二个 Shape Backend、Router 策略和跨 Backend 比较尚未完成。
+[已筛选输入基线](../reports/phase3-approved-baseline-v1.md)已完成最小工程基线：3 例执行成功，人工保留飞机和自行车、淘汰瓶子；两个成功样本可作为开发回归输入。Phase 4 已完成 Registry、带契约摘要的不可变 ResolvedPlan、Pipeline 默认绑定、BuildRun 绑定记录，以及 TRELLIS.2/TripoSR 的 CLI 注册和显式选择。
 
-第二个 Shape Backend 选择 TripoSR，接入边界见 [TripoSR Backend 契约](../design/triposr-backend.md)。独立进程 adapter 和 Core 契约测试已完成；独立环境、真实 GPU 验证和两个回归输入的最小比较仍待完成。完整 Router 资源策略在两个真实 Backend 均可运行后实现。
+第二个 Shape Backend 选择 TripoSR，接入边界见 [TripoSR Backend 契约](../design/triposr-backend.md)。独立环境预检、真实 GPU smoke、native frame 验证和飞机/自行车回归运行已经完成，见 [Phase 4 TripoSR 验证报告](../reports/phase4-triposr-validation-v1.md)。Phase 4 已关闭；人工视觉比较仍可继续补充，但不改变已验证的 Backend 可运行性结论。Phase 5 已显式延期，当前开始 Phase 6 的多图与 Hybrid 基础契约。

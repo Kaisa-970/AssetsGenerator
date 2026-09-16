@@ -49,11 +49,13 @@ def test_shape_registry_requires_complete_triposr_configuration() -> None:
         ]
     )
 
-    with pytest.raises(ValueError, match="requires --triposr-python and --triposr-repo"):
+    with pytest.raises(ValueError, match="requires --triposr-python, --triposr-repo"):
         _shape_registry(args)
 
 
-def test_shape_registry_registers_triposr_when_configured() -> None:
+def test_shape_registry_registers_triposr_when_configured(tmp_path) -> None:
+    evidence = tmp_path / "frame-validation.json"
+    evidence.write_text("{}")
     args = _parser().parse_args(
         [
             "build",
@@ -67,6 +69,8 @@ def test_shape_registry_registers_triposr_when_configured() -> None:
             "/env/bin/python",
             "--triposr-repo",
             "/repo/TripoSR",
+            "--triposr-frame-validation",
+            str(evidence),
             "--triposr-chunk-size",
             "4096",
             "--triposr-mc-resolution",
@@ -80,3 +84,4 @@ def test_shape_registry_registers_triposr_when_configured() -> None:
     assert isinstance(registration.implementation, TripoSRBackend)
     assert registration.implementation.chunk_size == 4096
     assert registration.implementation.mc_resolution == 128
+    assert registration.implementation.frame_validation == evidence.resolve()

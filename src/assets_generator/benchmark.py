@@ -41,6 +41,7 @@ def main() -> int:
     )
     parser.add_argument("--backend-timeout", type=float, default=1800.0)
     parser.add_argument("--triposr-timeout", type=float, default=900.0)
+    parser.add_argument("--triposr-frame-validation", type=Path)
     parser.add_argument("--triposr-chunk-size", type=int, default=8192)
     parser.add_argument("--triposr-mc-resolution", type=int, default=256)
     parser.add_argument("--triposr-foreground-ratio", type=float, default=0.85)
@@ -51,6 +52,8 @@ def main() -> int:
         return run_manifest(args)
     if not args.python or not args.repo:
         parser.error("execution requires --python and --repo")
+    if args.shape_backend == "triposr" and args.triposr_frame_validation is None:
+        parser.error("triposr requires --triposr-frame-validation")
     from .benchmark_review import execution_configuration
 
     configuration = execution_configuration(args)
@@ -65,6 +68,7 @@ def main() -> int:
             chunk_size=args.triposr_chunk_size,
             mc_resolution=args.triposr_mc_resolution,
             foreground_ratio=args.triposr_foreground_ratio,
+            frame_validation=args.triposr_frame_validation,
         )
     else:
         implementation = Trellis2Backend(

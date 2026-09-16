@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -257,17 +258,21 @@ def test_triposr_runner_import_does_not_require_model_dependencies() -> None:
     assert "ModuleNotFoundError" not in result.stderr
 
 
-def test_triposr_backend_publishes_validated_native_mesh(tmp_path, monkeypatch) -> None:
+def test_triposr_backend_publishes_validated_native_mesh(
+    tmp_path, monkeypatch, triposr_environment
+) -> None:
     store = LocalArtifactStore(tmp_path / "store")
     rgba = _rgba_artifact(store, tmp_path)
     runner = (Path(__file__).parent / "fixtures" / "triposr_path_runner.py").resolve()
+    repo, evidence = triposr_environment()
     backend = TripoSRBackend(
         Path(sys.executable),
-        tmp_path,
+        repo,
         model=tmp_path / "model",
         chunk_size=4096,
         mc_resolution=128,
         foreground_ratio=0.75,
+        frame_validation=evidence,
     )
     monkeypatch.setattr(backend, "_runner_path", lambda: runner)
 
@@ -301,7 +306,9 @@ def test_triposr_backend_publishes_validated_native_mesh(tmp_path, monkeypatch) 
     assert metadata["foreground_ratio"] == 0.75
     assert metadata["validated_vertex_count"] == 4
     assert metadata["validated_face_count"] == 4
-    assert metadata["native_frame_validation"] == "triposr-z-up-export-reload-v1"
+    assert metadata["native_frame_validation"] == "triposr-marching-cubes-glb-roundtrip-v1"
+    assert metadata["native_frame_validation_evidence_digest"].startswith("sha256:")
+    assert metadata["native_frame_backend_source_digest"].startswith("sha256:")
     assert Path(metadata["request"]["repo"]).is_absolute()
     assert Path(metadata["request"]["input_image"]).is_absolute()
     assert Path(metadata["request"]["output_glb"]).is_absolute()
@@ -310,7 +317,9 @@ def test_triposr_backend_publishes_validated_native_mesh(tmp_path, monkeypatch) 
     assert np.allclose(scene.bounds, [[0.0, 0.0, 0.0], [4.0, 2.0, 1.0]])
 
 
-def test_triposr_backend_rejects_invalid_response(tmp_path, monkeypatch) -> None:
+def test_triposr_backend_rejects_invalid_response(
+    tmp_path, monkeypatch, triposr_environment
+) -> None:
     store = LocalArtifactStore(tmp_path / "store")
     rgba = _rgba_artifact(store, tmp_path)
     runner = tmp_path / "bad_response.py"
@@ -322,7 +331,8 @@ def test_triposr_backend_rejects_invalid_response(tmp_path, monkeypatch) -> None
         "Path(sys.argv[2]).write_text(json.dumps({'backend': 'triposr'}))\n",
         encoding="utf-8",
     )
-    backend = TripoSRBackend(Path(sys.executable), tmp_path)
+    repo, evidence = triposr_environment()
+    backend = TripoSRBackend(Path(sys.executable), repo, frame_validation=evidence)
     monkeypatch.setattr(backend, "_runner_path", lambda: runner)
 
     with pytest.raises(PipelineError) as captured:
@@ -331,12 +341,15 @@ def test_triposr_backend_rejects_invalid_response(tmp_path, monkeypatch) -> None
     assert "missing fields" in str(captured.value)
 
 
-def test_triposr_backend_requires_declared_outputs(tmp_path, monkeypatch) -> None:
+def test_triposr_backend_requires_declared_outputs(
+    tmp_path, monkeypatch, triposr_environment
+) -> None:
     store = LocalArtifactStore(tmp_path / "store")
     rgba = _rgba_artifact(store, tmp_path)
     runner = tmp_path / "no_outputs.py"
     runner.write_text("pass\n", encoding="utf-8")
-    backend = TripoSRBackend(Path(sys.executable), tmp_path)
+    repo, evidence = triposr_environment()
+    backend = TripoSRBackend(Path(sys.executable), repo, frame_validation=evidence)
     monkeypatch.setattr(backend, "_runner_path", lambda: runner)
 
     with pytest.raises(PipelineError) as captured:
@@ -344,10 +357,13 @@ def test_triposr_backend_requires_declared_outputs(tmp_path, monkeypatch) -> Non
     assert captured.value.code == ErrorCode.OUTPUT_INVALID
 
 
-def test_triposr_backend_propagates_worker_failure_and_timeout(tmp_path, monkeypatch) -> None:
+def test_triposr_backend_propagates_worker_failure_and_timeout(
+    tmp_path, monkeypatch, triposr_environment
+) -> None:
     store = LocalArtifactStore(tmp_path / "store")
     rgba = _rgba_artifact(store, tmp_path)
-    backend = TripoSRBackend(Path(sys.executable), tmp_path)
+    repo, evidence = triposr_environment()
+    backend = TripoSRBackend(Path(sys.executable), repo, frame_validation=evidence)
     failed = tmp_path / "failed.py"
     failed.write_text("raise RuntimeError('fixture failure')\n", encoding="utf-8")
     monkeypatch.setattr(backend, "_runner_path", lambda: failed)
@@ -357,11 +373,111 @@ def test_triposr_backend_propagates_worker_failure_and_timeout(tmp_path, monkeyp
 
     slow = tmp_path / "slow.py"
     slow.write_text("import time; time.sleep(1)\n", encoding="utf-8")
-    backend = TripoSRBackend(Path(sys.executable), tmp_path, timeout_seconds=0.01)
+    backend = TripoSRBackend(
+        Path(sys.executable), repo, timeout_seconds=0.01, frame_validation=evidence
+    )
     monkeypatch.setattr(backend, "_runner_path", lambda: slow)
     with pytest.raises(PipelineError) as captured:
         backend.generate(store, rgba)
     assert captured.value.code == ErrorCode.BACKEND_TIMEOUT
+
+
+def test_triposr_backend_requires_frame_validation_evidence(tmp_path) -> None:
+    store = LocalArtifactStore(tmp_path / "store")
+    rgba = _rgba_artifact(store, tmp_path)
+    backend = TripoSRBackend(Path(sys.executable), tmp_path)
+
+    with pytest.raises(PipelineError, match="requires frame validation") as captured:
+        backend.generate(store, rgba)
+
+    assert captured.value.code == ErrorCode.BACKEND_UNAVAILABLE
+
+
+def test_triposr_backend_rejects_stale_frame_validation(tmp_path, triposr_environment) -> None:
+    repo, evidence = triposr_environment()
+    (repo / "fixture.py").write_text("FRAME = '-Z'\n", encoding="utf-8")
+    backend = TripoSRBackend(Path(sys.executable), repo, frame_validation=evidence)
+
+    with pytest.raises(PipelineError, match="does not match") as captured:
+        backend._frame_validation_identity()
+
+    assert captured.value.code == ErrorCode.BACKEND_UNAVAILABLE
+
+
+def test_triposr_backend_rejects_non_object_frame_validation(tmp_path, triposr_environment) -> None:
+    repo, evidence = triposr_environment()
+    evidence.write_text("[]", encoding="utf-8")
+    backend = TripoSRBackend(Path(sys.executable), repo, frame_validation=evidence)
+
+    with pytest.raises(PipelineError, match="expected a JSON object") as captured:
+        backend._frame_validation_identity()
+
+    assert captured.value.code == ErrorCode.BACKEND_UNAVAILABLE
+
+
+def test_triposr_backend_rejects_non_utf8_frame_validation(tmp_path, triposr_environment) -> None:
+    repo, evidence = triposr_environment()
+    evidence.write_bytes(b"\xff")
+    backend = TripoSRBackend(Path(sys.executable), repo, frame_validation=evidence)
+
+    with pytest.raises(PipelineError, match="invalid TripoSR frame validation") as captured:
+        backend._frame_validation_identity()
+
+    assert captured.value.code == ErrorCode.BACKEND_UNAVAILABLE
+
+
+def test_triposr_backend_rejects_environment_mismatch(
+    tmp_path, monkeypatch, triposr_environment
+) -> None:
+    repo, evidence = triposr_environment()
+    monkeypatch.setattr(
+        "assets_generator.operators.backend_environment_identity", lambda python: {"fixture": False}
+    )
+    backend = TripoSRBackend(Path(sys.executable), repo, frame_validation=evidence)
+
+    with pytest.raises(PipelineError, match="does not match") as captured:
+        backend._frame_validation_identity()
+
+    assert captured.value.code == ErrorCode.BACKEND_UNAVAILABLE
+
+
+@pytest.mark.parametrize("field", ["fixture_digest", "validator_digest"])
+def test_triposr_backend_rejects_frame_tool_mismatch(tmp_path, triposr_environment, field) -> None:
+    repo, evidence = triposr_environment()
+    content = json.loads(evidence.read_text(encoding="utf-8"))
+    content[field] = "sha256:" + "0" * 64
+    evidence.write_text(json.dumps(content), encoding="utf-8")
+    backend = TripoSRBackend(Path(sys.executable), repo, frame_validation=evidence)
+
+    with pytest.raises(PipelineError, match="does not match") as captured:
+        backend._frame_validation_identity()
+
+    assert captured.value.code == ErrorCode.BACKEND_UNAVAILABLE
+
+
+def test_triposr_backend_rejects_repo_change_during_execution(
+    tmp_path, monkeypatch, triposr_environment
+) -> None:
+    store = LocalArtifactStore(tmp_path / "store")
+    rgba = _rgba_artifact(store, tmp_path)
+    repo, evidence = triposr_environment()
+    fixture_runner = (Path(__file__).parent / "fixtures" / "triposr_path_runner.py").resolve()
+    runner = tmp_path / "changing_repo_runner.py"
+    runner.write_text(
+        "import json, runpy, sys\n"
+        "from pathlib import Path\n"
+        "request = json.loads(Path(sys.argv[1]).read_text())\n"
+        f"runpy.run_path({str(fixture_runner)!r})\n"
+        "(Path(request['repo']) / 'fixture.py').write_text(\"FRAME = '-Z'\\n\")\n",
+        encoding="utf-8",
+    )
+    backend = TripoSRBackend(Path(sys.executable), repo, frame_validation=evidence)
+    monkeypatch.setattr(backend, "_runner_path", lambda: runner)
+
+    with pytest.raises(PipelineError, match="changed during Backend execution") as captured:
+        backend.generate(store, rgba)
+
+    assert captured.value.code == ErrorCode.BACKEND_UNAVAILABLE
 
 
 def test_segmentation_backend_publishes_binary_mask_and_reuses_cache(tmp_path, monkeypatch) -> None:

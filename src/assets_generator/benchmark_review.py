@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import base64
-import hashlib
 import html
 import io
 import json
@@ -18,7 +17,9 @@ from urllib.parse import quote
 from PIL import Image
 
 from .backend_registry import BackendRegistry, resolve_plan
+from .backends.environment_identity import backend_environment_identity
 from .backends.model_identity import snapshot_digest
+from .backends.source_identity import backend_source_identity
 from .pipeline import load_default_operator_specs, load_default_pipeline
 from .serialization import canonical_json_bytes, sha256_bytes
 
@@ -31,69 +32,6 @@ def core_source_digest() -> str:
             for path in sorted(package.rglob("*.py"))
         )
     )
-
-
-def backend_source_identity(repo: Path) -> dict[str, Any]:
-    absolute = repo.expanduser().absolute()
-    try:
-        revision = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            cwd=absolute,
-            capture_output=True,
-            text=True,
-            check=True,
-        ).stdout.strip()
-        tracked_diff = subprocess.run(
-            ["git", "diff", "--binary", "HEAD"],
-            cwd=absolute,
-            capture_output=True,
-            check=True,
-        ).stdout
-        untracked = subprocess.run(
-            ["git", "ls-files", "--others", "--exclude-standard"],
-            cwd=absolute,
-            capture_output=True,
-            text=True,
-            check=True,
-        ).stdout.splitlines()
-    except (OSError, subprocess.CalledProcessError) as error:
-        raise ValueError(f"cannot identify backend repository {absolute}: {error}") from error
-    identity = hashlib.sha256()
-    identity.update(revision.encode())
-    identity.update(b"\0")
-    identity.update(tracked_diff)
-    untracked_files = []
-    source_suffixes = {
-        ".c",
-        ".cc",
-        ".cpp",
-        ".cu",
-        ".cuh",
-        ".h",
-        ".hpp",
-        ".json",
-        ".py",
-        ".sh",
-        ".toml",
-        ".txt",
-        ".yaml",
-        ".yml",
-    }
-    for relative in sorted(untracked):
-        path = absolute / relative
-        if not path.is_file() or path.suffix.lower() not in source_suffixes:
-            continue
-        content_digest = sha256_bytes(path.read_bytes())
-        untracked_files.append([relative, content_digest])
-        identity.update(relative.encode())
-        identity.update(b"\0")
-        identity.update(content_digest.encode())
-    return {
-        "path": str(absolute),
-        "revision": revision,
-        "dirty": bool(tracked_diff or untracked_files),
-        "source_digest": f"sha256:{identity.hexdigest()}",
-    }
 
 
 def resolved_plan_contract_digest(backend: str) -> str:
@@ -138,12 +76,20 @@ def execution_configuration(args: argparse.Namespace) -> dict[str, Any]:
         "parameters": parameters,
     }
     if backend == "triposr":
+        frame_validation = getattr(args, "triposr_frame_validation", None)
+        if frame_validation is None:
+            raise ValueError("triposr requires --triposr-frame-validation")
+        frame_validation_path = Path(frame_validation).expanduser().resolve()
+        frame_validation_bytes = frame_validation_path.read_bytes()
         parameters.update(
             {
                 "timeout_seconds": getattr(args, "triposr_timeout", 900.0),
                 "chunk_size": getattr(args, "triposr_chunk_size", 8192),
                 "mc_resolution": getattr(args, "triposr_mc_resolution", 256),
                 "foreground_ratio": getattr(args, "triposr_foreground_ratio", 0.85),
+                "frame_validation": str(frame_validation_path),
+                "frame_validation_digest": sha256_bytes(frame_validation_bytes),
+                "backend_environment": backend_environment_identity(Path(args.python)),
             }
         )
     else:
@@ -374,6 +320,7 @@ def run_manifest(args: argparse.Namespace) -> int:
             command.extend(["--triposr-chunk-size", str(parameters["chunk_size"])])
             command.extend(["--triposr-mc-resolution", str(parameters["mc_resolution"])])
             command.extend(["--triposr-foreground-ratio", str(parameters["foreground_ratio"])])
+            command.extend(["--triposr-frame-validation", parameters["frame_validation"]])
         else:
             command.extend(["--backend-timeout", str(parameters["timeout_seconds"])])
         with (args.output / f"case-{index:03d}.log").open("a") as log:

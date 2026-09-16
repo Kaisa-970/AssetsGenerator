@@ -53,6 +53,8 @@ packages = ["assets_generator"]
 module = [
     "assets_generator.backends.trellis2_runner",
     "assets_generator.backends.triposr_runner",
+    "assets_generator.backends.triposr_frame_fixture",
+    "assets_generator.backends.environment_identity",
     "assets_generator.backends.birefnet_runner",
 ]
 ignore_errors = true

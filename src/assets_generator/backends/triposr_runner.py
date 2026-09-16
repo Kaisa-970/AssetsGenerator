@@ -12,9 +12,13 @@ if TYPE_CHECKING:
     from PIL import Image
 
 if __package__:
+    from .environment_identity import current_environment_identity
     from .model_identity import snapshot_digest
+    from .source_identity import backend_source_identity
 else:
+    from environment_identity import current_environment_identity
     from model_identity import snapshot_digest
+    from source_identity import backend_source_identity
 
 
 def prepare_image(
@@ -48,6 +52,9 @@ def main() -> int:
     request = json.loads(request_path.read_text(encoding="utf-8"))
     repo = Path(request["repo"])
     configure_runtime_environment(request_path.parent)
+    expected_source = request["backend_source"]
+    if backend_source_identity(repo) != expected_source:
+        raise RuntimeError("TripoSR checkout changed before Backend import")
     sys.path.insert(0, str(repo))
 
     import torch
@@ -87,6 +94,9 @@ def main() -> int:
     if len(mesh.vertices) == 0 or len(mesh.faces) == 0:
         raise RuntimeError("TripoSR returned empty mesh geometry")
     mesh.export(request["output_glb"], file_type="glb")
+    source_after = backend_source_identity(repo)
+    if source_after != expected_source:
+        raise RuntimeError("TripoSR checkout changed during Backend execution")
 
     revision = subprocess.run(
         ["git", "rev-parse", "--short", "HEAD"],
@@ -119,6 +129,8 @@ def main() -> int:
                 "vertex_count": int(len(mesh.vertices)),
                 "face_count": int(len(mesh.faces)),
                 "peak_cuda_memory_mb": torch.cuda.max_memory_allocated() / 1024 / 1024,
+                "backend_environment": current_environment_identity(),
+                "backend_source": source_after,
             },
             sort_keys=True,
         ),

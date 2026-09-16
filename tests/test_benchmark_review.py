@@ -4,8 +4,8 @@ import subprocess
 
 from PIL import Image
 
+from assets_generator.backends.source_identity import backend_source_identity
 from assets_generator.benchmark_review import (
-    backend_source_identity,
     collect,
     execution_configuration,
     load_matching_report,
@@ -16,6 +16,10 @@ from assets_generator.serialization import sha256_bytes
 
 
 def _stub_execution_identity(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "assets_generator.benchmark_review.backend_environment_identity",
+        lambda python: {"fixture": True},
+    )
     monkeypatch.setattr(
         "assets_generator.benchmark_review.backend_source_identity",
         lambda repo: {
@@ -29,6 +33,12 @@ def _stub_execution_identity(monkeypatch) -> None:
         "assets_generator.benchmark_review.core_source_digest",
         lambda: "sha256:" + "b" * 64,
     )
+
+
+def _frame_validation(tmp_path):
+    evidence = tmp_path / "frame-validation.json"
+    evidence.write_text("{}")
+    return evidence
 
 
 def test_resume_checks_content_and_mode(tmp_path):
@@ -233,6 +243,7 @@ def test_resume_rejects_legacy_or_different_backend_configuration(tmp_path, monk
         mode="provided",
         shape_backend="triposr",
         model="stabilityai/TripoSR",
+        triposr_frame_validation=_frame_validation(tmp_path),
     )
     report = {
         "image_digest": sha256_bytes((tmp_path / "image.png").read_bytes()),
@@ -269,7 +280,11 @@ def test_execution_configuration_tracks_local_weights(tmp_path, monkeypatch):
     weights = model / "weights.bin"
     weights.write_bytes(b"one")
     args = argparse.Namespace(
-        shape_backend="triposr", model=str(model), python="python", repo="repo"
+        shape_backend="triposr",
+        model=str(model),
+        python="python",
+        repo="repo",
+        triposr_frame_validation=_frame_validation(tmp_path),
     )
     before = execution_configuration(args)
     weights.write_bytes(b"two")
@@ -284,6 +299,7 @@ def test_execution_configuration_tracks_backend_parameters(tmp_path, monkeypatch
         python="python",
         repo="repo",
         triposr_chunk_size=8192,
+        triposr_frame_validation=_frame_validation(tmp_path),
     )
     before = execution_configuration(args)
 
@@ -304,6 +320,7 @@ def test_execution_configuration_preserves_virtual_environment_symlink(tmp_path,
         model="stabilityai/TripoSR",
         python=venv_python,
         repo=tmp_path / "repo",
+        triposr_frame_validation=_frame_validation(tmp_path),
     )
 
     configuration = execution_configuration(args)
@@ -327,11 +344,14 @@ def test_backend_source_identity_tracks_checkout_changes(tmp_path) -> None:
     tracked = backend_source_identity(repo)
     (repo / "new.py").write_text("new")
     untracked = backend_source_identity(repo)
+    (repo / "extension.so").write_bytes(b"binary extension")
+    extension = backend_source_identity(repo)
 
     assert clean["dirty"] is False
     assert tracked["dirty"] is True
     assert tracked["source_digest"] != clean["source_digest"]
     assert untracked["source_digest"] != tracked["source_digest"]
+    assert extension["source_digest"] != untracked["source_digest"]
 
 
 def test_resume_rejects_changed_core_identity(tmp_path) -> None:
@@ -405,6 +425,8 @@ def test_benchmark_binds_selected_backend_and_records_configuration(tmp_path, mo
             "/fixture/python",
             "--repo",
             "/fixture/repo",
+            "--triposr-frame-validation",
+            str(_frame_validation(tmp_path)),
         ],
     )
     assert benchmark.main() == 1

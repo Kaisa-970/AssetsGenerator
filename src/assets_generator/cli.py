@@ -46,6 +46,7 @@ def _parser() -> argparse.ArgumentParser:
     build.add_argument("--triposr-python", type=Path)
     build.add_argument("--triposr-repo", type=Path)
     build.add_argument("--triposr-model", default="stabilityai/TripoSR")
+    build.add_argument("--triposr-frame-validation", type=Path)
     build.add_argument("--triposr-timeout", type=float, default=900.0)
     build.add_argument("--triposr-chunk-size", type=int, default=8192)
     build.add_argument("--triposr-mc-resolution", type=int, default=256)
@@ -89,10 +90,15 @@ def _shape_registry(args: argparse.Namespace) -> BackendRegistry:
                 chunk_size=args.triposr_chunk_size,
                 mc_resolution=args.triposr_mc_resolution,
                 foreground_ratio=args.triposr_foreground_ratio,
+                frame_validation=args.triposr_frame_validation,
             ),
         )
-    if args.shape_backend == "triposr" and not triposr_configured:
-        raise ValueError("triposr requires --triposr-python and --triposr-repo")
+    if args.shape_backend == "triposr" and (
+        not triposr_configured or args.triposr_frame_validation is None
+    ):
+        raise ValueError(
+            "triposr requires --triposr-python, --triposr-repo, and --triposr-frame-validation"
+        )
     if (args.triposr_python is None) != (args.triposr_repo is None):
         raise ValueError("--triposr-python and --triposr-repo must be provided together")
     return registry

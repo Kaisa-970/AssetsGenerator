@@ -48,7 +48,7 @@ Single RGB
 - BuildRun 记录实际使用的节点 Backend 绑定
 - 原子 AssetRelease 目录发布和 manifest identity 防篡改校验
 
-当前实现包含 `trellis2` 和 `triposr` 两个 Shape Backend adapter。TripoSR 已通过隔离进程与 fixture 契约测试，但尚未完成独立环境和真实 GPU 验证；Router 资源策略和跨 Backend 比较报告尚未实现。
+当前实现包含 `trellis2` 和 `triposr` 两个 Shape Backend。TripoSR 已完成独立环境预检、真实 GPU smoke、native frame 验证及飞机/自行车回归运行；自动 QA 与运行证据见 Phase 4 报告。Router 资源策略和人工视觉比较结论尚未完成。
 
 安装开发环境并检查固定 Pipeline：
 
@@ -71,7 +71,7 @@ python3 -m venv .venv
 `/home/ypkwsl/DevTools/miniconda3/envs/TRELLTS/bin/python` 启动独立进程。可使用
 `--trellis-repo`、`--trellis-python` 和 `--trellis-model` 覆盖这些位置。Pipeline 默认将
 `generate_shape` 绑定到 `trellis2`。配置 TripoSR 后，可显式传入
-`--shape-backend triposr --triposr-python /path/to/python --triposr-repo /path/to/TripoSR`；
+`--shape-backend triposr --triposr-python /path/to/python --triposr-repo /path/to/TripoSR --triposr-frame-validation /path/to/triposr-frame-validation.json`；
 模型、超时、chunk size、marching-cubes resolution 和 foreground ratio 有独立参数。传入
 `--mask /path/to/mask.png` 时直接复用该 mask；省略时，通过 `--segmentation-python`
 指定的隔离环境运行 BiRefNet_lite。分割阈值和超时分别由
