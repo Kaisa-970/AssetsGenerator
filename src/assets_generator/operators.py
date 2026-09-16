@@ -13,6 +13,7 @@ import trimesh
 from PIL import Image
 
 from .artifact_store import ArtifactStoreError, LocalArtifactStore
+from .backends.model_identity import snapshot_state
 from .errors import ErrorCode, PipelineError
 from .models import (
     SCHEMA_VERSION,
@@ -261,26 +262,22 @@ class BiRefNetSegmentationBackend:
         self.timeout_seconds = timeout_seconds
         self.worker = worker or LocalProcessWorker()
         self._cached_model_identity: str | None = None
+        self._identity_binding: tuple[str, str, str, str] | None = None
+        self._snapshot_path: Path | None = None
+        self._snapshot_state: list[list[str | int]] | None = None
 
     def _runner_path(self) -> Path:
         return (Path(__file__).parent / "backends" / "birefnet_runner.py").resolve()
 
     def _model_cache_identity(self) -> str:
-        path = Path(self.MODEL_ID).expanduser()
-        signature = (
-            tuple(
-                (p.as_posix(), p.stat().st_mtime_ns, p.stat().st_size)
-                for p in sorted(path.rglob("*"))
-                if p.is_file()
-            )
-            if path.is_dir()
-            else None
-        )
-        if (
-            self._cached_model_identity is not None
-            and getattr(self, "_model_signature", None) == signature
-        ):
-            return self._cached_model_identity
+        binding = (self.MODEL_ID, self.MODEL_REVISION, str(self.python), str(self._runner_path()))
+        if self._snapshot_path is not None and self._identity_binding == binding:
+            try:
+                unchanged = snapshot_state(self._snapshot_path) == self._snapshot_state
+            except (OSError, ValueError):
+                unchanged = False
+            if unchanged and self._cached_model_identity is not None:
+                return self._cached_model_identity
         with tempfile.TemporaryDirectory(prefix="birefnet-identity-") as temporary:
             work = Path(temporary)
             request = work / "request.json"
@@ -303,11 +300,15 @@ class BiRefNetSegmentationBackend:
                     uuid.uuid4().hex,
                 )
             )
-            digest = json.loads(response.read_text(encoding="utf-8")).get("model_digest")
+            identity_response = json.loads(response.read_text(encoding="utf-8"))
+            digest = identity_response.get("model_digest")
             if not isinstance(digest, str) or not digest.startswith("sha256:"):
                 raise PipelineError(ErrorCode.OUTPUT_INVALID, "missing model digest")
             self._cached_model_identity = digest
-            self._model_signature = signature
+            snapshot = identity_response.get("snapshot_path")
+            self._snapshot_path = Path(snapshot) if snapshot else None
+            self._snapshot_state = identity_response.get("snapshot_state")
+            self._identity_binding = binding
             return digest
 
     def segment(self, store: LocalArtifactStore, image: ArtifactRef) -> SegmentationOutput:

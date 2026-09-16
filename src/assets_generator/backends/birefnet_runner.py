@@ -6,8 +6,10 @@ from pathlib import Path
 
 if __package__:
     from .model_identity import snapshot_digest as _snapshot_digest
+    from .model_identity import snapshot_state
 else:
     from model_identity import snapshot_digest as _snapshot_digest
+    from model_identity import snapshot_state
 
 
 def main() -> int:
@@ -27,9 +29,21 @@ def main() -> int:
             snapshot_download(request["model"], revision=request["revision"], local_files_only=True)
         )
     )
+    before = snapshot_state(snapshot)
     digest = _snapshot_digest(snapshot)
+    if before != snapshot_state(snapshot):
+        raise RuntimeError("model changed while computing identity")
     if request.get("action") == "identity":
-        response_path.write_text(json.dumps({"model_digest": digest}), encoding="utf-8")
+        response_path.write_text(
+            json.dumps(
+                {
+                    "model_digest": digest,
+                    "snapshot_path": str(snapshot.absolute()),
+                    "snapshot_state": before,
+                }
+            ),
+            encoding="utf-8",
+        )
         return 0
     if request.get("expected_model_digest") != digest:
         raise RuntimeError("model snapshot changed after cache lookup")

@@ -4,8 +4,8 @@ import hashlib
 from pathlib import Path
 
 
-def snapshot_digest(snapshot: Path) -> str:
-    ignored = {"cache", "caches", "logs", "log", "tmp", "temp", "__pycache__"}
+def snapshot_files(snapshot: Path) -> list[Path]:
+    ignored = {"cache", "caches", "logs", "log", "tmp", "temp", "__pycache__", ".cache", ".git"}
     files = sorted(
         p
         for p in snapshot.rglob("*")
@@ -14,6 +14,29 @@ def snapshot_digest(snapshot: Path) -> str:
     )
     if not files:
         raise ValueError(f"empty model snapshot: {snapshot}")
+    return files
+
+
+def snapshot_state(snapshot: Path) -> list[list[str | int]]:
+    result: list[list[str | int]] = []
+    for path in snapshot_files(snapshot):
+        stat = path.stat()
+        result.append(
+            [
+                path.relative_to(snapshot).as_posix(),
+                str(path.resolve()),
+                stat.st_dev,
+                stat.st_ino,
+                stat.st_size,
+                stat.st_mtime_ns,
+                stat.st_ctime_ns,
+            ]
+        )
+    return result
+
+
+def snapshot_digest(snapshot: Path) -> str:
+    files = snapshot_files(snapshot)
     identity = hashlib.sha256()
     for path in files:
         content = hashlib.sha256()
