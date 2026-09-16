@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -51,3 +52,21 @@ def test_remote_identity_cache_tracks_resolved_snapshot(tmp_path, monkeypatch):
     backend.MODEL_REVISION = "changed"
     backend._model_cache_identity()
     assert len(calls) == 3
+
+
+def test_local_runner_identity_does_not_import_huggingface(tmp_path):
+    model = tmp_path / "model"
+    model.mkdir()
+    (model / "weights.bin").write_bytes(b"weights")
+    request = tmp_path / "request.json"
+    response = tmp_path / "response.json"
+    request.write_text(json.dumps({"action": "identity", "model": str(model)}))
+    runner = Path(__file__).parents[1] / "src/assets_generator/backends/birefnet_runner.py"
+    result = subprocess.run(
+        [sys.executable, str(runner), str(request), str(response)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0
+    assert json.loads(response.read_text())["model_digest"].startswith("sha256:")

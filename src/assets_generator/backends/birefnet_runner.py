@@ -19,16 +19,15 @@ def main() -> int:
     response_path = Path(sys.argv[2])
     request = json.loads(request_path.read_text(encoding="utf-8"))
 
-    from huggingface_hub import snapshot_download
-
     local = Path(request["model"])
-    snapshot = (
-        local
-        if local.is_dir()
-        else Path(
+    if local.is_dir():
+        snapshot = local
+    else:
+        from huggingface_hub import snapshot_download
+
+        snapshot = Path(
             snapshot_download(request["model"], revision=request["revision"], local_files_only=True)
         )
-    )
     before = snapshot_state(snapshot)
     digest = _snapshot_digest(snapshot)
     if before != snapshot_state(snapshot):
