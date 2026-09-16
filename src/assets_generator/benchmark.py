@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Any
@@ -19,12 +20,49 @@ from .workflow import build_image_asset
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--image", type=Path, required=True)
+    inputs = parser.add_mutually_exclusive_group(required=True)
+    inputs.add_argument("--image", type=Path)
+    inputs.add_argument("--manifest", type=Path)
+    parser.add_argument("--mode", choices=["both", "provided", "automatic"], default="both")
     parser.add_argument("--mask", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--python", type=Path, required=True)
     parser.add_argument("--repo", type=Path, required=True)
     args = parser.parse_args()
+    if args.manifest:
+        cases = json.loads(args.manifest.read_text())["cases"]
+        args.output.mkdir(parents=True, exist_ok=False)
+        summary = []
+        for index, case in enumerate(cases):
+            destination = args.output / f"case-{index:03d}"
+            command = [
+                sys.executable,
+                "-m",
+                "assets_generator.benchmark",
+                "--image",
+                str((args.manifest.parent / case["image"]).resolve()),
+                "--mask",
+                str((args.manifest.parent / case["mask"]).resolve()),
+                "--output",
+                str(destination),
+                "--python",
+                str(args.python),
+                "--repo",
+                str(args.repo),
+                "--mode",
+                args.mode,
+            ]
+            with (args.output / f"case-{index:03d}.log").open("w") as log:
+                process = subprocess.run(command, stdout=log, stderr=log, check=False)
+            summary.append(
+                {
+                    "id": case["id"],
+                    "returncode": process.returncode,
+                    "report": str(destination / "report.json"),
+                }
+            )
+            (args.output / "summary.json").write_text(json.dumps(summary, indent=2))
+        return int(any(row["returncode"] for row in summary))
     args.output.mkdir(parents=True, exist_ok=False)
     rows: list[dict[str, Any]] = []
     hardware = subprocess.run(
@@ -39,7 +77,12 @@ def main() -> int:
             for path in sorted(Path(__file__).parent.rglob("*.py"))
         )
     )
-    for mode in ["provided", "automatic"] if args.mask else ["automatic"]:
+    modes = ["provided", "automatic"] if args.mask else ["automatic"]
+    if args.mode != "both":
+        modes = [args.mode]
+    if "provided" in modes and not args.mask:
+        parser.error("provided mode requires --mask")
+    for mode in modes:
         started = time.monotonic()
         store_path = args.output / mode / "store"
         row: dict[str, Any] = {"mode": mode, "seed": 42, "pipeline_type": "512"}
