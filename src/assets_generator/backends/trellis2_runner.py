@@ -30,6 +30,7 @@ def main() -> int:
 
     if not torch.cuda.is_available():
         raise RuntimeError("TRELLIS.2 requires an accessible CUDA GPU")
+    torch.cuda.reset_peak_memory_stats()
     pipeline = Trellis2ImageTo3DPipeline.from_pretrained(request["model"])
     pipeline.cuda()
     image = Image.open(request["input_image"]).convert("RGBA")
@@ -86,6 +87,7 @@ def main() -> int:
                 "pipeline_type": request["pipeline_type"],
                 "vertex_count": int(mesh.vertices.shape[0]),
                 "face_count": int(mesh.faces.shape[0]),
+                "peak_cuda_memory_mb": torch.cuda.max_memory_allocated() / 1024 / 1024,
             },
             sort_keys=True,
         ),

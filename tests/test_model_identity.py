@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -18,7 +19,7 @@ def test_model_digest_tracks_weights_but_ignores_runtime_files(tmp_path):
     (tmp_path / "logs" / "run.txt").write_text("runtime")
     assert snapshot_digest(tmp_path) == before
     assert snapshot_state(tmp_path) == state
-    weights.write_bytes(b"other-content")
+    weights.write_bytes(b"other")
     assert snapshot_digest(tmp_path) != before
 
 
@@ -46,7 +47,9 @@ def test_remote_identity_cache_tracks_resolved_snapshot(tmp_path, monkeypatch):
     first = backend._model_cache_identity()
     assert backend._model_cache_identity() == first
     assert len(calls) == 1
-    weight.write_bytes(b"other-content")
+    stamp = weight.stat()
+    weight.write_bytes(b"other")
+    os.utime(weight, ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
     assert backend._model_cache_identity() != first
     assert len(calls) == 2
     backend.MODEL_REVISION = "changed"
@@ -63,7 +66,7 @@ def test_local_runner_identity_does_not_import_huggingface(tmp_path):
     request.write_text(json.dumps({"action": "identity", "model": str(model)}))
     runner = Path(__file__).parents[1] / "src/assets_generator/backends/birefnet_runner.py"
     result = subprocess.run(
-        [sys.executable, str(runner), str(request), str(response)],
+        [sys.executable, "-S", str(runner), str(request), str(response)],
         check=True,
         capture_output=True,
         text=True,

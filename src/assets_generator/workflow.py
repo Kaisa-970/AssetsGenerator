@@ -242,7 +242,12 @@ def build_image_asset(
                 operator="segmentation",
                 backend=str(resolved_mask.backend_metadata["backend"]),
                 backend_version=str(resolved_mask.backend_metadata["backend_version"]),
-                parameters={"threshold": resolved_mask.result.value.get("threshold")},
+                parameters={
+                    "threshold": resolved_mask.result.value.get("threshold"),
+                    "peak_cuda_memory_mb": resolved_mask.backend_metadata.get(
+                        "peak_cuda_memory_mb"
+                    ),
+                },
                 seed=None,
                 source="user" if provided_mask_ref is not None else "generated",
                 model_digest=resolved_mask.backend_metadata.get("model_digest"),
@@ -306,7 +311,10 @@ def build_image_asset(
                 operator="shape_generation",
                 backend="trellis2",
                 backend_version=str(generated.backend_metadata["backend_version"]),
-                parameters={"pipeline_type": pipeline_type},
+                parameters={
+                    "pipeline_type": pipeline_type,
+                    "peak_cuda_memory_mb": generated.backend_metadata.get("peak_cuda_memory_mb"),
+                },
                 seed=seed,
                 source="generated",
                 model_digest=generated.backend_metadata.get("model_digest"),

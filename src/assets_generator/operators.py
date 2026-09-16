@@ -13,7 +13,7 @@ import trimesh
 from PIL import Image
 
 from .artifact_store import ArtifactStoreError, LocalArtifactStore
-from .backends.model_identity import snapshot_state
+from .backends.model_identity import snapshot_digest, snapshot_state
 from .errors import ErrorCode, PipelineError
 from .models import (
     SCHEMA_VERSION,
@@ -277,7 +277,9 @@ class BiRefNetSegmentationBackend:
             except (OSError, ValueError):
                 unchanged = False
             if unchanged and self._cached_model_identity is not None:
-                return self._cached_model_identity
+                # File timestamps can be coarse or preserved during weight replacement.
+                if snapshot_digest(self._snapshot_path) == self._cached_model_identity:
+                    return self._cached_model_identity
         with tempfile.TemporaryDirectory(prefix="birefnet-identity-") as temporary:
             work = Path(temporary)
             request = work / "request.json"
