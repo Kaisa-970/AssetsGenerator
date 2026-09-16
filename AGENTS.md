@@ -4,6 +4,7 @@
 
 - `AssetsGenerator / Real-to-Sim Asset Compiler` 将现实观测编译为可追溯、可校验的结构化 3D 资产。
 - 当前进入 Phase 4：在既有单图 vertical slice 和 Phase 3 基线之上，实现 Backend registry、`ResolvedPlan`、配置驱动的 Backend 绑定和第二个 Shape Backend。
+- 第二个 Shape Backend 已选定为 TripoSR；实现必须遵守 `docs/design/triposr-backend.md`，并使用独立环境。真实 GPU 验证前不得声称 Backend 可用。
 - 当前不要扩展与 Backend 可替换性无关的 Router 策略、分布式调度、完整 FrameGraph、通用 schema migration 或其他平台能力。
 - 主要目录：源码 `src/assets_generator/`，测试 `tests/`，Pipeline 配置 `pipelines/`，文档 `docs/`。
 

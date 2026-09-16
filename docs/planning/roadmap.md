@@ -175,3 +175,5 @@ articulation in later iterations
 Phase 3 已整理 13 次真实 VOC 实例运行（12 成功、1 失败）与用户选出的 4 个相对完整模型。
 [初版报告](../reports/phase3-baseline-v1.md)明确记录采样、分辨率和人工评价局限；
 [已筛选输入基线](../reports/phase3-approved-baseline-v1.md)已完成最小工程基线：3 例执行成功，人工保留飞机和自行车、淘汰瓶子；两个成功样本可作为开发回归输入。Phase 4 已完成 Registry、带契约摘要的不可变 ResolvedPlan、Pipeline 默认绑定和 BuildRun 绑定记录；当前 CLI registry 只有 TRELLIS.2，第二个 Shape Backend、Router 策略和跨 Backend 比较尚未完成。
+
+第二个 Shape Backend 选择 TripoSR，接入边界见 [TripoSR Backend 契约](../design/triposr-backend.md)。先完成独立进程 adapter、环境验证和两个回归输入的最小比较；完整 Router 资源策略在两个真实 Backend 均可运行后实现。

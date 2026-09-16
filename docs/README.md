@@ -6,6 +6,7 @@
 - [资产 IR 与身份](design/asset-ir.md)
 - [坐标系与空间转换](design/coordinate-system.md)
 - [Pipeline、Operator 与 Backend 契约](design/pipeline-contract.md)
+- [TripoSR Shape Backend 接入契约](design/triposr-backend.md)
 - [Artifact Store](design/artifact-store.md)
 - [质量验证与评测](design/evaluation.md)
 

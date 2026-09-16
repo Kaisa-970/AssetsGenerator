@@ -22,6 +22,7 @@ Single RGB
 - [Asset IR](docs/design/asset-ir.md)
 - [Coordinate System](docs/design/coordinate-system.md)
 - [Pipeline Contract](docs/design/pipeline-contract.md)
+- [TripoSR Backend Contract](docs/design/triposr-backend.md)
 - [Artifact Store](docs/design/artifact-store.md)
 - [Evaluation](docs/design/evaluation.md)
 - [Roadmap](docs/planning/roadmap.md)
