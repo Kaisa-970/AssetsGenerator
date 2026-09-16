@@ -241,6 +241,209 @@ class Trellis2Backend:
         )
 
 
+class TripoSRBackend:
+    def __init__(
+        self,
+        python: Path,
+        repo: Path,
+        model: str | Path = "stabilityai/TripoSR",
+        *,
+        timeout_seconds: float = 900.0,
+        chunk_size: int = 8192,
+        mc_resolution: int = 256,
+        foreground_ratio: float = 0.85,
+        worker: LocalProcessWorker | None = None,
+    ) -> None:
+        if timeout_seconds <= 0:
+            raise ValueError("timeout_seconds must be positive")
+        if chunk_size <= 0:
+            raise ValueError("chunk_size must be positive")
+        if mc_resolution <= 0:
+            raise ValueError("mc_resolution must be positive")
+        if not 0 < foreground_ratio <= 1:
+            raise ValueError("foreground_ratio must be in (0, 1]")
+        self.python = python.expanduser().absolute()
+        self.repo = repo.expanduser().resolve()
+        if isinstance(model, Path):
+            self.model = str(model.expanduser().resolve())
+        else:
+            local_model = Path(model).expanduser()
+            self.model = str(local_model.resolve()) if local_model.is_dir() else model
+        self.timeout_seconds = timeout_seconds
+        self.chunk_size = chunk_size
+        self.mc_resolution = mc_resolution
+        self.foreground_ratio = foreground_ratio
+        self.worker = worker or LocalProcessWorker()
+
+    def _runner_path(self) -> Path:
+        return (Path(__file__).parent / "backends" / "triposr_runner.py").resolve()
+
+    def generate(
+        self,
+        store: LocalArtifactStore,
+        rgba: ArtifactRef,
+        *,
+        seed: int = 42,
+        pipeline_type: str = "512",
+        decimation_target: int = 300_000,
+        texture_size: int = 2048,
+    ) -> ShapeOutput:
+        del decimation_target, texture_size
+        with tempfile.TemporaryDirectory(prefix="triposr-", dir=store.root) as temporary:
+            work = Path(temporary).resolve()
+            request_path = work / "request.json"
+            response_path = work / "response.json"
+            output_path = work / "native.glb"
+            request = {
+                "repo": str(self.repo),
+                "model": self.model,
+                "input_image": str(store.blob_path(rgba).resolve()),
+                "output_glb": str(output_path),
+                "seed": seed,
+                "pipeline_type": pipeline_type,
+                "chunk_size": self.chunk_size,
+                "mc_resolution": self.mc_resolution,
+                "foreground_ratio": self.foreground_ratio,
+            }
+            request_path.write_text(json.dumps(request), encoding="utf-8")
+            job = self.worker.run(
+                ProcessJobRequest(
+                    [
+                        str(self.python),
+                        str(self._runner_path()),
+                        str(request_path),
+                        str(response_path),
+                    ],
+                    self.repo,
+                    self.timeout_seconds,
+                    request_path.resolve().as_uri(),
+                )
+            )
+            if not response_path.is_file() or not output_path.is_file():
+                raise PipelineError(
+                    ErrorCode.OUTPUT_INVALID,
+                    "TripoSR backend did not produce its declared outputs",
+                )
+            try:
+                response = json.loads(response_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as error:
+                raise PipelineError(
+                    ErrorCode.OUTPUT_INVALID, f"invalid TripoSR response: {error}"
+                ) from error
+            self._validate_response(response, request)
+            try:
+                glb = output_path.read_bytes()
+                scene = _load_scene(glb)
+                vertices = _scene_vertices(scene)
+                face_count = sum(len(geometry.faces) for geometry in scene.geometry.values())
+            except (OSError, ValueError, TypeError, OperatorExecutionError) as error:
+                raise PipelineError(
+                    ErrorCode.OUTPUT_INVALID, f"invalid TripoSR GLB: {error}"
+                ) from error
+            if face_count <= 0 or not np.isfinite(vertices).all():
+                raise PipelineError(ErrorCode.OUTPUT_INVALID, "TripoSR GLB has invalid geometry")
+            if response["vertex_count"] != len(vertices) or response["face_count"] != face_count:
+                raise PipelineError(
+                    ErrorCode.OUTPUT_INVALID,
+                    "TripoSR geometry statistics do not match the exported GLB",
+                )
+            response["worker_job_id"] = job.job_id
+            response["validated_vertex_count"] = int(len(vertices))
+            response["validated_face_count"] = int(face_count)
+            response["native_frame_validation"] = "triposr-z-up-export-reload-v1"
+            mesh = store.persist_bytes(
+                glb,
+                kind="triangle_mesh",
+                schema_name="glTF",
+                schema_version="2.0",
+                identity_metadata={
+                    "media_type": "model/gltf-binary",
+                    "frame_id": "triposr_glb_native",
+                    "unit": "relative_unit",
+                    "up_axis": "+Z",
+                    "forward_axis": None,
+                },
+            )
+        native_frame = BackendNativeFrame(
+            "triposr_glb_native", "right", "+Z", None, "unknown", "relative_unit"
+        )
+        material = PBRMaterial([1.0, 1.0, 1.0, 1.0], alpha_mode="OPAQUE")
+        return ShapeOutput(
+            mesh,
+            StructuredValue("pbr_material", "PBRMaterial", SCHEMA_VERSION, to_primitive(material)),
+            StructuredValue(
+                "backend_native_frame",
+                "BackendNativeFrame",
+                SCHEMA_VERSION,
+                to_primitive(native_frame),
+            ),
+            response,
+        )
+
+    @staticmethod
+    def _validate_response(response: Any, request: dict[str, Any]) -> None:
+        if not isinstance(response, dict):
+            raise PipelineError(ErrorCode.OUTPUT_INVALID, "TripoSR response must be an object")
+        required = {
+            "backend",
+            "backend_version",
+            "model",
+            "model_digest",
+            "seed",
+            "seed_effective",
+            "pipeline_type",
+            "pipeline_type_effective",
+            "chunk_size",
+            "mc_resolution",
+            "foreground_ratio",
+            "vertex_count",
+            "face_count",
+            "peak_cuda_memory_mb",
+        }
+        missing = sorted(required - response.keys())
+        if missing:
+            raise PipelineError(
+                ErrorCode.OUTPUT_INVALID,
+                f"TripoSR response missing fields: {', '.join(missing)}",
+            )
+        if response["backend"] != "triposr":
+            raise PipelineError(ErrorCode.OUTPUT_INVALID, "unexpected TripoSR backend identity")
+        if not isinstance(response["backend_version"], str) or not response["backend_version"]:
+            raise PipelineError(ErrorCode.OUTPUT_INVALID, "missing TripoSR backend version")
+        digest = response["model_digest"]
+        if not isinstance(digest, str) or len(digest) != 71 or not digest.startswith("sha256:"):
+            raise PipelineError(ErrorCode.OUTPUT_INVALID, "missing TripoSR model digest")
+        try:
+            int(digest.removeprefix("sha256:"), 16)
+        except ValueError as error:
+            raise PipelineError(ErrorCode.OUTPUT_INVALID, "invalid TripoSR model digest") from error
+        for field in ("model", "seed", "pipeline_type", "chunk_size", "mc_resolution"):
+            if response[field] != request[field]:
+                raise PipelineError(
+                    ErrorCode.OUTPUT_INVALID, f"TripoSR response changed request field: {field}"
+                )
+        if response["seed_effective"] is not False:
+            raise PipelineError(
+                ErrorCode.OUTPUT_INVALID, "TripoSR seed must be declared ineffective"
+            )
+        if response["pipeline_type_effective"] is not False:
+            raise PipelineError(
+                ErrorCode.OUTPUT_INVALID, "TripoSR pipeline_type must be declared ineffective"
+            )
+        if not isinstance(response["foreground_ratio"], (int, float)) or not np.isclose(
+            response["foreground_ratio"], request["foreground_ratio"]
+        ):
+            raise PipelineError(
+                ErrorCode.OUTPUT_INVALID, "TripoSR response changed foreground_ratio"
+            )
+        for field in ("vertex_count", "face_count"):
+            if not isinstance(response[field], int) or response[field] <= 0:
+                raise PipelineError(ErrorCode.OUTPUT_INVALID, f"invalid TripoSR {field}")
+        peak = response["peak_cuda_memory_mb"]
+        if not isinstance(peak, (int, float)) or peak < 0:
+            raise PipelineError(ErrorCode.OUTPUT_INVALID, "invalid TripoSR peak_cuda_memory_mb")
+
+
 class BiRefNetSegmentationBackend:
     MODEL_ID = "ZhengPeng7/BiRefNet_lite"
     MODEL_REVISION = "aa62cd87eafb9cc43056d08ef3615a14628b831d"

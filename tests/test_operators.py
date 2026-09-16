@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import subprocess
 import sys
 from pathlib import Path
 
@@ -20,6 +21,7 @@ from assets_generator.models import (
 from assets_generator.operators import (
     BiRefNetSegmentationBackend,
     Trellis2Backend,
+    TripoSRBackend,
     canonicalize_glb,
     validate_geometry,
 )
@@ -193,6 +195,150 @@ def test_backend_timeout_is_reported(tmp_path, monkeypatch) -> None:
     runner.write_text("import time; time.sleep(1)\n", encoding="utf-8")
     monkeypatch.setattr(backend, "_runner_path", lambda: runner)
 
+    with pytest.raises(PipelineError) as captured:
+        backend.generate(store, rgba)
+    assert captured.value.code == ErrorCode.BACKEND_TIMEOUT
+
+
+def _rgba_artifact(store: LocalArtifactStore, tmp_path: Path) -> ArtifactRef:
+    image_path = tmp_path / "rgba.png"
+    Image.new("RGBA", (8, 8), (20, 40, 60, 0)).save(image_path)
+    return store.persist_bytes(
+        image_path.read_bytes(),
+        kind="rgba_image",
+        schema_name="png",
+        schema_version="1.0",
+    )
+
+
+def test_triposr_backend_validates_configuration(tmp_path) -> None:
+    with pytest.raises(ValueError, match="timeout_seconds"):
+        TripoSRBackend(Path(sys.executable), tmp_path, timeout_seconds=0)
+    with pytest.raises(ValueError, match="chunk_size"):
+        TripoSRBackend(Path(sys.executable), tmp_path, chunk_size=0)
+    with pytest.raises(ValueError, match="mc_resolution"):
+        TripoSRBackend(Path(sys.executable), tmp_path, mc_resolution=0)
+    with pytest.raises(ValueError, match="foreground_ratio"):
+        TripoSRBackend(Path(sys.executable), tmp_path, foreground_ratio=0)
+    with pytest.raises(ValueError, match="foreground_ratio"):
+        TripoSRBackend(Path(sys.executable), tmp_path, foreground_ratio=1.01)
+
+
+def test_triposr_runner_import_does_not_require_model_dependencies() -> None:
+    runner = Path(__file__).parents[1] / "src/assets_generator/backends/triposr_runner.py"
+    result = subprocess.run(
+        [sys.executable, "-S", str(runner)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert "usage: triposr_runner.py" in result.stderr
+    assert "ModuleNotFoundError" not in result.stderr
+
+
+def test_triposr_backend_publishes_validated_native_mesh(tmp_path, monkeypatch) -> None:
+    store = LocalArtifactStore(tmp_path / "store")
+    rgba = _rgba_artifact(store, tmp_path)
+    runner = (Path(__file__).parent / "fixtures" / "triposr_path_runner.py").resolve()
+    backend = TripoSRBackend(
+        Path(sys.executable),
+        tmp_path,
+        model=tmp_path / "model",
+        chunk_size=4096,
+        mc_resolution=128,
+        foreground_ratio=0.75,
+    )
+    monkeypatch.setattr(backend, "_runner_path", lambda: runner)
+
+    result = backend.generate(store, rgba, seed=17, pipeline_type="1024")
+
+    manifest = store.get_manifest(result.mesh.artifact_id)
+    assert manifest.identity.kind == "triangle_mesh"
+    assert manifest.identity.identity_metadata == {
+        "media_type": "model/gltf-binary",
+        "frame_id": "triposr_glb_native",
+        "unit": "relative_unit",
+        "up_axis": "+Z",
+        "forward_axis": None,
+    }
+    assert result.native_frame.value == {
+        "frame_id": "triposr_glb_native",
+        "handedness": "right",
+        "up_axis": "+Z",
+        "forward_axis": None,
+        "forward_status": "unknown",
+        "unit": "relative_unit",
+    }
+    assert result.material.value["base_color_factor"] == [1.0, 1.0, 1.0, 1.0]
+    metadata = result.backend_metadata
+    assert metadata["seed"] == 17
+    assert metadata["seed_effective"] is False
+    assert metadata["pipeline_type"] == "1024"
+    assert metadata["pipeline_type_effective"] is False
+    assert metadata["chunk_size"] == 4096
+    assert metadata["mc_resolution"] == 128
+    assert metadata["foreground_ratio"] == 0.75
+    assert metadata["validated_vertex_count"] == 4
+    assert metadata["validated_face_count"] == 4
+    assert metadata["native_frame_validation"] == "triposr-z-up-export-reload-v1"
+    assert Path(metadata["request"]["repo"]).is_absolute()
+    assert Path(metadata["request"]["input_image"]).is_absolute()
+    assert Path(metadata["request"]["output_glb"]).is_absolute()
+    scene = trimesh.load(store.blob_path(result.mesh), file_type="glb", force="scene")
+    assert isinstance(scene, trimesh.Scene)
+    assert np.allclose(scene.bounds, [[0.0, 0.0, 0.0], [4.0, 2.0, 1.0]])
+
+
+def test_triposr_backend_rejects_invalid_response(tmp_path, monkeypatch) -> None:
+    store = LocalArtifactStore(tmp_path / "store")
+    rgba = _rgba_artifact(store, tmp_path)
+    runner = tmp_path / "bad_response.py"
+    runner.write_text(
+        "from pathlib import Path\n"
+        "import json, sys, trimesh\n"
+        "request = json.loads(Path(sys.argv[1]).read_text())\n"
+        "trimesh.creation.box().export(request['output_glb'])\n"
+        "Path(sys.argv[2]).write_text(json.dumps({'backend': 'triposr'}))\n",
+        encoding="utf-8",
+    )
+    backend = TripoSRBackend(Path(sys.executable), tmp_path)
+    monkeypatch.setattr(backend, "_runner_path", lambda: runner)
+
+    with pytest.raises(PipelineError) as captured:
+        backend.generate(store, rgba)
+    assert captured.value.code == ErrorCode.OUTPUT_INVALID
+    assert "missing fields" in str(captured.value)
+
+
+def test_triposr_backend_requires_declared_outputs(tmp_path, monkeypatch) -> None:
+    store = LocalArtifactStore(tmp_path / "store")
+    rgba = _rgba_artifact(store, tmp_path)
+    runner = tmp_path / "no_outputs.py"
+    runner.write_text("pass\n", encoding="utf-8")
+    backend = TripoSRBackend(Path(sys.executable), tmp_path)
+    monkeypatch.setattr(backend, "_runner_path", lambda: runner)
+
+    with pytest.raises(PipelineError) as captured:
+        backend.generate(store, rgba)
+    assert captured.value.code == ErrorCode.OUTPUT_INVALID
+
+
+def test_triposr_backend_propagates_worker_failure_and_timeout(tmp_path, monkeypatch) -> None:
+    store = LocalArtifactStore(tmp_path / "store")
+    rgba = _rgba_artifact(store, tmp_path)
+    backend = TripoSRBackend(Path(sys.executable), tmp_path)
+    failed = tmp_path / "failed.py"
+    failed.write_text("raise RuntimeError('fixture failure')\n", encoding="utf-8")
+    monkeypatch.setattr(backend, "_runner_path", lambda: failed)
+    with pytest.raises(PipelineError) as captured:
+        backend.generate(store, rgba)
+    assert captured.value.code == ErrorCode.BACKEND_FAILED
+
+    slow = tmp_path / "slow.py"
+    slow.write_text("import time; time.sleep(1)\n", encoding="utf-8")
+    backend = TripoSRBackend(Path(sys.executable), tmp_path, timeout_seconds=0.01)
+    monkeypatch.setattr(backend, "_runner_path", lambda: slow)
     with pytest.raises(PipelineError) as captured:
         backend.generate(store, rgba)
     assert captured.value.code == ErrorCode.BACKEND_TIMEOUT
