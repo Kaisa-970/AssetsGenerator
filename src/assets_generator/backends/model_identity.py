@@ -5,7 +5,13 @@ from pathlib import Path
 
 
 def snapshot_digest(snapshot: Path) -> str:
-    files = sorted(p for p in snapshot.rglob("*") if p.is_file())
+    ignored = {"cache", "caches", "logs", "log", "tmp", "temp", "__pycache__"}
+    files = sorted(
+        p
+        for p in snapshot.rglob("*")
+        if p.is_file()
+        and not any(part.lower() in ignored for part in p.relative_to(snapshot).parts)
+    )
     if not files:
         raise ValueError(f"empty model snapshot: {snapshot}")
     identity = hashlib.sha256()
