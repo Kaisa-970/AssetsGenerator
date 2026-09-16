@@ -3,12 +3,31 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from PIL import Image
 
 if __package__:
     from .model_identity import snapshot_digest
 else:
     from model_identity import snapshot_digest
+
+
+def prepare_image(
+    image: Image.Image,
+    foreground_ratio: float,
+    resize_foreground: Callable[[Image.Image, float], Image.Image],
+) -> Image.Image:
+    import numpy as np
+    from PIL import Image
+
+    rgba = resize_foreground(image.convert("RGBA"), foreground_ratio)
+    pixels = np.asarray(rgba).astype(np.float32) / 255.0
+    rgb = pixels[:, :, :3] * pixels[:, :, 3:4] + (1 - pixels[:, :, 3:4]) * 0.5
+    return Image.fromarray((rgb * 255.0).astype(np.uint8))
 
 
 def main() -> int:
@@ -38,9 +57,10 @@ def main() -> int:
     model = TSR.from_pretrained(snapshot, config_name="config.yaml", weight_name="model.ckpt")
     model.renderer.set_chunk_size(int(request["chunk_size"]))
     model.to("cuda")
+    model.eval()
 
-    image = Image.open(request["input_image"]).convert("RGBA")
-    image = resize_foreground(image, float(request["foreground_ratio"]))
+    with Image.open(request["input_image"]) as source:
+        image = prepare_image(source, float(request["foreground_ratio"]), resize_foreground)
 
     torch.cuda.reset_peak_memory_stats()
     with torch.inference_mode():
