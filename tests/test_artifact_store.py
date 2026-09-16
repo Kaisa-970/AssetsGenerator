@@ -6,7 +6,7 @@ from dataclasses import replace
 import pytest
 
 from assets_generator.artifact_store import ArtifactStoreError, LocalArtifactStore, create_manifest
-from assets_generator.models import ArtifactAnnotations, StructuredValue
+from assets_generator.models import ArtifactAnnotations, BuildRun, StructuredValue
 
 
 def test_blob_and_artifact_identity_are_stable_and_location_independent(tmp_path) -> None:
@@ -55,6 +55,23 @@ def test_structured_value_round_trip(tmp_path) -> None:
     manifest = store.get_manifest(reference.artifact_id)
     assert manifest.identity.kind == "quality_report"
     assert manifest.identity.schema_name == "QualityReport"
+
+
+def test_build_run_v1_accepts_legacy_payload_without_resolved_backends() -> None:
+    legacy = {
+        "run_id": "run_legacy",
+        "pipeline_name": "image_asset_v2",
+        "pipeline_version": "2",
+        "status": "succeeded",
+        "inputs": {},
+        "node_attempts": [],
+        "started_at": "start",
+        "finished_at": "finish",
+    }
+
+    run = BuildRun(**legacy)
+
+    assert run.resolved_backends == {}
 
 
 def test_manifest_annotations_do_not_change_artifact_identity(tmp_path) -> None:

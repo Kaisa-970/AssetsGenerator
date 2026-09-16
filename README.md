@@ -29,7 +29,7 @@ Single RGB
 
 ## 当前实现
 
-仓库已包含 Phase 2 单图流程：
+仓库已包含 Phase 2 单图流程和 Phase 4 的 Backend 可替换骨架：
 
 - Blob、Artifact、StructuredValue、AssetDefinition、AssetRelease、Provenance 和 QualityReport schema
 - 本地内容寻址 Artifact Store，支持 staging、digest 校验和原子提交
@@ -42,7 +42,11 @@ Single RGB
 - 确定性 `backend_native -> asset_canonical -> gltf_export` 变换
 - GLB 可加载性、非空有限 Mesh、空间契约和 digest Geometry QA
 - 本地独立进程 TRELLIS.2 Backend adapter
+- Backend registry、不可变 `ResolvedPlan`、Pipeline 默认绑定和 CLI Backend 覆盖
+- BuildRun 记录实际使用的节点 Backend 绑定
 - 原子 AssetRelease 目录发布和 manifest identity 防篡改校验
+
+当前只有 `trellis2` 注册为真实 Shape Backend；第二个 Shape Backend、Router 资源策略和跨 Backend 比较报告尚未实现。
 
 安装开发环境并检查固定 Pipeline：
 
@@ -63,7 +67,9 @@ python3 -m venv .venv
 
 默认适配器读取 `/home/ypkwsl/Workspace/TRELLIS.2`，并通过
 `/home/ypkwsl/DevTools/miniconda3/envs/TRELLTS/bin/python` 启动独立进程。可使用
-`--trellis-repo`、`--trellis-python` 和 `--trellis-model` 覆盖这些位置。传入
+`--trellis-repo`、`--trellis-python` 和 `--trellis-model` 覆盖这些位置。Pipeline 默认将
+`generate_shape` 绑定到 `trellis2`。`--shape-backend` 只选择当前 CLI registry 已注册的实现；
+现阶段 CLI 仅注册 `trellis2`，第二个 Backend 接入后该参数才提供实际切换目标。传入
 `--mask /path/to/mask.png` 时直接复用该 mask；省略时，通过 `--segmentation-python`
 指定的隔离环境运行 BiRefNet_lite。分割阈值和超时分别由
 `--segmentation-threshold`、`--segmentation-timeout` 控制。

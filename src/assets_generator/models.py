@@ -269,3 +269,4 @@ class BuildRun:
     node_attempts: list[NodeAttempt]
     started_at: str
     finished_at: str | None
+    resolved_backends: dict[str, str] = field(default_factory=dict)

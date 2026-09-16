@@ -4,6 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
+from .backend_registry import BackendRegistry, resolve_plan
 from .pipeline import (
     compile_pipeline,
     load_default_operator_specs,
@@ -40,6 +41,7 @@ def _parser() -> argparse.ArgumentParser:
         default=Path("/home/ypkwsl/DevTools/miniconda3/envs/TRELLTS/bin/python"),
     )
     build.add_argument("--trellis-model", default="microsoft/TRELLIS.2-4B")
+    build.add_argument("--shape-backend")
     build.add_argument("--backend-timeout", type=float, default=1800.0)
     build.add_argument(
         "--segmentation-python",
@@ -75,13 +77,27 @@ def main() -> int:
         threshold=args.segmentation_threshold,
         timeout_seconds=args.segmentation_timeout,
     )
+    pipeline = load_default_pipeline()
+    registry = BackendRegistry()
+    registry.register(
+        name="trellis2",
+        operator="shape_generation@1",
+        backend_version="1.0.0",
+        implementation=backend,
+    )
+    plan = resolve_plan(
+        pipeline,
+        registry,
+        operator_specs=load_default_operator_specs(),
+        backend_overrides={"generate_shape": args.shape_backend} if args.shape_backend else None,
+    )
     result = build_image_asset(
         image_path=args.image,
         mask_path=args.mask,
         store_path=args.store,
         output_path=args.output,
-        backend=backend,
         segmentation_backend=segmentation_backend,
+        resolved_plan=plan,
         seed=args.seed,
         pipeline_type=args.pipeline_type,
         asset_name=args.name,

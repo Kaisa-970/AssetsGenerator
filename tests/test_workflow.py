@@ -8,6 +8,7 @@ import trimesh
 from PIL import Image
 
 from assets_generator.artifact_store import LocalArtifactStore
+from assets_generator.backend_registry import BackendRegistry, ResolvedPlan, resolve_plan
 from assets_generator.contracts import ContractError
 from assets_generator.models import (
     SCHEMA_VERSION,
@@ -139,6 +140,100 @@ def test_phase1_workflow_materializes_release(tmp_path) -> None:
     )
 
 
+def test_workflow_uses_backend_name_from_resolved_plan(tmp_path) -> None:
+    image_path = tmp_path / "image.png"
+    mask_path = tmp_path / "mask.png"
+    Image.new("RGB", (8, 8), (200, 100, 50)).save(image_path)
+    Image.new("L", (8, 8), 255).save(mask_path)
+    registry = BackendRegistry()
+    registry.register(
+        name="contract_shape",
+        operator="shape_generation@1",
+        backend_version="test",
+        implementation=ContractBackend(),
+    )
+    from assets_generator.pipeline import load_default_operator_specs, load_default_pipeline
+
+    plan = resolve_plan(
+        load_default_pipeline(),
+        registry,
+        operator_specs=load_default_operator_specs(),
+        backend_overrides={"generate_shape": "contract_shape"},
+    )
+    output = tmp_path / "release"
+
+    build_image_asset(
+        image_path=image_path,
+        mask_path=mask_path,
+        store_path=tmp_path / "store",
+        output_path=output,
+        resolved_plan=plan,
+    )
+
+    run = json.loads((output / "run.json").read_text(encoding="utf-8"))
+    shape_attempt = next(
+        item for item in run["node_attempts"] if item["node_id"] == "generate_shape"
+    )
+    assert shape_attempt["backend"] == "contract_shape"
+    assert run["resolved_backends"] == {"generate_shape": "contract_shape"}
+    provenance = [
+        json.loads(path.read_text(encoding="utf-8"))
+        for path in sorted((output / "provenance").glob("*.json"))
+    ]
+    shape_record = next(item for item in provenance if item["node_id"] == "generate_shape")
+    assert shape_record["backend"] == "contract_shape"
+
+
+def test_workflow_rejects_ambiguous_backend_configuration(tmp_path) -> None:
+    image_path = tmp_path / "image.png"
+    mask_path = tmp_path / "mask.png"
+    Image.new("RGB", (8, 8), (200, 100, 50)).save(image_path)
+    Image.new("L", (8, 8), 255).save(mask_path)
+
+    with pytest.raises(ContractError, match="configure exactly one"):
+        build_image_asset(
+            image_path=image_path,
+            mask_path=mask_path,
+            store_path=tmp_path / "store",
+            output_path=tmp_path / "release",
+            backend=ContractBackend(),  # type: ignore[arg-type]
+            backend_registry=BackendRegistry(),
+        )
+
+
+def test_workflow_rejects_backend_name_without_inline_backend(tmp_path) -> None:
+    image_path = tmp_path / "image.png"
+    mask_path = tmp_path / "mask.png"
+    Image.new("RGB", (8, 8), (200, 100, 50)).save(image_path)
+    Image.new("L", (8, 8), 255).save(mask_path)
+
+    with pytest.raises(ContractError, match="backend_name requires"):
+        build_image_asset(
+            image_path=image_path,
+            mask_path=mask_path,
+            store_path=tmp_path / "store",
+            output_path=tmp_path / "release",
+            backend_name="unused",
+        )
+
+
+def test_workflow_rejects_resolved_plan_for_different_contract(tmp_path) -> None:
+    image_path = tmp_path / "image.png"
+    mask_path = tmp_path / "mask.png"
+    Image.new("RGB", (8, 8), (200, 100, 50)).save(image_path)
+    Image.new("L", (8, 8), 255).save(mask_path)
+    plan = ResolvedPlan("image_asset_v2", "2", "sha256:stale", {})
+
+    with pytest.raises(ContractError, match="contract digest"):
+        build_image_asset(
+            image_path=image_path,
+            mask_path=mask_path,
+            store_path=tmp_path / "store",
+            output_path=tmp_path / "release",
+            resolved_plan=plan,
+        )
+
+
 def test_backend_failure_persists_failed_build_run(tmp_path) -> None:
     image_path = tmp_path / "image.png"
     mask_path = tmp_path / "mask.png"
@@ -163,6 +258,26 @@ def test_backend_failure_persists_failed_build_run(tmp_path) -> None:
     assert run["node_attempts"][-1]["node_id"] == "generate_shape"
     assert run["node_attempts"][-1]["status"] == "failed"
     assert run["node_attempts"][-1]["error_code"] == "internal_error"
+
+
+def test_inline_backend_uses_explicit_audit_name(tmp_path) -> None:
+    image_path = tmp_path / "image.png"
+    mask_path = tmp_path / "mask.png"
+    Image.new("RGB", (8, 8), (200, 100, 50)).save(image_path)
+    Image.new("L", (8, 8), 255).save(mask_path)
+    output = tmp_path / "release"
+
+    build_image_asset(
+        image_path=image_path,
+        mask_path=mask_path,
+        store_path=tmp_path / "store",
+        output_path=output,
+        backend=ContractBackend(),  # type: ignore[arg-type]
+        backend_name="contract_shape",
+    )
+
+    run = json.loads((output / "run.json").read_text(encoding="utf-8"))
+    assert run["resolved_backends"] == {"generate_shape": "contract_shape"}
 
 
 def test_release_materialization_failure_is_atomic(tmp_path, monkeypatch) -> None:

@@ -21,6 +21,7 @@ nodes:
 
   generate_shape:
     operator: shape_generation@1
+    backend: trellis2
     inputs:
       image: prepare_observation.outputs.rgba
 

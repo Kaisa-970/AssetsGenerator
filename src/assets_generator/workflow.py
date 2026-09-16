@@ -9,6 +9,14 @@ from typing import Any
 from PIL import Image
 
 from .artifact_store import LocalArtifactStore
+from .backend_registry import (
+    BackendRegistry,
+    ResolvedPlan,
+    ShapeBackend,
+    resolve_plan,
+    resolve_plan_contract_digest,
+)
+from .contracts import ContractError
 from .errors import ErrorCode
 from .models import (
     SCHEMA_VERSION,
@@ -25,7 +33,6 @@ from .operators import (
     PreparedObservation,
     SegmentationOutput,
     ShapeOutput,
-    Trellis2Backend,
     assemble_asset,
     canonicalize_glb,
     export_release,
@@ -169,20 +176,69 @@ def build_image_asset(
     mask_path: Path | None,
     store_path: Path,
     output_path: Path,
-    backend: Trellis2Backend,
+    backend: ShapeBackend | None = None,
     segmentation_backend: BiRefNetSegmentationBackend | None = None,
+    backend_registry: BackendRegistry | None = None,
+    resolved_plan: ResolvedPlan | None = None,
+    backend_name: str | None = None,
     seed: int = 42,
     pipeline_type: str = "512",
     asset_name: str | None = None,
 ) -> BuildResult:
+    if backend_name is not None and backend is None:
+        raise ContractError("backend_name requires an inline backend")
+    configured_sources = sum(
+        value is not None for value in (backend, backend_registry, resolved_plan)
+    )
+    if configured_sources > 1:
+        raise ContractError("configure exactly one of backend, backend_registry, or resolved_plan")
     store = LocalArtifactStore(store_path)
     run_id = f"run_{uuid.uuid4().hex}"
     pipeline = load_default_pipeline()
     specs = load_default_operator_specs()
     compile_pipeline(pipeline, specs)
+    if resolved_plan is None:
+        registry = backend_registry or BackendRegistry()
+        if backend is not None:
+            registry.register(
+                name=backend_name or "inline_shape_backend",
+                operator="shape_generation@1",
+                backend_version="configured",
+                implementation=backend,
+            )
+            resolved_plan = resolve_plan(
+                pipeline,
+                registry,
+                operator_specs=specs,
+                backend_overrides={"generate_shape": backend_name or "inline_shape_backend"},
+            )
+        else:
+            resolved_plan = resolve_plan(pipeline, registry, operator_specs=specs)
+    if (
+        resolved_plan.pipeline_name != pipeline.name
+        or resolved_plan.pipeline_version != pipeline.version
+    ):
+        raise ValueError("resolved plan does not match the selected pipeline")
+    expected_digest = resolve_plan_contract_digest(pipeline, specs)
+    if resolved_plan.contract_digest != expected_digest:
+        raise ContractError("resolved plan contract digest does not match the selected pipeline")
+    shape_binding = resolved_plan.backend_for("generate_shape", "shape_generation@1")
+    if set(resolved_plan.backends) != {"generate_shape"}:
+        raise ContractError("only generate_shape backend binding is supported")
+    if shape_binding.node_id != "generate_shape":
+        raise ContractError("resolved backend node identity mismatch")
+    shape_backend = shape_binding.shape_backend()
     runtime = Phase1Runtime(store, pipeline, specs)
     run = BuildRun(
-        run_id, pipeline.name, pipeline.version, "running", {}, runtime.attempts, utc_now(), None
+        run_id,
+        pipeline.name,
+        pipeline.version,
+        "running",
+        {},
+        runtime.attempts,
+        utc_now(),
+        None,
+        {node_id: binding.name for node_id, binding in resolved_plan.backends.items()},
     )
     provenance: list[ArtifactRef] = []
     try:
@@ -286,7 +342,9 @@ def build_image_asset(
         )
 
         def execute_generate() -> tuple[ShapeOutput, dict[str, Any]]:
-            value = backend.generate(store, prepared.rgba, seed=seed, pipeline_type=pipeline_type)
+            value = shape_backend.generate(
+                store, prepared.rgba, seed=seed, pipeline_type=pipeline_type
+            )
             return value, {
                 "mesh": value.mesh,
                 "material": value.material,
@@ -297,7 +355,7 @@ def build_image_asset(
             "generate_shape",
             {"image": prepared.rgba},
             execute_generate,
-            backend="trellis2",
+            backend=shape_binding.name,
             execution_mode=lambda value: "cache_hit" if value.cache_hit else "executed",
         )
         provenance.append(
@@ -309,8 +367,10 @@ def build_image_asset(
                 artifact=generated.mesh,
                 derived_from=[prepared.rgba],
                 operator="shape_generation",
-                backend="trellis2",
-                backend_version=str(generated.backend_metadata["backend_version"]),
+                backend=shape_binding.name,
+                backend_version=str(
+                    generated.backend_metadata.get("backend_version", shape_binding.backend_version)
+                ),
                 parameters={
                     "pipeline_type": pipeline_type,
                     "peak_cuda_memory_mb": generated.backend_metadata.get("peak_cuda_memory_mb"),

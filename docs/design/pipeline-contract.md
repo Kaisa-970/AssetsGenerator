@@ -142,6 +142,8 @@ determinism
 availability and health information
 ```
 
+Pipeline 节点可通过 `backend` 声明默认实现。运行请求可覆盖该名称；Core 使用 Registry 将名称解析为实现，生成不可变的 `ResolvedPlan` 后再开始执行。`ResolvedPlan` 绑定 pipeline name/version、实际 Pipeline 与引用 OperatorSpec 的内容摘要、node、Backend name/version 和进程内实现。BuildRun 持久化 node 到 Backend name 的最终绑定，模型内容身份仍由该节点的 provenance 记录。Registry 不复制 OperatorSpec 的端口定义。
+
 Backend 适配器负责把模型原生输入输出转换成 OperatorSpec，包括输出 `BackendNativeFrame`。不能让无坐标语义的裸 pose 或 mesh 进入 Pipeline。
 
 ## 4. CanonicalizationOperator 契约
@@ -345,6 +347,7 @@ class BuildRun:
     node_attempts: list[NodeAttempt]
     started_at: str
     finished_at: str | None
+    resolved_backends: dict[str, str] = {}  # BuildRun 1.0 向后兼容可选字段
 
 @dataclass
 class NodeAttempt:
@@ -364,7 +367,7 @@ class NodeAttempt:
 
 ## 8. Router 与 ResolvedPlan
 
-Router 在接入第二个 Backend 后引入。输出不可变 `ResolvedPlan`，固定 Backend、版本、资源、端口绑定和 fallback policy。
+Phase 4 先引入最小 Registry 和不可变 `ResolvedPlan`，固定 pipeline version、Pipeline/OperatorSpec 内容摘要、node 及 Backend name/version。第二个 Backend 接入后，再由 Router 根据资源和策略生成计划，并补充资源选择、fallback policy 与 plan revision。
 
 执行失败时：
 

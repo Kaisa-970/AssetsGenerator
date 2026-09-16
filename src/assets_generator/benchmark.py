@@ -68,6 +68,7 @@ def main() -> int:
                 store_path=store_path,
                 output_path=args.output / mode / "release",
                 backend=Trellis2Backend(args.python, args.repo),
+                backend_name="trellis2",
                 segmentation_backend=BiRefNetSegmentationBackend(args.python),
             )
             store = LocalArtifactStore(store_path)

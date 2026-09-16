@@ -202,8 +202,8 @@ Render-back 在 Phase 1 允许 `applicable=false, status=skipped`。Collision �
 ```text
 1. 用一个真实 Shape Backend 跑通 V1 vertical slice
 2. 固化 BenchmarkDataset 和第一个 Backend 基线
-3. 接入第二个 Shape Backend
-4. 引入 Registry、Router 和 ResolvedPlan
+3. 引入 Registry 和最小 ResolvedPlan，去除 workflow 的固定 Backend 绑定
+4. 接入第二个 Shape Backend，并加入 Router 和比较报告
 5. 扩展 render-back、多图、Scene-to-Asset 和 Real-to-Sim
 ```
 
