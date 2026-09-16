@@ -16,7 +16,29 @@ from urllib.parse import quote
 
 from PIL import Image
 
+from .backends.model_identity import snapshot_digest
 from .serialization import sha256_bytes
+
+
+def execution_configuration(args: argparse.Namespace) -> dict[str, Any]:
+    backend = getattr(args, "shape_backend", "trellis2")
+    model = (
+        getattr(args, "model", None)
+        or {
+            "trellis2": "microsoft/TRELLIS.2-4B",
+            "triposr": "stabilityai/TripoSR",
+        }[backend]
+    )
+    local_model = Path(model).expanduser()
+    return {
+        "shape_backend": backend,
+        "model": str(local_model.resolve()) if local_model.is_dir() else model,
+        "local_model_digest": snapshot_digest(local_model) if local_model.is_dir() else None,
+        "python": str(Path(args.python).expanduser().resolve()),
+        "repo": str(Path(args.repo).expanduser().resolve()),
+        "seed": 42,
+        "pipeline_type": "512",
+    }
 
 
 def write_json(path: Path, value: Any) -> None:
@@ -25,13 +47,20 @@ def write_json(path: Path, value: Any) -> None:
     temporary.replace(path)
 
 
-def load_matching_report(path: Path, image_digest: str, mask_digest: str) -> dict[str, Any] | None:
+def load_matching_report(
+    path: Path,
+    image_digest: str,
+    mask_digest: str,
+    configuration: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
     try:
         loaded = json.loads(path.read_text())
         if not isinstance(loaded, dict):
             return None
         report: dict[str, Any] = loaded
         if report["image_digest"] != image_digest or report["mask_digest"] != mask_digest:
+            return None
+        if configuration is not None and report.get("execution_configuration") != configuration:
             return None
         if not isinstance(report["cases"], list):
             return None
@@ -63,7 +92,12 @@ def thumbnail(path: Path) -> str:
     return "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode()
 
 
-def collect(cases: list[dict[str, Any]], manifest: Path, output: Path) -> None:
+def collect(
+    cases: list[dict[str, Any]],
+    manifest: Path,
+    output: Path,
+    configuration: dict[str, Any] | None = None,
+) -> None:
     rows = []
     cards = []
     for index, case in enumerate(cases):
@@ -73,12 +107,18 @@ def collect(cases: list[dict[str, Any]], manifest: Path, output: Path) -> None:
         mask_digest = sha256_bytes(mask.read_bytes())
         reports = []
         for report_path in sorted((output / f"case-{index:03d}").glob("**/report.json")):
-            report = load_matching_report(report_path, image_digest, mask_digest)
+            report = load_matching_report(report_path, image_digest, mask_digest, configuration)
             if report is not None:
                 reports.append((report_path, report))
         row: dict[str, Any] = {"id": case["id"], "status": "not_run", "attempts": []}
         for report_path, report in reports:
-            row["attempts"].append({"report": str(report_path), "results": report["cases"]})
+            row["attempts"].append(
+                {
+                    "report": str(report_path),
+                    "results": report["cases"],
+                    "execution_configuration": report.get("execution_configuration"),
+                }
+            )
             row["status"] = ", ".join(r["status"] for r in report["cases"])
         rows.append(row)
         metrics = []
@@ -90,6 +130,7 @@ def collect(cases: list[dict[str, Any]], manifest: Path, output: Path) -> None:
                 ]
                 metrics.append(
                     {
+                        "execution_configuration": attempt["execution_configuration"],
                         "mode": result["mode"],
                         "status": result["status"],
                         "seconds": round(result.get("elapsed_seconds", 0), 1),
@@ -159,6 +200,7 @@ def run_manifest(args: argparse.Namespace) -> int:
         return 0
     if not args.python or not args.repo:
         raise ValueError("execution requires --python and --repo")
+    configuration = execution_configuration(args)
     failed = False
     for index, case in selected:
         if (args.output / "STOP").exists():
@@ -178,6 +220,7 @@ def run_manifest(args: argparse.Namespace) -> int:
                         path,
                         image_digest,
                         mask_digest,
+                        configuration,
                     )
                 )
                 and requested_results(report, args.mode)
@@ -207,10 +250,14 @@ def run_manifest(args: argparse.Namespace) -> int:
             str(args.repo),
             "--mode",
             args.mode,
+            "--shape-backend",
+            configuration["shape_backend"],
+            "--model",
+            configuration["model"],
         ]
         with (args.output / f"case-{index:03d}.log").open("a") as log:
             result = subprocess.run(command, stdout=log, stderr=log, check=False)
         failed |= result.returncode != 0
-        collect(cases, args.manifest, args.output)
-    collect(cases, args.manifest, args.output)
+        collect(cases, args.manifest, args.output, configuration)
+    collect(cases, args.manifest, args.output, configuration)
     return int(failed)

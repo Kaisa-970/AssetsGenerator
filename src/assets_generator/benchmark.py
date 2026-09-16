@@ -10,9 +10,11 @@ from pathlib import Path
 from typing import Any
 
 from .artifact_store import LocalArtifactStore
+from .backend_registry import BackendRegistry, resolve_plan
 from .errors import classify_error
 from .models import ArtifactRef
-from .operators import BiRefNetSegmentationBackend, Trellis2Backend
+from .operators import BiRefNetSegmentationBackend, Trellis2Backend, TripoSRBackend
+from .pipeline import load_default_operator_specs, load_default_pipeline
 from .serialization import sha256_bytes
 from .workflow import build_image_asset
 
@@ -31,6 +33,8 @@ def main() -> int:
     parser.add_argument("--preview-only", action="store_true")
     parser.add_argument("--python", type=Path)
     parser.add_argument("--repo", type=Path)
+    parser.add_argument("--shape-backend", choices=["trellis2", "triposr"], default="trellis2")
+    parser.add_argument("--model")
     args = parser.parse_args()
     if args.manifest:
         from .benchmark_review import run_manifest
@@ -38,6 +42,23 @@ def main() -> int:
         return run_manifest(args)
     if not args.python or not args.repo:
         parser.error("execution requires --python and --repo")
+    from .benchmark_review import execution_configuration
+
+    configuration = execution_configuration(args)
+    backend_class = TripoSRBackend if args.shape_backend == "triposr" else Trellis2Backend
+    registry = BackendRegistry()
+    registry.register(
+        name=args.shape_backend,
+        operator="shape_generation@1",
+        backend_version="1.0.0",
+        implementation=backend_class(args.python, args.repo, configuration["model"]),
+    )
+    plan = resolve_plan(
+        load_default_pipeline(),
+        registry,
+        operator_specs=load_default_operator_specs(),
+        backend_overrides={"generate_shape": args.shape_backend},
+    )
     args.output.mkdir(parents=True, exist_ok=False)
     rows: list[dict[str, Any]] = []
     hardware = subprocess.run(
@@ -67,8 +88,7 @@ def main() -> int:
                 mask_path=args.mask if mode == "provided" else None,
                 store_path=store_path,
                 output_path=args.output / mode / "release",
-                backend=Trellis2Backend(args.python, args.repo),
-                backend_name="trellis2",
+                resolved_plan=plan,
                 segmentation_backend=BiRefNetSegmentationBackend(args.python),
             )
             store = LocalArtifactStore(store_path)
@@ -104,6 +124,7 @@ def main() -> int:
                     "image_digest": sha256_bytes(args.image.read_bytes()),
                     "mask_digest": sha256_bytes(args.mask.read_bytes()) if args.mask else None,
                     "hardware": hardware,
+                    "execution_configuration": configuration,
                     "source_digest": source_digest,
                     "cases": rows,
                     "manual_review": "pending",
