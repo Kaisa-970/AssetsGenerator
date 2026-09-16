@@ -17,6 +17,7 @@
 ## 操作指南 · guides
 
 - [VOC 数据准备、批量评测与交互预览](guides/benchmark-voc.md)
+- [TripoSR 独立环境与只读预检](guides/triposr-environment.md)
 
 ## 评测报告 · reports
 

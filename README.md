@@ -23,6 +23,7 @@ Single RGB
 - [Coordinate System](docs/design/coordinate-system.md)
 - [Pipeline Contract](docs/design/pipeline-contract.md)
 - [TripoSR Backend Contract](docs/design/triposr-backend.md)
+- [TripoSR Environment and Preflight](docs/guides/triposr-environment.md)
 - [Artifact Store](docs/design/artifact-store.md)
 - [Evaluation](docs/design/evaluation.md)
 - [Roadmap](docs/planning/roadmap.md)
