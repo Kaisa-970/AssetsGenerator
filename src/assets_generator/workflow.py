@@ -374,6 +374,22 @@ def build_image_asset(
                 parameters={
                     "pipeline_type": pipeline_type,
                     "peak_cuda_memory_mb": generated.backend_metadata.get("peak_cuda_memory_mb"),
+                    **{
+                        key: generated.backend_metadata[key]
+                        for key in (
+                            "seed_effective",
+                            "pipeline_type_effective",
+                            "chunk_size",
+                            "mc_resolution",
+                            "foreground_ratio",
+                            "vertex_count",
+                            "face_count",
+                            "validated_vertex_count",
+                            "validated_face_count",
+                            "native_frame_validation",
+                        )
+                        if key in generated.backend_metadata
+                    },
                 },
                 seed=seed,
                 source="generated",

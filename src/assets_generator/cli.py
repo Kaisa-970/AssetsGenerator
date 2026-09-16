@@ -41,8 +41,15 @@ def _parser() -> argparse.ArgumentParser:
         default=Path("/home/ypkwsl/DevTools/miniconda3/envs/TRELLTS/bin/python"),
     )
     build.add_argument("--trellis-model", default="microsoft/TRELLIS.2-4B")
-    build.add_argument("--shape-backend")
+    build.add_argument("--shape-backend", choices=["trellis2", "triposr"])
     build.add_argument("--backend-timeout", type=float, default=1800.0)
+    build.add_argument("--triposr-python", type=Path)
+    build.add_argument("--triposr-repo", type=Path)
+    build.add_argument("--triposr-model", default="stabilityai/TripoSR")
+    build.add_argument("--triposr-timeout", type=float, default=900.0)
+    build.add_argument("--triposr-chunk-size", type=int, default=8192)
+    build.add_argument("--triposr-mc-resolution", type=int, default=256)
+    build.add_argument("--triposr-foreground-ratio", type=float, default=0.85)
     build.add_argument(
         "--segmentation-python",
         type=Path,
@@ -53,8 +60,47 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _shape_registry(args: argparse.Namespace) -> BackendRegistry:
+    from .operators import Trellis2Backend, TripoSRBackend
+
+    registry = BackendRegistry()
+    registry.register(
+        name="trellis2",
+        operator="shape_generation@1",
+        backend_version="1.0.0",
+        implementation=Trellis2Backend(
+            args.trellis_python,
+            args.trellis_repo,
+            args.trellis_model,
+            timeout_seconds=args.backend_timeout,
+        ),
+    )
+    triposr_configured = args.triposr_python is not None and args.triposr_repo is not None
+    if triposr_configured:
+        registry.register(
+            name="triposr",
+            operator="shape_generation@1",
+            backend_version="1.0.0",
+            implementation=TripoSRBackend(
+                args.triposr_python,
+                args.triposr_repo,
+                args.triposr_model,
+                timeout_seconds=args.triposr_timeout,
+                chunk_size=args.triposr_chunk_size,
+                mc_resolution=args.triposr_mc_resolution,
+                foreground_ratio=args.triposr_foreground_ratio,
+            ),
+        )
+    if args.shape_backend == "triposr" and not triposr_configured:
+        raise ValueError("triposr requires --triposr-python and --triposr-repo")
+    if (args.triposr_python is None) != (args.triposr_repo is None):
+        raise ValueError("--triposr-python and --triposr-repo must be provided together")
+    return registry
+
+
 def main() -> int:
-    args = _parser().parse_args()
+    parser = _parser()
+    args = parser.parse_args()
     if args.command == "compile-pipeline":
         specs = (
             load_operator_specs(args.operators) if args.operators else load_default_operator_specs()
@@ -63,28 +109,19 @@ def main() -> int:
         compile_pipeline(pipeline, specs)
         print(f"{pipeline.name}@{pipeline.version}: valid")
         return 0
-    from .operators import BiRefNetSegmentationBackend, Trellis2Backend
+    from .operators import BiRefNetSegmentationBackend
     from .workflow import build_image_asset
 
-    backend = Trellis2Backend(
-        args.trellis_python,
-        args.trellis_repo,
-        args.trellis_model,
-        timeout_seconds=args.backend_timeout,
-    )
     segmentation_backend = BiRefNetSegmentationBackend(
         args.segmentation_python,
         threshold=args.segmentation_threshold,
         timeout_seconds=args.segmentation_timeout,
     )
     pipeline = load_default_pipeline()
-    registry = BackendRegistry()
-    registry.register(
-        name="trellis2",
-        operator="shape_generation@1",
-        backend_version="1.0.0",
-        implementation=backend,
-    )
+    try:
+        registry = _shape_registry(args)
+    except ValueError as error:
+        parser.error(str(error))
     plan = resolve_plan(
         pipeline,
         registry,

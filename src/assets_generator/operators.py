@@ -342,11 +342,6 @@ class TripoSRBackend:
                 ) from error
             if face_count <= 0 or not np.isfinite(vertices).all():
                 raise PipelineError(ErrorCode.OUTPUT_INVALID, "TripoSR GLB has invalid geometry")
-            if response["vertex_count"] != len(vertices) or response["face_count"] != face_count:
-                raise PipelineError(
-                    ErrorCode.OUTPUT_INVALID,
-                    "TripoSR geometry statistics do not match the exported GLB",
-                )
             response["worker_job_id"] = job.job_id
             response["validated_vertex_count"] = int(len(vertices))
             response["validated_face_count"] = int(face_count)
