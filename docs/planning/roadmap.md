@@ -174,4 +174,4 @@ articulation in later iterations
 
 Phase 3 已整理 13 次真实 VOC 实例运行（12 成功、1 失败）与用户选出的 4 个相对完整模型。
 [初版报告](../reports/phase3-baseline-v1.md)明确记录采样、分辨率和人工评价局限；
-[已筛选输入基线](../reports/phase3-approved-baseline-v1.md)已完成最小工程基线：3 例执行成功，人工保留飞机和自行车、淘汰瓶子；两个成功样本可作为开发回归输入。暂未进入 Phase 4。
+[已筛选输入基线](../reports/phase3-approved-baseline-v1.md)已完成最小工程基线：3 例执行成功，人工保留飞机和自行车、淘汰瓶子；两个成功样本可作为开发回归输入。Phase 4 已启动，Backend 可替换性尚未完成。

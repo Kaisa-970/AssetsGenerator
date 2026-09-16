@@ -25,17 +25,33 @@ def write_json(path: Path, value: Any) -> None:
     temporary.replace(path)
 
 
-def matching_report(path: Path, image: Path, mask: Path, mode: str) -> bool:
+def load_matching_report(path: Path, image_digest: str, mask_digest: str) -> dict[str, Any] | None:
     try:
-        report = json.loads(path.read_text())
-        expected = {mode} if mode != "both" else {"provided", "automatic"}
-        return bool(
-            report["image_digest"] == sha256_bytes(image.read_bytes())
-            and report["mask_digest"] == sha256_bytes(mask.read_bytes())
-            and expected <= {row["mode"] for row in report["cases"]}
-        )
+        loaded = json.loads(path.read_text())
+        if not isinstance(loaded, dict):
+            return None
+        report: dict[str, Any] = loaded
+        if report["image_digest"] != image_digest or report["mask_digest"] != mask_digest:
+            return None
+        if not isinstance(report["cases"], list):
+            return None
+        return report
     except (OSError, ValueError, KeyError, TypeError):
-        return False
+        return None
+
+
+def matching_report(path: Path, image: Path, mask: Path, mode: str) -> bool:
+    report = load_matching_report(
+        path, sha256_bytes(image.read_bytes()), sha256_bytes(mask.read_bytes())
+    )
+    expected = {mode} if mode != "both" else {"provided", "automatic"}
+    return bool(report and expected <= {row["mode"] for row in report["cases"]})
+
+
+def requested_results(report: dict[str, Any], mode: str) -> list[dict[str, Any]]:
+    expected = {mode} if mode != "both" else {"provided", "automatic"}
+    results = [row for row in report["cases"] if row.get("mode") in expected]
+    return results if expected <= {row.get("mode") for row in results} else []
 
 
 def thumbnail(path: Path) -> str:
@@ -51,18 +67,20 @@ def collect(cases: list[dict[str, Any]], manifest: Path, output: Path) -> None:
     rows = []
     cards = []
     for index, case in enumerate(cases):
-        reports = sorted((output / f"case-{index:03d}").glob("**/report.json"))
-        row: dict[str, Any] = {"id": case["id"], "status": "not_run", "attempts": []}
-        for report_path in reports:
-            try:
-                report = json.loads(report_path.read_text())
-                row["attempts"].append({"report": str(report_path), "results": report["cases"]})
-                row["status"] = ", ".join(r["status"] for r in report["cases"])
-            except (OSError, ValueError, KeyError):
-                row["status"] = "invalid_report"
-        rows.append(row)
         image = manifest.parent / case["image"]
         mask = manifest.parent / case["mask"]
+        image_digest = sha256_bytes(image.read_bytes())
+        mask_digest = sha256_bytes(mask.read_bytes())
+        reports = []
+        for report_path in sorted((output / f"case-{index:03d}").glob("**/report.json")):
+            report = load_matching_report(report_path, image_digest, mask_digest)
+            if report is not None:
+                reports.append((report_path, report))
+        row: dict[str, Any] = {"id": case["id"], "status": "not_run", "attempts": []}
+        for report_path, report in reports:
+            row["attempts"].append({"report": str(report_path), "results": report["cases"]})
+            row["status"] = ", ".join(r["status"] for r in report["cases"])
+        rows.append(row)
         metrics = []
         for attempt in row["attempts"]:
             for result in attempt["results"]:
@@ -88,7 +106,8 @@ def collect(cases: list[dict[str, Any]], manifest: Path, output: Path) -> None:
             "下载 GLB</a>"
             f"<span>{html.escape(str(p.relative_to(output)))}</span>"
             '<div class="model-status" role="status"></div></div>'
-            for p in sorted((output / f"case-{index:03d}").glob("**/geometry/visual.glb"))
+            for report_path, _ in reports
+            for p in sorted(report_path.parent.glob("*/release/geometry/visual.glb"))
         )
         metadata = {
             key: case[key]
@@ -146,10 +165,27 @@ def run_manifest(args: argparse.Namespace) -> int:
             break
         image = (args.manifest.parent / case["image"]).resolve()
         mask = (args.manifest.parent / case["mask"]).resolve()
+        image_digest = sha256_bytes(image.read_bytes())
+        mask_digest = sha256_bytes(mask.read_bytes())
         destination = args.output / f"case-{index:03d}"
-        reports = list(destination.glob("**/report.json"))
-        if args.resume and any(matching_report(p, image, mask, args.mode) for p in reports):
-            continue
+        reports = sorted(destination.glob("**/report.json"))
+        if args.resume:
+            matching = [
+                report
+                for path in reports
+                if (
+                    report := load_matching_report(
+                        path,
+                        image_digest,
+                        mask_digest,
+                    )
+                )
+                and requested_results(report, args.mode)
+            ]
+            if matching:
+                results = requested_results(matching[-1], args.mode)
+                failed |= any(row.get("status") == "failed" for row in results)
+                continue
         if destination.exists():
             number = 1
             while (destination / f"retry-{number:03d}").exists():
