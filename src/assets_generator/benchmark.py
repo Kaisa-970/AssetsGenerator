@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import json
 import subprocess
-import sys
 import time
 from pathlib import Path
 from typing import Any
@@ -26,43 +25,19 @@ def main() -> int:
     parser.add_argument("--mode", choices=["both", "provided", "automatic"], default="both")
     parser.add_argument("--mask", type=Path)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--python", type=Path, required=True)
-    parser.add_argument("--repo", type=Path, required=True)
+    parser.add_argument("--limit", type=int)
+    parser.add_argument("--case-id", action="append", default=[])
+    parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--preview-only", action="store_true")
+    parser.add_argument("--python", type=Path)
+    parser.add_argument("--repo", type=Path)
     args = parser.parse_args()
     if args.manifest:
-        cases = json.loads(args.manifest.read_text())["cases"]
-        args.output.mkdir(parents=True, exist_ok=False)
-        summary = []
-        for index, case in enumerate(cases):
-            destination = args.output / f"case-{index:03d}"
-            command = [
-                sys.executable,
-                "-m",
-                "assets_generator.benchmark",
-                "--image",
-                str((args.manifest.parent / case["image"]).resolve()),
-                "--mask",
-                str((args.manifest.parent / case["mask"]).resolve()),
-                "--output",
-                str(destination),
-                "--python",
-                str(args.python),
-                "--repo",
-                str(args.repo),
-                "--mode",
-                args.mode,
-            ]
-            with (args.output / f"case-{index:03d}.log").open("w") as log:
-                process = subprocess.run(command, stdout=log, stderr=log, check=False)
-            summary.append(
-                {
-                    "id": case["id"],
-                    "returncode": process.returncode,
-                    "report": str(destination / "report.json"),
-                }
-            )
-            (args.output / "summary.json").write_text(json.dumps(summary, indent=2))
-        return int(any(row["returncode"] for row in summary))
+        from .benchmark_review import run_manifest
+
+        return run_manifest(args)
+    if not args.python or not args.repo:
+        parser.error("execution requires --python and --repo")
     args.output.mkdir(parents=True, exist_ok=False)
     rows: list[dict[str, Any]] = []
     hardware = subprocess.run(

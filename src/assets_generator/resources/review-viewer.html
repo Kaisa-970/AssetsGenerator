@@ -1,0 +1,61 @@
+<script type="module">
+const url = './viewer-assets/model-viewer.min.js';
+try { await import(url); }
+catch { try { await import('https://cdn.jsdelivr.net/npm/@google/model-viewer@4.0.0/dist/model-viewer.min.js'); }
+catch { document.querySelector('#viewer-note').textContent = '查看器加载失败，请检查网络并刷新。'; } }
+</script>
+<style>
+.model-panel{background:#edf0f4;padding:12px;border-radius:10px;margin:16px 0}
+model-viewer{display:block;width:100%;height:440px;background:#e4e8ed}
+button{padding:9px 18px;cursor:pointer;margin-right:12px} .model-status{padding:8px}
+</style>
+<p id="viewer-note">点击“查看模型”即可旋转、滚轮缩放；切换时会卸载上一个模型。</p>
+<script>
+let active = null;
+document.addEventListener('click', event => {
+ const button = event.target.closest('button[data-model]');
+ if (!button) return;
+ if (location.protocol === 'file:') {
+ document.querySelector('#viewer-note').textContent = '请通过本地 HTTP 服务打开此页，浏览器无法直接读取本地 GLB。'; return;
+ }
+ const panel = button.closest('.model-panel');
+ if (active) { active.viewer.remove(); active.button.textContent='查看模型'; active.status.textContent=''; }
+ if (active?.button === button) {active = null; return;}
+ const viewer = document.createElement('model-viewer');
+ viewer.setAttribute('camera-controls','');
+ viewer.setAttribute('touch-action','pan-y');
+ viewer.setAttribute('shadow-intensity','0.5');
+ viewer.setAttribute('alt', button.dataset.label);
+ viewer.setAttribute('src',button.dataset.model);
+ const status=panel.querySelector('.model-status');
+ status.textContent='正在加载模型…'; button.textContent='关闭模型';
+ viewer.addEventListener('load',()=>{status.textContent='拖动旋转 · 滚轮缩放 · Shift + 拖动平移';});
+ viewer.addEventListener('error',()=>{status.textContent='模型加载失败，可下载 GLB 检查，或刷新后重试。';});
+ panel.append(viewer); active={viewer,button,status};
+});
+</script>
+<script>
+document.addEventListener('DOMContentLoaded',()=>{
+ const key='asset-review-v1:'+location.pathname;
+ let reviews={};
+ try {reviews=JSON.parse(localStorage.getItem(key)||'{}');}catch{}
+ const save=()=>{try{localStorage.setItem(key,JSON.stringify(reviews));}catch{document.querySelector('#viewer-note').textContent='无法保存到浏览器，请及时导出评价。';}};
+ document.querySelectorAll('article').forEach(card=>{
+ const id=card.querySelector('h2').textContent;
+ const form=document.createElement('div');
+ form.innerHTML='<label>评价 <select aria-label="样本评价"><option value="pending">未评价</option><option value="keep">保留</option><option value="improve">待改进</option><option value="reject">淘汰</option></select></label> <label>备注 <textarea aria-label="评价备注" placeholder="例如：正面不错，背面有洞；mask 选错主体"></textarea></label>';
+ const select=form.querySelector('select'), note=form.querySelector('textarea');
+ select.value=reviews[id]?.rating||'pending';note.value=reviews[id]?.note||'';
+ form.addEventListener('input',()=>{reviews[id]={rating:select.value,note:note.value};save();});
+ card.append(form);
+ });
+ const exportButton=document.createElement('button');exportButton.textContent='导出评价 JSON';
+ exportButton.onclick=()=>{
+ const data={version:1,page:location.href,exported_at:new Date().toISOString(),reviews};
+ const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));
+ const a=document.createElement('a');a.href=url;a.download='asset-reviews.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+ };
+ document.querySelector('h1').after(exportButton);
+});
+</script>
+<style>textarea{vertical-align:middle;width:min(500px,70%);height:60px}select{padding:8px}article label{display:inline-block;margin:8px}</style>
