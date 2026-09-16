@@ -91,6 +91,18 @@ EvaluationRun / ComparisonReport
 
 先用第一个 Backend 产生基线。
 
+### 完成条件（最小工程基线）
+
+Phase 3 的目标是建立可复核的单 Backend 工程基线，不是对模型视觉质量做代表性排名。满足以下条件即可收口：
+
+- 固定一批明确来源的输入与 mask，并记录输入、配置和模型身份。
+- 使用统一预处理、canonicalization、GLTF2 Export Profile 和 Geometry QA。
+- 每个运行样本都有成功、执行失败或人工视觉淘汰的终态记录。
+- 保留逐例报告、耗时、基础 QA、发布 digest 和交互式 GLB 评审页面。
+- 至少保留两个可复用成功样本作为后续开发回归输入，并保留失败或淘汰样本作为限制证据。
+
+人工评价只记录总体 `keep`、`improve` 或 `reject` 决策及可选备注，不要求主观分项分数。视觉淘汰不等同于执行失败；没有对照实验时不推断具体根因，也不把少量样本推广为模型能力结论。
+
 ## 5. Phase 4：Backend 可替换性
 
 接入第二个 Shape Backend，并加入 Model Registry、Router 和 ResolvedPlan。两个 Backend 必须满足相同 OperatorSpec，并在同一 benchmark 上生成可比较报告。
@@ -162,4 +174,4 @@ articulation in later iterations
 
 Phase 3 已整理 13 次真实 VOC 实例运行（12 成功、1 失败）与用户选出的 4 个相对完整模型。
 [初版报告](../reports/phase3-baseline-v1.md)明确记录采样、分辨率和人工评价局限；
-代表性数据选择及统一人工评分仍待完善。暂未进入 Phase 4。
+[已筛选输入基线](../reports/phase3-approved-baseline-v1.md)已完成最小工程基线：3 例执行成功，人工保留飞机和自行车、淘汰瓶子；两个成功样本可作为开发回归输入。暂未进入 Phase 4。

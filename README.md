@@ -25,6 +25,7 @@ Single RGB
 - [Artifact Store](docs/design/artifact-store.md)
 - [Evaluation](docs/design/evaluation.md)
 - [Roadmap](docs/planning/roadmap.md)
+- [Phase 3 已筛选输入基线报告](docs/reports/phase3-approved-baseline-v1.md)
 
 ## 当前实现
 

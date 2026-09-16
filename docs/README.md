@@ -20,6 +20,7 @@
 ## 评测报告 · reports
 
 - [2026-09-16：Phase 3 VOC / TRELLIS.2 初版观察报告](reports/phase3-baseline-v1.md)
+- [2026-09-16：Phase 3 VOC / TRELLIS.2 已筛选输入基线](reports/phase3-approved-baseline-v1.md)
 
 契约文档定义规则；指南描述操作；报告记录指定数据和配置下的事实与限制。
 新增或移动文档时维护此索引及引用链接，具体归档规则见 [AGENTS.md](../AGENTS.md)。
