@@ -1,9 +1,29 @@
 from __future__ import annotations
 
+import os
+
 import numpy as np
+import pytest
 from PIL import Image
 
-from assets_generator.backends.triposr_runner import prepare_image
+from assets_generator.backends.triposr_runner import configure_runtime_environment, prepare_image
+
+
+def test_runtime_uses_request_local_numba_cache(tmp_path, monkeypatch) -> None:
+    monkeypatch.delenv("NUMBA_CACHE_DIR", raising=False)
+
+    configure_runtime_environment(tmp_path)
+
+    assert os.environ["NUMBA_CACHE_DIR"] == str(tmp_path / "numba-cache")
+
+
+def test_runtime_preserves_explicit_numba_cache(tmp_path, monkeypatch) -> None:
+    configured = tmp_path / "configured-cache"
+    monkeypatch.setenv("NUMBA_CACHE_DIR", str(configured))
+
+    configure_runtime_environment(tmp_path / "request")
+
+    assert os.environ["NUMBA_CACHE_DIR"] == str(configured)
 
 
 def test_preprocessing_preserves_alpha_until_resize_then_composites_gray() -> None:
@@ -36,3 +56,17 @@ def test_opaque_rgba_input_keeps_foreground_colors() -> None:
     prepared = prepare_image(source, 1.0, lambda image, ratio: image)
     assert prepared.mode == "RGB"
     np.testing.assert_array_equal(np.asarray(prepared), np.asarray(source)[:, :, :3])
+
+
+def test_preprocessing_rejects_empty_alpha_before_upstream_resize() -> None:
+    source = Image.new("RGBA", (2, 2), (40, 80, 160, 0))
+
+    with pytest.raises(ValueError, match="no foreground pixels"):
+        prepare_image(source, 0.85, lambda image, ratio: pytest.fail("must not resize"))
+
+
+def test_preprocessing_rejects_empty_alpha_after_resize() -> None:
+    source = Image.new("RGBA", (2, 2), (40, 80, 160, 255))
+
+    with pytest.raises(ValueError, match="resized input alpha"):
+        prepare_image(source, 0.85, lambda image, ratio: Image.new("RGBA", image.size))

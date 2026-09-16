@@ -23,6 +23,7 @@ from assets_generator.operators import (
     Trellis2Backend,
     TripoSRBackend,
     canonicalize_glb,
+    validate_binary_mask,
     validate_geometry,
 )
 from assets_generator.serialization import canonical_json_bytes
@@ -116,6 +117,25 @@ def test_geometry_qa_warns_for_relative_scale_and_skips_optional_checks(tmp_path
     assert checks["metric_scale"].status == "warn"
     assert checks["collision_loadable"].status == "skipped"
     assert checks["render_back"].status == "skipped"
+
+
+def test_binary_mask_rejects_empty_foreground(tmp_path) -> None:
+    store = LocalArtifactStore(tmp_path / "store")
+    image_buffer = io.BytesIO()
+    mask_buffer = io.BytesIO()
+    Image.new("RGB", (4, 4), "red").save(image_buffer, format="PNG")
+    Image.new("L", (4, 4), 0).save(mask_buffer, format="PNG")
+    image = store.persist_bytes(
+        image_buffer.getvalue(), kind="rgb_image", schema_name="png", schema_version="1.0"
+    )
+    mask = store.persist_bytes(
+        mask_buffer.getvalue(), kind="binary_mask", schema_name="png", schema_version="1.0"
+    )
+
+    with pytest.raises(PipelineError, match="no foreground pixels") as captured:
+        validate_binary_mask(store, image, mask)
+
+    assert captured.value.code == ErrorCode.OUTPUT_INVALID
 
 
 def test_geometry_qa_rejects_provenance_for_wrong_output(tmp_path) -> None:

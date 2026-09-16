@@ -61,6 +61,33 @@ def test_preflight_passes_for_complete_read_only_probe(tmp_path, monkeypatch):
     assert "-B" in python_call
 
 
+def test_python_probe_preserves_virtual_environment_symlink(tmp_path, monkeypatch):
+    repo = _repo(tmp_path)
+    system_python = tmp_path / "system-python"
+    system_python.write_text("")
+    venv_python = tmp_path / "venv" / "bin" / "python"
+    venv_python.parent.mkdir(parents=True)
+    venv_python.symlink_to(system_python)
+    calls: list[list[str]] = []
+
+    def run(command, **kwargs):
+        calls.append(command)
+        payload = {
+            "python": str(system_python),
+            "python_version": "3.10.0",
+            "imports": {},
+            "torch": {"cuda_available": False},
+        }
+        return subprocess.CompletedProcess(command, 0, json.dumps(payload), "")
+
+    monkeypatch.setattr(triposr_preflight.subprocess, "run", run)
+
+    checks = triposr_preflight._python_probe(venv_python, repo)
+
+    assert calls[0][0] == str(venv_python.absolute())
+    assert checks[0].data == {"path": str(venv_python.absolute())}
+
+
 def test_preflight_rejects_remote_model_and_unsupported_device(tmp_path, monkeypatch):
     repo = _repo(tmp_path)
     python = tmp_path / "python"

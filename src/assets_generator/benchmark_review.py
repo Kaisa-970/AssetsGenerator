@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import hashlib
 import html
 import io
 import json
@@ -16,8 +17,100 @@ from urllib.parse import quote
 
 from PIL import Image
 
+from .backend_registry import BackendRegistry, resolve_plan
 from .backends.model_identity import snapshot_digest
-from .serialization import sha256_bytes
+from .pipeline import load_default_operator_specs, load_default_pipeline
+from .serialization import canonical_json_bytes, sha256_bytes
+
+
+def core_source_digest() -> str:
+    package = Path(__file__).parent
+    return sha256_bytes(
+        b"".join(
+            path.relative_to(package).as_posix().encode() + b"\0" + path.read_bytes()
+            for path in sorted(package.rglob("*.py"))
+        )
+    )
+
+
+def backend_source_identity(repo: Path) -> dict[str, Any]:
+    absolute = repo.expanduser().absolute()
+    try:
+        revision = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=absolute,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        tracked_diff = subprocess.run(
+            ["git", "diff", "--binary", "HEAD"],
+            cwd=absolute,
+            capture_output=True,
+            check=True,
+        ).stdout
+        untracked = subprocess.run(
+            ["git", "ls-files", "--others", "--exclude-standard"],
+            cwd=absolute,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.splitlines()
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise ValueError(f"cannot identify backend repository {absolute}: {error}") from error
+    identity = hashlib.sha256()
+    identity.update(revision.encode())
+    identity.update(b"\0")
+    identity.update(tracked_diff)
+    untracked_files = []
+    source_suffixes = {
+        ".c",
+        ".cc",
+        ".cpp",
+        ".cu",
+        ".cuh",
+        ".h",
+        ".hpp",
+        ".json",
+        ".py",
+        ".sh",
+        ".toml",
+        ".txt",
+        ".yaml",
+        ".yml",
+    }
+    for relative in sorted(untracked):
+        path = absolute / relative
+        if not path.is_file() or path.suffix.lower() not in source_suffixes:
+            continue
+        content_digest = sha256_bytes(path.read_bytes())
+        untracked_files.append([relative, content_digest])
+        identity.update(relative.encode())
+        identity.update(b"\0")
+        identity.update(content_digest.encode())
+    return {
+        "path": str(absolute),
+        "revision": revision,
+        "dirty": bool(tracked_diff or untracked_files),
+        "source_digest": f"sha256:{identity.hexdigest()}",
+    }
+
+
+def resolved_plan_contract_digest(backend: str) -> str:
+    registry = BackendRegistry()
+    registry.register(
+        name=backend,
+        operator="shape_generation@1",
+        backend_version="1.0.0",
+        implementation=object(),
+    )
+    plan = resolve_plan(
+        load_default_pipeline(),
+        registry,
+        operator_specs=load_default_operator_specs(),
+        backend_overrides={"generate_shape": backend},
+    )
+    return plan.contract_digest
 
 
 def execution_configuration(args: argparse.Namespace) -> dict[str, Any]:
@@ -30,15 +123,33 @@ def execution_configuration(args: argparse.Namespace) -> dict[str, Any]:
         }[backend]
     )
     local_model = Path(model).expanduser()
-    return {
+    parameters: dict[str, Any] = {
+        "seed": getattr(args, "seed", 42),
+        "pipeline_type": getattr(args, "pipeline_type", "512"),
+    }
+    configuration = {
         "shape_backend": backend,
         "model": str(local_model.resolve()) if local_model.is_dir() else model,
         "local_model_digest": snapshot_digest(local_model) if local_model.is_dir() else None,
-        "python": str(Path(args.python).expanduser().resolve()),
-        "repo": str(Path(args.repo).expanduser().resolve()),
-        "seed": 42,
-        "pipeline_type": "512",
+        "python": str(Path(args.python).expanduser().absolute()),
+        "backend_source": backend_source_identity(Path(args.repo)),
+        "core_source_digest": core_source_digest(),
+        "resolved_plan_contract_digest": resolved_plan_contract_digest(backend),
+        "parameters": parameters,
     }
+    if backend == "triposr":
+        parameters.update(
+            {
+                "timeout_seconds": getattr(args, "triposr_timeout", 900.0),
+                "chunk_size": getattr(args, "triposr_chunk_size", 8192),
+                "mc_resolution": getattr(args, "triposr_mc_resolution", 256),
+                "foreground_ratio": getattr(args, "triposr_foreground_ratio", 0.85),
+            }
+        )
+    else:
+        parameters["timeout_seconds"] = getattr(args, "backend_timeout", 1800.0)
+    configuration["identity_digest"] = sha256_bytes(canonical_json_bytes(configuration))
+    return configuration
 
 
 def write_json(path: Path, value: Any) -> None:
@@ -247,7 +358,7 @@ def run_manifest(args: argparse.Namespace) -> int:
             "--python",
             str(args.python),
             "--repo",
-            str(args.repo),
+            configuration["backend_source"]["path"],
             "--mode",
             args.mode,
             "--shape-backend",
@@ -255,6 +366,16 @@ def run_manifest(args: argparse.Namespace) -> int:
             "--model",
             configuration["model"],
         ]
+        parameters = configuration["parameters"]
+        command.extend(["--seed", str(parameters["seed"])])
+        command.extend(["--pipeline-type", str(parameters["pipeline_type"])])
+        if configuration["shape_backend"] == "triposr":
+            command.extend(["--triposr-timeout", str(parameters["timeout_seconds"])])
+            command.extend(["--triposr-chunk-size", str(parameters["chunk_size"])])
+            command.extend(["--triposr-mc-resolution", str(parameters["mc_resolution"])])
+            command.extend(["--triposr-foreground-ratio", str(parameters["foreground_ratio"])])
+        else:
+            command.extend(["--backend-timeout", str(parameters["timeout_seconds"])])
         with (args.output / f"case-{index:03d}.log").open("a") as log:
             result = subprocess.run(command, stdout=log, stderr=log, check=False)
         failed |= result.returncode != 0

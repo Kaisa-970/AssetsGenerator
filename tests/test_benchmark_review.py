@@ -1,15 +1,34 @@
 import argparse
 import json
+import subprocess
 
 from PIL import Image
 
 from assets_generator.benchmark_review import (
+    backend_source_identity,
     collect,
     execution_configuration,
+    load_matching_report,
     matching_report,
     run_manifest,
 )
 from assets_generator.serialization import sha256_bytes
+
+
+def _stub_execution_identity(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "assets_generator.benchmark_review.backend_source_identity",
+        lambda repo: {
+            "path": str(repo.expanduser().absolute()),
+            "revision": "fixture",
+            "dirty": False,
+            "source_digest": "sha256:" + "a" * 64,
+        },
+    )
+    monkeypatch.setattr(
+        "assets_generator.benchmark_review.core_source_digest",
+        lambda: "sha256:" + "b" * 64,
+    )
 
 
 def test_resume_checks_content_and_mode(tmp_path):
@@ -32,6 +51,7 @@ def test_resume_checks_content_and_mode(tmp_path):
 
 
 def test_preview_never_launches_gpu_and_selection_keeps_indices(tmp_path, monkeypatch):
+    _stub_execution_identity(monkeypatch)
     for name in ("image.png", "mask.png"):
         Image.new("L", (4, 4), 255).save(tmp_path / name)
     manifest = tmp_path / "manifest.json"
@@ -105,6 +125,7 @@ def test_collect_ignores_reports_and_models_for_replaced_input(tmp_path):
 
 
 def test_resume_returns_failure_from_latest_matching_report(tmp_path, monkeypatch):
+    _stub_execution_identity(monkeypatch)
     for name in ("image.png", "mask.png"):
         Image.new("L", (4, 4), 255).save(tmp_path / name)
     manifest = tmp_path / "manifest.json"
@@ -147,6 +168,7 @@ def test_resume_returns_failure_from_latest_matching_report(tmp_path, monkeypatc
 
 
 def test_resume_uses_latest_matching_retry_status(tmp_path, monkeypatch):
+    _stub_execution_identity(monkeypatch)
     for name in ("image.png", "mask.png"):
         Image.new("L", (4, 4), 255).save(tmp_path / name)
     manifest = tmp_path / "manifest.json"
@@ -189,6 +211,7 @@ def test_resume_uses_latest_matching_retry_status(tmp_path, monkeypatch):
 
 
 def test_resume_rejects_legacy_or_different_backend_configuration(tmp_path, monkeypatch):
+    _stub_execution_identity(monkeypatch)
     for name in ("image.png", "mask.png"):
         Image.new("L", (4, 4), 255).save(tmp_path / name)
     manifest = tmp_path / "manifest.json"
@@ -239,7 +262,8 @@ def test_resume_rejects_legacy_or_different_backend_configuration(tmp_path, monk
     assert len(calls) == 3
 
 
-def test_execution_configuration_tracks_local_weights(tmp_path):
+def test_execution_configuration_tracks_local_weights(tmp_path, monkeypatch):
+    _stub_execution_identity(monkeypatch)
     model = tmp_path / "model"
     model.mkdir()
     weights = model / "weights.bin"
@@ -252,6 +276,90 @@ def test_execution_configuration_tracks_local_weights(tmp_path):
     assert execution_configuration(args) != before
 
 
+def test_execution_configuration_tracks_backend_parameters(tmp_path, monkeypatch):
+    _stub_execution_identity(monkeypatch)
+    args = argparse.Namespace(
+        shape_backend="triposr",
+        model="stabilityai/TripoSR",
+        python="python",
+        repo="repo",
+        triposr_chunk_size=8192,
+    )
+    before = execution_configuration(args)
+
+    args.triposr_chunk_size = 4096
+
+    assert execution_configuration(args) != before
+
+
+def test_execution_configuration_preserves_virtual_environment_symlink(tmp_path, monkeypatch):
+    _stub_execution_identity(monkeypatch)
+    system_python = tmp_path / "system-python"
+    system_python.write_text("")
+    venv_python = tmp_path / "venv" / "bin" / "python"
+    venv_python.parent.mkdir(parents=True)
+    venv_python.symlink_to(system_python)
+    args = argparse.Namespace(
+        shape_backend="triposr",
+        model="stabilityai/TripoSR",
+        python=venv_python,
+        repo=tmp_path / "repo",
+    )
+
+    configuration = execution_configuration(args)
+
+    assert configuration["python"] == str(venv_python.absolute())
+
+
+def test_backend_source_identity_tracks_checkout_changes(tmp_path) -> None:
+    repo = tmp_path / "backend"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.email", "fixture@example.com"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.name", "Fixture"], cwd=repo, check=True)
+    source = repo / "runner.py"
+    source.write_text("one")
+    subprocess.run(["git", "add", "runner.py"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "fixture"], cwd=repo, check=True)
+
+    clean = backend_source_identity(repo)
+    source.write_text("two")
+    tracked = backend_source_identity(repo)
+    (repo / "new.py").write_text("new")
+    untracked = backend_source_identity(repo)
+
+    assert clean["dirty"] is False
+    assert tracked["dirty"] is True
+    assert tracked["source_digest"] != clean["source_digest"]
+    assert untracked["source_digest"] != tracked["source_digest"]
+
+
+def test_resume_rejects_changed_core_identity(tmp_path) -> None:
+    report = tmp_path / "report.json"
+    configuration = {"core_source_digest": "sha256:old"}
+    report.write_text(
+        json.dumps(
+            {
+                "image_digest": "image",
+                "mask_digest": "mask",
+                "execution_configuration": configuration,
+                "cases": [],
+            }
+        )
+    )
+
+    assert load_matching_report(report, "image", "mask", configuration) is not None
+    assert (
+        load_matching_report(
+            report,
+            "image",
+            "mask",
+            {"core_source_digest": "sha256:new"},
+        )
+        is None
+    )
+
+
 def test_benchmark_binds_selected_backend_and_records_configuration(tmp_path, monkeypatch):
     import sys
 
@@ -262,7 +370,8 @@ def test_benchmark_binds_selected_backend_and_records_configuration(tmp_path, mo
     Image.new("L", (4, 4), 255).save(mask)
     output = tmp_path / "out"
     implementation = object()
-    monkeypatch.setattr(benchmark, "TripoSRBackend", lambda *args: implementation)
+    _stub_execution_identity(monkeypatch)
+    monkeypatch.setattr(benchmark, "TripoSRBackend", lambda *args, **kwargs: implementation)
     monkeypatch.setattr(
         benchmark.subprocess, "run", lambda *args, **kwargs: argparse.Namespace(stdout="fixture")
     )

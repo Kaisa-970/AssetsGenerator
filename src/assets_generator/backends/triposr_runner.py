@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from collections.abc import Callable
@@ -24,10 +25,19 @@ def prepare_image(
     import numpy as np
     from PIL import Image
 
-    rgba = resize_foreground(image.convert("RGBA"), foreground_ratio)
+    source = image.convert("RGBA")
+    if not np.any(np.asarray(source, dtype=np.uint8)[:, :, 3]):
+        raise ValueError("TripoSR input alpha contains no foreground pixels")
+    rgba = resize_foreground(source, foreground_ratio)
+    if not np.any(np.asarray(rgba, dtype=np.uint8)[:, :, 3]):
+        raise ValueError("TripoSR resized input alpha contains no foreground pixels")
     pixels = np.asarray(rgba).astype(np.float32) / 255.0
     rgb = pixels[:, :, :3] * pixels[:, :, 3:4] + (1 - pixels[:, :, 3:4]) * 0.5
     return Image.fromarray((rgb * 255.0).astype(np.uint8))
+
+
+def configure_runtime_environment(work_dir: Path) -> None:
+    os.environ.setdefault("NUMBA_CACHE_DIR", str(work_dir / "numba-cache"))
 
 
 def main() -> int:
@@ -37,6 +47,7 @@ def main() -> int:
     response_path = Path(sys.argv[2])
     request = json.loads(request_path.read_text(encoding="utf-8"))
     repo = Path(request["repo"])
+    configure_runtime_environment(request_path.parent)
     sys.path.insert(0, str(repo))
 
     import torch

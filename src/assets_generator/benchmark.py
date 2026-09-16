@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from .artifact_store import LocalArtifactStore
-from .backend_registry import BackendRegistry, resolve_plan
+from .backend_registry import BackendRegistry, ShapeBackend, resolve_plan
 from .errors import classify_error
 from .models import ArtifactRef
 from .operators import BiRefNetSegmentationBackend, Trellis2Backend, TripoSRBackend
@@ -35,6 +35,15 @@ def main() -> int:
     parser.add_argument("--repo", type=Path)
     parser.add_argument("--shape-backend", choices=["trellis2", "triposr"], default="trellis2")
     parser.add_argument("--model")
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--pipeline-type", choices=["512", "1024", "1024_cascade", "1536_cascade"], default="512"
+    )
+    parser.add_argument("--backend-timeout", type=float, default=1800.0)
+    parser.add_argument("--triposr-timeout", type=float, default=900.0)
+    parser.add_argument("--triposr-chunk-size", type=int, default=8192)
+    parser.add_argument("--triposr-mc-resolution", type=int, default=256)
+    parser.add_argument("--triposr-foreground-ratio", type=float, default=0.85)
     args = parser.parse_args()
     if args.manifest:
         from .benchmark_review import run_manifest
@@ -45,13 +54,30 @@ def main() -> int:
     from .benchmark_review import execution_configuration
 
     configuration = execution_configuration(args)
-    backend_class = TripoSRBackend if args.shape_backend == "triposr" else Trellis2Backend
     registry = BackendRegistry()
+    implementation: ShapeBackend
+    if args.shape_backend == "triposr":
+        implementation = TripoSRBackend(
+            args.python,
+            args.repo,
+            configuration["model"],
+            timeout_seconds=args.triposr_timeout,
+            chunk_size=args.triposr_chunk_size,
+            mc_resolution=args.triposr_mc_resolution,
+            foreground_ratio=args.triposr_foreground_ratio,
+        )
+    else:
+        implementation = Trellis2Backend(
+            args.python,
+            args.repo,
+            configuration["model"],
+            timeout_seconds=args.backend_timeout,
+        )
     registry.register(
         name=args.shape_backend,
         operator="shape_generation@1",
         backend_version="1.0.0",
-        implementation=backend_class(args.python, args.repo, configuration["model"]),
+        implementation=implementation,
     )
     plan = resolve_plan(
         load_default_pipeline(),
@@ -67,12 +93,7 @@ def main() -> int:
         text=True,
         check=False,
     ).stdout
-    source_digest = sha256_bytes(
-        b"".join(
-            path.relative_to(Path(__file__).parent).as_posix().encode() + path.read_bytes()
-            for path in sorted(Path(__file__).parent.rglob("*.py"))
-        )
-    )
+    source_digest = configuration["core_source_digest"]
     modes = ["provided", "automatic"] if args.mask else ["automatic"]
     if args.mode != "both":
         modes = [args.mode]
@@ -81,7 +102,11 @@ def main() -> int:
     for mode in modes:
         started = time.monotonic()
         store_path = args.output / mode / "store"
-        row: dict[str, Any] = {"mode": mode, "seed": 42, "pipeline_type": "512"}
+        row: dict[str, Any] = {
+            "mode": mode,
+            "seed": args.seed,
+            "pipeline_type": args.pipeline_type,
+        }
         try:
             result = build_image_asset(
                 image_path=args.image,
@@ -90,6 +115,8 @@ def main() -> int:
                 output_path=args.output / mode / "release",
                 resolved_plan=plan,
                 segmentation_backend=BiRefNetSegmentationBackend(args.python),
+                seed=args.seed,
+                pipeline_type=args.pipeline_type,
             )
             store = LocalArtifactStore(store_path)
             release = json.loads((result.output_directory / "release.json").read_text())

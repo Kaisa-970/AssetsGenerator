@@ -176,13 +176,24 @@ def _driver_check() -> CheckResult:
 
 
 def _python_probe(python: Path, repo: Path) -> list[CheckResult]:
-    resolved = python.expanduser().resolve()
-    executable = _path_check("backend_python", resolved)
+    executable_path = python.expanduser().absolute()
+    executable = CheckResult(
+        "backend_python",
+        "pass" if executable_path.is_file() else "fail",
+        "file exists" if executable_path.is_file() else "file does not exist",
+        {"path": str(executable_path)},
+    )
     if executable.status == "fail":
         return [executable]
     try:
         result = subprocess.run(
-            [str(resolved), "-B", "-c", _ENVIRONMENT_PROBE, str(repo.expanduser().resolve())],
+            [
+                str(executable_path),
+                "-B",
+                "-c",
+                _ENVIRONMENT_PROBE,
+                str(repo.expanduser().resolve()),
+            ],
             capture_output=True,
             text=True,
             check=False,

@@ -94,6 +94,11 @@ def validate_binary_mask(
             ErrorCode.OUTPUT_INVALID,
             "segmentation mask contains values other than 0 and 255",
         )
+    if not np.any(values == 255):
+        raise PipelineError(
+            ErrorCode.OUTPUT_INVALID,
+            "segmentation mask contains no foreground pixels",
+        )
 
 
 def prepare_observation(
