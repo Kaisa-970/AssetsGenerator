@@ -81,10 +81,35 @@ def load_default_pipeline() -> PipelineDefinition:
 
 
 def compile_pipeline(pipeline: PipelineDefinition, specs: dict[str, OperatorSpec]) -> None:
+    deps: dict[str, set[str]] = {node_id: set() for node_id in pipeline.nodes}
+    for node_id, node in pipeline.nodes.items():
+        for reference in dict(node.get("inputs", {})).values():
+            key = str(reference).removesuffix("?")
+            if key.startswith("pipeline.inputs."):
+                continue
+            source_node = key.split(".outputs.", 1)[0]
+            if source_node not in pipeline.nodes:
+                raise ContractError(f"{node_id} references unknown node {source_node}")
+            deps[node_id].add(source_node)
+    ready = [node_id for node_id, values in deps.items() if not values]
+    order: list[str] = []
+    while ready:
+        node_id = ready.pop(0)
+        order.append(node_id)
+        for candidate, values in deps.items():
+            if node_id in values:
+                values.remove(node_id)
+                if not values:
+                    ready.append(candidate)
+    if len(order) != len(pipeline.nodes):
+        raise ContractError(
+            f"pipeline contains cycle involving nodes: {sorted(set(pipeline.nodes) - set(order))}"
+        )
     available: dict[str, PortSpec] = {
         f"pipeline.inputs.{name}": spec for name, spec in pipeline.inputs.items()
     }
-    for node_id, node in pipeline.nodes.items():
+    for node_id in order:
+        node = pipeline.nodes[node_id]
         operator_key = str(node["operator"])
         if operator_key not in specs:
             raise ContractError(f"{node_id} references unknown operator {operator_key}")
@@ -103,14 +128,17 @@ def compile_pipeline(pipeline: PipelineDefinition, specs: dict[str, OperatorSpec
             key = str(reference).removesuffix("?")
             if key not in available:
                 raise ContractError(f"{node_id}.{port_name} references unavailable {key}")
-            source = available[key]
-            if not set(source.kinds) <= set(port.kinds):
+            source_spec = available[key]
+            if not set(source_spec.kinds) <= set(port.kinds):
                 raise ContractError(f"{node_id}.{port_name} kind mismatch")
-            if not set(source.carriers) <= set(port.carriers):
+            if not set(source_spec.carriers) <= set(port.carriers):
                 raise ContractError(f"{node_id}.{port_name} carrier mismatch")
-            if port.schema_name is not None and source.schema_name != port.schema_name:
+            if port.schema_name is not None and source_spec.schema_name != port.schema_name:
                 raise ContractError(f"{node_id}.{port_name} schema mismatch")
-            if port.schema_version is not None and source.schema_version != port.schema_version:
+            if (
+                port.schema_version is not None
+                and source_spec.schema_version != port.schema_version
+            ):
                 raise ContractError(f"{node_id}.{port_name} schema version mismatch")
             if optional and port.cardinality == "one":
                 raise ContractError(f"{node_id}.{port_name} cannot use an optional reference")

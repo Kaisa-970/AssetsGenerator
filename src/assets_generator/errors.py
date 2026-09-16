@@ -10,6 +10,7 @@ class ErrorCode(str, Enum):
     BACKEND_TIMEOUT = "backend_timeout"
     BACKEND_FAILED = "backend_failed"
     OUTPUT_INVALID = "output_invalid"
+    RELEASE_FAILED = "release_failed"
     CANCELLED = "cancelled"
     INTERNAL_ERROR = "internal_error"
 

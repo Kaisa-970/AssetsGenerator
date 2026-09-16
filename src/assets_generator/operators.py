@@ -264,13 +264,43 @@ class BiRefNetSegmentationBackend:
     def _runner_path(self) -> Path:
         return (Path(__file__).parent / "backends" / "birefnet_runner.py").resolve()
 
+    def _model_cache_identity(self) -> str:
+        with tempfile.TemporaryDirectory(prefix="birefnet-identity-") as temporary:
+            work = Path(temporary)
+            request = work / "request.json"
+            response = work / "response.json"
+            request.write_text(
+                json.dumps(
+                    {
+                        "action": "identity",
+                        "model": self.MODEL_ID,
+                        "revision": self.MODEL_REVISION,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            self.worker.run(
+                ProcessJobRequest(
+                    [str(self.python), str(self._runner_path()), str(request), str(response)],
+                    Path.cwd(),
+                    self.timeout_seconds,
+                    uuid.uuid4().hex,
+                )
+            )
+            digest = json.loads(response.read_text(encoding="utf-8")).get("model_digest")
+            if not isinstance(digest, str) or not digest.startswith("sha256:"):
+                raise PipelineError(ErrorCode.OUTPUT_INVALID, "missing model digest")
+            return digest
+
     def segment(self, store: LocalArtifactStore, image: ArtifactRef) -> SegmentationOutput:
+        model_identity = self._model_cache_identity()
         key_payload = {
             "operator": "segmentation@1",
             "backend": "birefnet_lite",
             "model_revision": self.MODEL_REVISION,
             "threshold": self.threshold,
             "input_artifact_id": image.artifact_id,
+            "model_identity": model_identity,
         }
         key = cache_key(key_payload)
         cached = store.get_cache(key)
@@ -301,6 +331,7 @@ class BiRefNetSegmentationBackend:
                 "input_image": str(store.blob_path(image).resolve()),
                 "output_mask": str(output_path),
                 "threshold": self.threshold,
+                "expected_model_digest": model_identity,
             }
             request_path.write_text(json.dumps(request), encoding="utf-8")
             job = self.worker.run(
@@ -313,7 +344,7 @@ class BiRefNetSegmentationBackend:
                     ],
                     Path.cwd(),
                     self.timeout_seconds,
-                    key,
+                    uuid.uuid4().hex,
                 )
             )
             if not response_path.is_file() or not output_path.is_file():
@@ -322,6 +353,10 @@ class BiRefNetSegmentationBackend:
                     "BiRefNet backend did not produce its declared outputs",
                 )
             response = json.loads(response_path.read_text(encoding="utf-8"))
+            if response.get("model_digest") != model_identity:
+                raise PipelineError(
+                    ErrorCode.OUTPUT_INVALID, "model digest changed during execution"
+                )
             response["worker_job_id"] = job.job_id
             mask = store.persist_bytes(
                 output_path.read_bytes(),
@@ -335,14 +370,15 @@ class BiRefNetSegmentationBackend:
                 },
             )
             validate_binary_mask(store, image, mask)
-        store.put_cache(
-            key,
-            {
-                "artifact_ids": [mask.artifact_id],
-                "mask_artifact_id": mask.artifact_id,
-                "backend_metadata": response,
-            },
-        )
+        if response.get("model_digest"):
+            store.put_cache(
+                key,
+                {
+                    "artifact_ids": [mask.artifact_id],
+                    "mask_artifact_id": mask.artifact_id,
+                    "backend_metadata": response,
+                },
+            )
         return SegmentationOutput(
             mask,
             StructuredValue(
@@ -571,6 +607,17 @@ def assemble_asset(
         [observation_id],
         [quality_report.artifact_id],
     )
+
+
+def material_from_glb(store: LocalArtifactStore, mesh: ArtifactRef) -> PBRMaterial:
+    scene = _load_scene(store.blob_path(mesh).read_bytes())
+    for geometry in scene.geometry.values():
+        material = getattr(geometry.visual, "material", None)
+        color = getattr(material, "baseColorFactor", None) if material is not None else None
+        if color is not None:
+            values = [float(v) / 255.0 if float(v) > 1 else float(v) for v in color]
+            return PBRMaterial((values + [1.0])[:4])
+    return PBRMaterial([1.0, 1.0, 1.0, 1.0])
 
 
 def export_release(

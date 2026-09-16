@@ -1,11 +1,15 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import subprocess
 import sys
 from pathlib import Path
+
+if __package__:
+    from .model_identity import snapshot_digest
+else:
+    from model_identity import snapshot_digest
 
 
 def main() -> int:
@@ -66,21 +70,11 @@ def main() -> int:
         text=True,
     ).stdout.strip()
     model_path = Path(request["model"])
-    if model_path.is_dir():
-        config = model_path / "pipeline.json"
-        model_digest = f"sha256:{hashlib.sha256(config.read_bytes()).hexdigest()}"
-    else:
+    if not model_path.is_dir():
         from huggingface_hub import snapshot_download
 
-        snapshot = Path(snapshot_download(request["model"], local_files_only=True))
-        revision = snapshot.name
-        snapshot_identity = hashlib.sha256()
-        for path in sorted(item for item in snapshot.rglob("*") if item.is_file()):
-            snapshot_identity.update(str(path.relative_to(snapshot)).encode())
-            snapshot_identity.update(b"\0")
-            snapshot_identity.update(path.resolve().name.encode())
-            snapshot_identity.update(b"\0")
-        model_digest = f"sha256:{snapshot_identity.hexdigest()}"
+        model_path = Path(snapshot_download(request["model"], local_files_only=True))
+    model_digest = snapshot_digest(model_path)
     response_path.write_text(
         json.dumps(
             {

@@ -81,3 +81,7 @@ run.json
 ```
 
 模型权重、输入、生成资产、Artifact Store 和运行目录均不进入 Git。
+
+### Pipeline versions
+
+`image_asset_v2` is the supported default Phase 2 pipeline. `image_asset_v1.yaml` is retained as a historical Phase 1 baseline and is not selected by the default build command.

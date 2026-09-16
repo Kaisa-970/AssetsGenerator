@@ -1,19 +1,13 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import sys
 from pathlib import Path
 
-
-def _snapshot_digest(snapshot: Path) -> str:
-    identity = hashlib.sha256()
-    for path in sorted(item for item in snapshot.rglob("*") if item.is_file()):
-        identity.update(str(path.relative_to(snapshot)).encode())
-        identity.update(b"\0")
-        identity.update(path.resolve().name.encode())
-        identity.update(b"\0")
-    return f"sha256:{identity.hexdigest()}"
+if __package__:
+    from .model_identity import snapshot_digest as _snapshot_digest
+else:
+    from model_identity import snapshot_digest as _snapshot_digest
 
 
 def main() -> int:
@@ -23,22 +17,31 @@ def main() -> int:
     response_path = Path(sys.argv[2])
     request = json.loads(request_path.read_text(encoding="utf-8"))
 
+    from huggingface_hub import snapshot_download
+
+    local = Path(request["model"])
+    snapshot = (
+        local
+        if local.is_dir()
+        else Path(
+            snapshot_download(request["model"], revision=request["revision"], local_files_only=True)
+        )
+    )
+    digest = _snapshot_digest(snapshot)
+    if request.get("action") == "identity":
+        response_path.write_text(json.dumps({"model_digest": digest}), encoding="utf-8")
+        return 0
+    if request.get("expected_model_digest") != digest:
+        raise RuntimeError("model snapshot changed after cache lookup")
+
     import numpy as np
     import torch
-    from huggingface_hub import snapshot_download
     from PIL import Image
     from torchvision import transforms
     from transformers import AutoModelForImageSegmentation
 
     if not torch.cuda.is_available():
         raise RuntimeError("BiRefNet segmentation requires an accessible CUDA GPU")
-    snapshot = Path(
-        snapshot_download(
-            request["model"],
-            revision=request["revision"],
-            local_files_only=True,
-        )
-    )
     model = (
         AutoModelForImageSegmentation.from_pretrained(
             snapshot,
@@ -70,7 +73,7 @@ def main() -> int:
                 "backend_version": "transformers-remote-code",
                 "model": request["model"],
                 "model_revision": request["revision"],
-                "model_digest": _snapshot_digest(snapshot),
+                "model_digest": digest,
                 "threshold": request["threshold"],
                 "foreground_ratio": float((binary > 0).mean()),
                 "peak_cuda_memory_mb": torch.cuda.max_memory_allocated() / 1024 / 1024,

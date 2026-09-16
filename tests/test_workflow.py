@@ -198,6 +198,31 @@ def test_release_materialization_failure_is_atomic(tmp_path, monkeypatch) -> Non
     assert (output / "release.json").is_file()
 
 
+def test_release_failure_is_a_separate_attempt(tmp_path, monkeypatch) -> None:
+    image_path = tmp_path / "image.png"
+    mask_path = tmp_path / "mask.png"
+    Image.new("RGB", (8, 8), (200, 100, 50)).save(image_path)
+    Image.new("L", (8, 8), 255).save(mask_path)
+    output = tmp_path / "release"
+    monkeypatch.setattr(
+        "assets_generator.workflow.shutil.copyfile",
+        lambda *args: (_ for _ in ()).throw(OSError("copy failed")),
+    )
+    with pytest.raises(OSError):
+        build_image_asset(
+            image_path=image_path,
+            mask_path=mask_path,
+            store_path=tmp_path / "store",
+            output_path=output,
+            backend=ContractBackend(),  # type: ignore[arg-type]
+        )
+    store = LocalArtifactStore(tmp_path / "store")
+    run = store.get_build_run(next((store.root / "runs").glob("*.json")).stem)
+    assert run["node_attempts"][-1]["node_id"] == "materialize_release"
+    assert run["node_attempts"][-1]["status"] == "failed"
+    assert run["node_attempts"][-1]["error_code"] == "release_failed"
+
+
 def test_build_validates_actual_node_outputs_against_packaged_contract(
     tmp_path,
 ) -> None:

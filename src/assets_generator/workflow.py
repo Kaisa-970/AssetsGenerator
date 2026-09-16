@@ -9,13 +9,13 @@ from typing import Any
 from PIL import Image
 
 from .artifact_store import LocalArtifactStore
+from .errors import ErrorCode
 from .models import (
     SCHEMA_VERSION,
     ArtifactRef,
     AssetRelease,
     BackendNativeFrame,
     BuildRun,
-    PBRMaterial,
     ProvenanceRecord,
     StructuredValue,
 )
@@ -29,6 +29,7 @@ from .operators import (
     assemble_asset,
     canonicalize_glb,
     export_release,
+    material_from_glb,
     prepare_observation,
     validate_binary_mask,
     validate_geometry,
@@ -380,7 +381,10 @@ def build_image_asset(
             )
         )
 
-        material = PBRMaterial(**generated.material.value)
+        material = material_from_glb(store, generated.mesh)
+        generated_material = StructuredValue(
+            "pbr_material", "PBRMaterial", SCHEMA_VERSION, to_primitive(material)
+        )
 
         def execute_assemble() -> tuple[tuple[Any, ArtifactRef], dict[str, Any]]:
             value = assemble_asset(
@@ -402,7 +406,7 @@ def build_image_asset(
             "assemble_asset",
             {
                 "mesh": canonical.mesh,
-                "material": generated.material,
+                "material": generated_material,
                 "spatial": canonical.spatial_info,
                 "quality": report_ref,
                 "observations": observation_ref,
@@ -477,14 +481,33 @@ def build_image_asset(
         run.status = "succeeded"
         run.finished_at = utc_now()
         run_ref = _persist_build_run(store, run)
+        from .models import NodeAttempt
+
+        release_attempt = NodeAttempt(
+            "materialize_release",
+            1,
+            "release_materialization@1",
+            "core",
+            "running",
+            "executed",
+            utc_now(),
+            None,
+            None,
+        )
+        runtime.attempts.append(release_attempt)
         try:
             _materialize_release(store, output_path, release_ref, release, run_ref)
-        except Exception as error:
-            runtime.attempts[-1].status = "failed"
-            from .errors import classify_error
-
-            runtime.attempts[-1].error_code = classify_error(error).value
+        except Exception:
+            release_attempt.status = "failed"
+            release_attempt.error_code = ErrorCode.RELEASE_FAILED.value
+            release_attempt.finished_at = utc_now()
+            run.status = "failed"
+            run.finished_at = utc_now()
+            _persist_build_run(store, run)
             raise
+        release_attempt.status = "succeeded"
+        release_attempt.finished_at = utc_now()
+        _persist_build_run(store, run)
         return BuildResult(run_id, asset_ref, release_ref, glb_ref, report_ref, output_path)
     except Exception:
         run.status = "failed"

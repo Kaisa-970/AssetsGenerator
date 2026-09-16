@@ -96,10 +96,12 @@ def canonicalize_vertices(
     horizontal = oriented[:, :2]
     forward_component = horizontal[:, 0]
     dominant_index = int(np.argmax(np.abs(forward_component)))
+    yaw_flip_applied = False
     if forward_component[dominant_index] < 0:
         yaw_flip = np.diag([-1.0, -1.0, 1.0])
         yaw = yaw_flip @ yaw
         oriented = up_aligned @ yaw.T
+        yaw_flip_applied = True
 
     minimum = oriented.min(axis=0)
     maximum = oriented.max(axis=0)
@@ -140,6 +142,7 @@ def canonicalize_vertices(
             "rule_version": CANONICALIZATION_RULE_VERSION,
             "axis_tie_epsilon": AXIS_TIE_EPSILON,
             "yaw_tie_break": "dominant_native_component_positive",
+            "yaw_flip_applied": yaw_flip_applied,
             "origin_rule": "aabb_floor_center",
             "relative_scale_rule": "largest_aabb_extent_equals_one",
         },

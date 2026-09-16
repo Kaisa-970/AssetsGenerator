@@ -96,3 +96,22 @@ def test_pipeline_compile_rejects_persisted_value_as_structured_input() -> None:
 
     with pytest.raises(ContractError, match="carrier mismatch"):
         compile_pipeline(pipeline, specs)
+
+
+def test_pipeline_compile_rejects_cycles() -> None:
+    specs = {
+        "step@1": OperatorSpec(
+            "step", "1", {"input": PortSpec(("rgb_image",))}, {"output": PortSpec(("rgb_image",))}
+        )
+    }
+    pipeline = PipelineDefinition(
+        "cyclic",
+        "1",
+        {"image": PortSpec(("rgb_image",))},
+        {
+            "a": {"operator": "step@1", "inputs": {"input": "b.outputs.output"}},
+            "b": {"operator": "step@1", "inputs": {"input": "a.outputs.output"}},
+        },
+    )
+    with pytest.raises(ContractError, match="contains cycle"):
+        compile_pipeline(pipeline, specs)
