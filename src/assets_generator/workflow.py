@@ -510,6 +510,8 @@ def build_image_asset(
         _persist_build_run(store, run)
         return BuildResult(run_id, asset_ref, release_ref, glb_ref, report_ref, output_path)
     except Exception:
+        if run.status == "failed":
+            raise
         run.status = "failed"
         run.finished_at = utc_now()
         _persist_build_run(store, run)

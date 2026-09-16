@@ -267,6 +267,9 @@ class AssetDefinition:
 
 `AssetSpatialInfo` 的最小字段在 [coordinate-system.md](coordinate-system.md) 中定义。
 
+Phase 2 的 `GLTF2Profile` 将 canonical GLB 的材质与纹理作为交付权威；AssetDefinition
+中的材质字段记录当前可提取的基础颜色语义。完整纹理 Artifact 引用将在后续版本补齐。
+
 ```python
 @dataclass
 class GeometrySet:

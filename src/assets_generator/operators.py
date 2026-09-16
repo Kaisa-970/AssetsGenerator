@@ -260,11 +260,27 @@ class BiRefNetSegmentationBackend:
         self.threshold = threshold
         self.timeout_seconds = timeout_seconds
         self.worker = worker or LocalProcessWorker()
+        self._cached_model_identity: str | None = None
 
     def _runner_path(self) -> Path:
         return (Path(__file__).parent / "backends" / "birefnet_runner.py").resolve()
 
     def _model_cache_identity(self) -> str:
+        path = Path(self.MODEL_ID).expanduser()
+        signature = (
+            tuple(
+                (p.as_posix(), p.stat().st_mtime_ns, p.stat().st_size)
+                for p in sorted(path.rglob("*"))
+                if p.is_file()
+            )
+            if path.is_dir()
+            else None
+        )
+        if (
+            self._cached_model_identity is not None
+            and getattr(self, "_model_signature", None) == signature
+        ):
+            return self._cached_model_identity
         with tempfile.TemporaryDirectory(prefix="birefnet-identity-") as temporary:
             work = Path(temporary)
             request = work / "request.json"
@@ -290,6 +306,8 @@ class BiRefNetSegmentationBackend:
             digest = json.loads(response.read_text(encoding="utf-8")).get("model_digest")
             if not isinstance(digest, str) or not digest.startswith("sha256:"):
                 raise PipelineError(ErrorCode.OUTPUT_INVALID, "missing model digest")
+            self._cached_model_identity = digest
+            self._model_signature = signature
             return digest
 
     def segment(self, store: LocalArtifactStore, image: ArtifactRef) -> SegmentationOutput:
