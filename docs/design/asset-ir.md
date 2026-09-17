@@ -410,3 +410,9 @@ QualityReport
 AssetDefinition
 GLTF2 export
 ```
+
+## Completion 候选关联
+
+`completion_candidate` / `CompletionCandidate@1.0` 是不可变的候选关联 Artifact，
+保存重建与独立生成 release 引用，不表示已融合 AssetDefinition。字段和发布边界见
+[候选契约](completion-candidate.md)。

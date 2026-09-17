@@ -2,6 +2,8 @@
 
 ## 架构与契约 · design
 
+- [Completion 生成候选契约](design/completion-candidate.md)
+
 - [总体架构与验收标准](design/architecture.md)
 - [资产 IR 与身份](design/asset-ir.md)
 - [坐标系与空间转换](design/coordinate-system.md)
@@ -19,12 +21,16 @@
 
 ## 操作指南 · guides
 
+- [生成候选包](guides/completion-candidate.md)
+
 - [VOC 数据准备、批量评测与交互预览](guides/benchmark-voc.md)
 - [TripoSR 独立环境与只读预检](guides/triposr-environment.md)
 - [Open3D 环境与接入](guides/open3d-environment.md)
 - [DA3 独立环境与 Python 接入](guides/da3-environment.md)
 
 ## 评测报告 · reports
+
+- [2026-09-17：Completion 生成候选准备验证](reports/completion-candidate-smoke-v1.md)
 
 - [2026-09-17：已观测表面与 TSDF 融合诊断](reports/tsdf-surface-diagnosis-v1.md)
 

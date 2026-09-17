@@ -5,7 +5,7 @@
 
 ## 1. 范围
 
-Phase 6 将输入从单张 RGB 扩展为显式多视图观测，并为重建与生成式补全共存建立来源契约。Core 基线不绑定具体模型；首个真实 geometry frontend 已接入 DA3-Base，见 [DA3 契约](da3-backend.md)，reconstruction 选择 [Open3D TSDF](open3d-backend.md)，completion Backend 尚未选定，也不包含 Phase 5 的 CameraRegistration 和 render-back gate。
+Phase 6 将输入从单张 RGB 扩展为显式多视图观测，并为重建与生成式补全共存建立来源契约。Core 基线不绑定具体模型；首个真实 geometry frontend 已接入 DA3-Base，见 [DA3 契约](da3-backend.md)，reconstruction 选择 [Open3D TSDF](open3d-backend.md)，几何约束 completion Backend 尚未选定，已增加 [独立生成候选准备](completion-candidate.md)，也不包含 Phase 5 的 CameraRegistration 和 render-back gate。
 
 当前最小数据流：
 

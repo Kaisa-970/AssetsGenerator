@@ -22,6 +22,7 @@ ARTIFACT_KINDS = frozenset(
         "zip_bundle",
         "observation_bundle",
         "camera_collection",
+        "completion_candidate",
         "asset_definition",
         "asset_release",
         "quality_report",
