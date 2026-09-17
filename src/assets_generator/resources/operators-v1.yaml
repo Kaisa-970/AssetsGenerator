@@ -94,3 +94,12 @@ operators:
     outputs:
       glb: {kind: gltf_asset, carriers: [artifact_ref], requires_frame: true, requires_unit: true}
       release: {kind: asset_release, carriers: [structured], persist: true}
+
+  - name: align_candidate
+    version: 1
+    inputs:
+      candidate: {kind: completion_candidate, carriers: [artifact_ref], schema_name: CompletionCandidate, schema_version: "1.0"}
+      transform: {kind: spatial_transform, carriers: [structured], schema_name: SpatialTransform, schema_version: "1.0"}
+    outputs:
+      aligned: {kind: gltf_asset, carriers: [artifact_ref], requires_frame: true, requires_unit: true}
+      transform: {kind: spatial_transform, carriers: [artifact_ref], schema_name: SpatialTransform, schema_version: "1.0"}

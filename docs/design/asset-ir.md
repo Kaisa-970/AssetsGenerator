@@ -416,3 +416,7 @@ GLTF2 export
 `completion_candidate` / `CompletionCandidate@1.0` 是不可变的候选关联 Artifact，
 保存重建与独立生成 release 引用，不表示已融合 AssetDefinition。字段和发布边界见
 [候选契约](completion-candidate.md)。
+
+`candidate_alignment` / `CandidateAlignment@1.0` 保存显式对齐候选的输入、变换、输出及
+provenance 引用；`spatial_transform` / `SpatialTransform@1.0` 可作为独立 Artifact 证据。
+二者均不代表融合 AssetRelease。详见[显式候选对齐](completion-candidate.md#显式候选对齐-v1)。

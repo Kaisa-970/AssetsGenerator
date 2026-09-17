@@ -30,6 +30,8 @@
 
 ## 评测报告 · reports
 
+- [2026-09-17：显式候选对齐验证](reports/candidate-alignment-smoke-v1.md)
+
 - [2026-09-17：Completion 生成候选准备验证](reports/completion-candidate-smoke-v1.md)
 
 - [2026-09-17：已观测表面与 TSDF 融合诊断](reports/tsdf-surface-diagnosis-v1.md)

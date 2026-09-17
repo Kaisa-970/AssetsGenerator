@@ -23,6 +23,8 @@ ARTIFACT_KINDS = frozenset(
         "observation_bundle",
         "camera_collection",
         "completion_candidate",
+        "candidate_alignment",
+        "spatial_transform",
         "asset_definition",
         "asset_release",
         "quality_report",
