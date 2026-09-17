@@ -35,6 +35,16 @@ class Worker:
             "backend_metadata": {
                 "software_versions": {"sam": "test"},
                 "backend_environment": {"environment_digest": "sha256:test"},
+                "parameters": {
+                    "points_per_side": 16,
+                    "max_instances": 20,
+                    "min_area_pixels": 1,
+                    "pred_iou_thresh": 0.88,
+                    "stability_score_thresh": 0.95,
+                    "points_per_batch": 64,
+                    "crop_n_layers": 0,
+                    "output_mode": "binary_mask",
+                },
             },
         }
         if self.mutate:
@@ -79,6 +89,8 @@ def test_sam_persisted_masks_and_stable_identity(tmp_path):
     assert metadata["checkpoint_digest"] == metadata["model_digest"]
     assert metadata["runner_digest"].startswith("sha256:")
     assert metadata["configured_python"].endswith("venv/bin/python")
+    assert metadata["parameters"]["points_per_batch"] == 64
+    assert metadata["configured_parameters"]["model_type"] == "vit_h"
     assert metadata["worker_job_id"] == "test-job"
 
 
@@ -96,6 +108,7 @@ def test_sam_persisted_masks_and_stable_identity(tmp_path):
         "nan",
         "duplicates",
         "environment",
+        "parameters",
     ],
 )
 def test_sam_rejects_invalid_worker_outputs(tmp_path, problem):
@@ -125,6 +138,8 @@ def test_sam_rejects_invalid_worker_outputs(tmp_path, problem):
             response["proposals"].append(dict(row))
         elif problem == "environment":
             del response["backend_metadata"]["backend_environment"]
+        elif problem == "parameters":
+            response["backend_metadata"]["parameters"]["points_per_batch"] = 1
 
     store, image, backend = setup(tmp_path, mutate)
     with pytest.raises(ContractError):

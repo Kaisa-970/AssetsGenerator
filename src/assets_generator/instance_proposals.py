@@ -115,6 +115,31 @@ def propose_instances(
         ):
             raise ContractError("invalid instance proposals result contract")
         masks = _validate_result(store, image, value)
+        enriched = []
+        for proposal, mask in zip(value.value["proposals"], masks, strict=True):
+            mask_provenance = _persist_provenance(
+                store,
+                run_id=run.run_id,
+                node_id=attempt.node_id,
+                port_name="masks",
+                element_id=proposal["proposal_id"],
+                artifact=mask,
+                derived_from=[image],
+                operator="instance_proposals",
+                backend="sam_v1",
+                backend_version="1",
+                parameters=value.value["backend_metadata"],
+                seed=None,
+                source="estimated",
+                model_digest=value.value["backend_metadata"]["checkpoint_digest"],
+            )
+            enriched.append({**proposal, "provenance": to_primitive(mask_provenance)})
+        value = StructuredValue(
+            value.kind,
+            value.schema_name,
+            value.schema_version,
+            {**value.value, "proposals": enriched},
+        )
         ref = store.persist_structured(value)
         provenance = _persist_provenance(
             store,
@@ -122,7 +147,7 @@ def propose_instances(
             node_id=attempt.node_id,
             port_name="proposals",
             artifact=ref,
-            derived_from=[image, *masks],
+            derived_from=[image],
             operator="instance_proposals",
             backend="sam_v1",
             backend_version="1",
@@ -214,47 +239,124 @@ def select_instance_proposals(
         raise FileExistsError(output_path)
     image = ArtifactRef(**raw["image"])
     _checked(store, image, "rgb_image")
-    selection = store.persist_structured(
-        StructuredValue(
-            "instance_selection",
-            "InstanceSelection",
-            "1.0",
-            {
-                "proposals": to_primitive(proposals),
-                "selected_ids": proposal_ids,
-                "unselected_ids": sorted(set(indexed) - set(proposal_ids)),
-                "reviewer": reviewer.strip(),
-                "reviewed_at": utc_now(),
-                "scope": "mask_selection_only",
-                "semantic_labels": "unknown",
-            },
-        )
+    attempt = NodeAttempt(
+        "select_instances",
+        1,
+        "instance_selection@1",
+        "core",
+        "running",
+        "executed",
+        utc_now(),
+        None,
+        None,
     )
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(
-        prefix=f".{output_path.name}-", dir=output_path.parent
-    ) as temp:
-        stage = Path(temp)
-        (stage / "image.input").write_bytes(store.blob_path(image).read_bytes())
-        objects = []
-        for index, identifier in enumerate(proposal_ids):
-            mask = ArtifactRef(**indexed[identifier]["mask"])
-            _checked(store, mask, "binary_mask")
-            name = f"object_{index + 1:03d}"
-            filename = f"{name}.png"
-            (stage / filename).write_bytes(store.blob_path(mask).read_bytes())
-            objects.append({"object_id": name, "mask": filename})
-        (stage / "objects.json").write_bytes(
-            canonical_json_bytes(
+    run = BuildRun(
+        f"run_{uuid.uuid4().hex}",
+        "instance_selection",
+        "1",
+        "running",
+        {"proposals": proposals},
+        [attempt],
+        utc_now(),
+        None,
+    )
+    _persist_build_run(store, run)
+    try:
+        selection = store.persist_structured(
+            StructuredValue(
+                "instance_selection",
+                "InstanceSelection",
+                "1.0",
                 {
-                    "schema_version": "1.0",
-                    "image": "image.input",
-                    "objects": objects,
-                    "instance_selection": to_primitive(selection),
-                }
+                    "proposals": to_primitive(proposals),
+                    "selected_ids": proposal_ids,
+                    "unselected_ids": sorted(set(indexed) - set(proposal_ids)),
+                    "reviewer": reviewer.strip(),
+                    "reviewed_at": utc_now(),
+                    "scope": "mask_selection_only",
+                    "semantic_labels": "unknown",
+                },
             )
         )
-        (stage / "selection.json").write_bytes(store.blob_path(selection).read_bytes())
-        (stage / "selection-ref.json").write_bytes(canonical_json_bytes(to_primitive(selection)))
-        stage.rename(output_path)
-    return {"selection": to_primitive(selection), "manifest": str(output_path / "objects.json")}
+        selected_masks = [ArtifactRef(**indexed[identifier]["mask"]) for identifier in proposal_ids]
+        provenance = _persist_provenance(
+            store,
+            run_id=run.run_id,
+            node_id=attempt.node_id,
+            port_name="selection",
+            artifact=selection,
+            derived_from=[proposals, *selected_masks],
+            operator="instance_selection",
+            backend="core",
+            backend_version="1",
+            parameters={"selected_ids": proposal_ids, "reviewer": reviewer.strip()},
+            seed=None,
+            source="user",
+        )
+        attempt.outputs = {"selection": selection, "provenance": provenance}
+        attempt.status = "succeeded"
+        attempt.finished_at = utc_now()
+        attempt = NodeAttempt(
+            "publish_selection",
+            1,
+            "selection_materialization@1",
+            "core",
+            "running",
+            "executed",
+            utc_now(),
+            None,
+            None,
+        )
+        run.node_attempts.append(attempt)
+        _persist_build_run(store, run)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix=f".{output_path.name}-", dir=output_path.parent
+        ) as temp:
+            stage = Path(temp)
+            (stage / "image.input").write_bytes(store.blob_path(image).read_bytes())
+            objects = []
+            for index, identifier in enumerate(proposal_ids):
+                mask = ArtifactRef(**indexed[identifier]["mask"])
+                _checked(store, mask, "binary_mask")
+                name = f"object_{index + 1:03d}"
+                filename = f"{name}.png"
+                (stage / filename).write_bytes(store.blob_path(mask).read_bytes())
+                objects.append({"object_id": name, "mask": filename})
+            (stage / "objects.json").write_bytes(
+                canonical_json_bytes(
+                    {
+                        "schema_version": "1.0",
+                        "image": "image.input",
+                        "objects": objects,
+                        "instance_selection": to_primitive(selection),
+                    }
+                )
+            )
+            (stage / "selection.json").write_bytes(store.blob_path(selection).read_bytes())
+            (stage / "selection-ref.json").write_bytes(
+                canonical_json_bytes(to_primitive(selection))
+            )
+            (stage / "provenance.json").write_bytes(store.blob_path(provenance).read_bytes())
+            attempt.status = "succeeded"
+            attempt.finished_at = utc_now()
+            run.status = "succeeded"
+            run.finished_at = attempt.finished_at
+            run_ref = _persist_build_run(store, run)
+            (stage / "run.json").write_bytes(store.blob_path(run_ref).read_bytes())
+            stage.rename(output_path)
+        return {
+            "selection": to_primitive(selection),
+            "run_id": run.run_id,
+            "manifest": str(output_path / "objects.json"),
+        }
+    except Exception:
+        attempt.status = "failed"
+        attempt.error_code = (
+            "release_failed" if attempt.node_id == "publish_selection" else "selection_failed"
+        )
+        attempt.finished_at = utc_now()
+        run.status = "failed"
+        run.finished_at = attempt.finished_at
+        _persist_build_run(store, run)
+        raise

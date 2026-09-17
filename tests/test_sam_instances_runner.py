@@ -70,6 +70,7 @@ def test_masks_sorted_deduped_capped_and_bbox_recomputed(tmp_path, monkeypatch):
     assert result["backend_metadata"]["checkpoint_digest"] == runner._digest(
         tmp_path / "checkpoint.pth"
     )
+    assert result["backend_metadata"]["parameters"]["points_per_batch"] == 64
     with Image.open(rows[1]["mask"]) as image:
         np.testing.assert_array_equal(np.asarray(image), small.astype(np.uint8) * 255)
     request["output_dir"] = str(tmp_path / "second")
@@ -142,3 +143,4 @@ def test_environment_identity_changes_with_installed_sam_source(tmp_path):
     second = runner.environment_identity(module)
     assert first["environment_digest"] != second["environment_digest"]
     assert first["sam_source_digests"] != second["sam_source_digests"]
+    assert first["identity_scope"] == "sam_sources_and_dependency_installation_metadata"

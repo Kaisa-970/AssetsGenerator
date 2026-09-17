@@ -64,6 +64,12 @@ def test_propose_select_and_extract_handoff(tmp_path):
     store = LocalArtifactStore(tmp_path / "store")
     proposal_value = store.read_structured(ArtifactRef(**proposal["proposals"]))
     assert json.loads((tmp_path / "proposals/proposals.json").read_text()) == proposal_value
+    mask_provenance_ids = [p["provenance"]["artifact_id"] for p in proposal_value["proposals"]]
+    assert len(mask_provenance_ids) == len(set(mask_provenance_ids)) == 2
+    for row, provenance_id in zip(proposal_value["proposals"], mask_provenance_ids, strict=True):
+        provenance = json.loads(store.blob_path(ArtifactRef(provenance_id)).read_text())
+        assert provenance["output_artifact_id"] == row["mask"]["artifact_id"]
+        assert provenance["source"] == "estimated"
     proposal_run = store.get_build_run(proposal["run_id"])
     assert proposal_run["status"] == "succeeded"
     assert [node["status"] for node in proposal_run["node_attempts"]] == [
@@ -79,6 +85,15 @@ def test_propose_select_and_extract_handoff(tmp_path):
     )
     raw = json.loads(Path(selected["manifest"]).read_text())
     assert raw["instance_selection"] == selected["selection"]
+    selection_run = store.get_build_run(selected["run_id"])
+    assert selection_run["status"] == "succeeded"
+    assert [node["status"] for node in selection_run["node_attempts"]] == [
+        "succeeded",
+        "succeeded",
+    ]
+    selection_provenance = json.loads((tmp_path / "selected/provenance.json").read_text())
+    assert selection_provenance["source"] == "user"
+    assert selection_provenance["output_artifact_id"] == selected["selection"]["artifact_id"]
     args = setup(tmp_path / "extract")
     args["manifest_path"] = Path(selected["manifest"])
     args["store_path"] = tmp_path / "store"
@@ -209,3 +224,34 @@ def test_proposal_publish_failure_records_run(tmp_path, monkeypatch):
     assert runs[0]["status"] == "failed"
     assert runs[0]["node_attempts"][-1]["error_code"] == "release_failed"
     assert not (tmp_path / "proposals").exists()
+
+
+def test_selection_publish_failure_records_run(tmp_path, monkeypatch):
+    image = tmp_path / "scene.png"
+    Image.new("RGB", (8, 6), "red").save(image)
+    proposal = propose_instances(
+        image_path=image,
+        store_path=tmp_path / "store",
+        output_path=tmp_path / "proposals",
+        backend=FakeProposer(),
+    )
+
+    def fail(*args):
+        raise OSError("publication failed")
+
+    monkeypatch.setattr(Path, "rename", fail)
+    with pytest.raises(OSError, match="publication failed"):
+        select_instance_proposals(
+            proposals=ArtifactRef(**proposal["proposals"]),
+            proposal_ids=["p0"],
+            reviewer="tester",
+            store_path=tmp_path / "store",
+            output_path=tmp_path / "selection",
+        )
+    store = LocalArtifactStore(tmp_path / "store")
+    runs = [store.get_build_run(path.stem) for path in (store.root / "runs").glob("*.json")]
+    selection_runs = [run for run in runs if run["pipeline_name"] == "instance_selection"]
+    assert len(selection_runs) == 1
+    assert selection_runs[0]["status"] == "failed"
+    assert selection_runs[0]["node_attempts"][-1]["error_code"] == "release_failed"
+    assert not (tmp_path / "selection").exists()

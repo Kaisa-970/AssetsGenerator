@@ -126,7 +126,7 @@ class SAMInstanceProposer:
             checkpoint_digest=model_digest,
             runner_digest=runner_digest,
             configured_python=str(self.python),
-            parameters=self.parameters,
+            configured_parameters=self.parameters,
             worker_job_id=job.job_id,
             backend_version="sam-automatic-mask-v1",
         )
@@ -162,12 +162,23 @@ class SAMInstanceProposer:
         ):
             raise ContractError("SAM requires software version metadata")
         environment = metadata.get("backend_environment")
+        actual_parameters = metadata.get("parameters")
+        expected_parameters = {
+            key: value
+            for key, value in self.parameters.items()
+            if key not in {"model_type", "device"}
+        } | {
+            "points_per_batch": min(64, self.parameters["points_per_side"] ** 2),
+            "crop_n_layers": 0,
+            "output_mode": "binary_mask",
+        }
         if (
             not isinstance(environment, dict)
             or not isinstance(environment.get("environment_digest"), str)
             or not environment["environment_digest"].startswith("sha256:")
+            or actual_parameters != expected_parameters
         ):
-            raise ContractError("SAM requires backend environment identity")
+            raise ContractError("SAM requires environment identity and exact execution parameters")
         proposals = []
         ids = set()
         for row in rows:

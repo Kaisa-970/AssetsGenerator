@@ -20,7 +20,7 @@ POLICY = "sam-v1-area-desc-mask-digest-v1"
 
 
 def environment_identity(module: Any) -> dict[str, Any]:
-    """Fingerprint installed SAM sources and critical distribution manifests."""
+    """Fingerprint SAM sources and installation metadata for critical dependencies."""
     packages = {}
     for name in ("segment_anything", "torch", "torchvision", "numpy", "Pillow"):
         try:
@@ -31,7 +31,7 @@ def environment_identity(module: Any) -> dict[str, Any]:
             }
             packages[name] = {
                 "version": distribution.version,
-                "installation_digest": "sha256:"
+                "installation_metadata_digest": "sha256:"
                 + hashlib.sha256(json.dumps(metadata, sort_keys=True).encode()).hexdigest(),
             }
         except importlib.metadata.PackageNotFoundError:
@@ -49,6 +49,7 @@ def environment_identity(module: Any) -> dict[str, Any]:
         "python_version": sys.version,
         "packages": packages,
         "sam_source_digests": sources,
+        "identity_scope": "sam_sources_and_dependency_installation_metadata",
     }
     return {
         **identity,
@@ -205,7 +206,12 @@ def run(request: dict[str, Any]) -> dict[str, Any]:
             "model_type": model_type,
             "device": device,
             "policy": POLICY,
-            "parameters": {**options, "crop_n_layers": 0, "output_mode": "binary_mask"},
+            "parameters": {
+                **options,
+                "points_per_batch": min(64, options["points_per_side"] ** 2),
+                "crop_n_layers": 0,
+                "output_mode": "binary_mask",
+            },
             "software_versions": versions,
             "python_version": sys.version,
             "proposal_count_before_filter": len(raw),
