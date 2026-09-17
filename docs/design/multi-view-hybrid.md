@@ -5,7 +5,7 @@
 
 ## 1. 范围
 
-Phase 6 将输入从单张 RGB 扩展为显式多视图观测，并为重建与生成式补全共存建立来源契约。首批实现不绑定 VGGT、COLMAP 或具体 reconstruction/completion Backend，也不包含 Phase 5 的 CameraRegistration 和 render-back gate。
+Phase 6 将输入从单张 RGB 扩展为显式多视图观测，并为重建与生成式补全共存建立来源契约。Core 基线不绑定具体模型；首个真实 geometry frontend 后续选择 DA3-Base，见 [DA3 契约](da3-backend.md)，reconstruction/completion Backend 尚未选定，也不包含 Phase 5 的 CameraRegistration 和 render-back gate。
 
 当前最小数据流：
 
@@ -130,7 +130,7 @@ geometry frontend 输出的 camera 是重建输入或估计结果，不等同于
 
 以下事项等待产品或模型选择，不阻塞基础契约：
 
-- 首个真实 geometry frontend 和固定 revision；
+- DA3-Base 在代表性输入上的质量与资源验收；
 - reconstruction 的主交付表示及真实 Backend；
 - completion 触发条件、模型和融合方式；
 - region provenance 的 face/vertex/sidecar 具体编码；

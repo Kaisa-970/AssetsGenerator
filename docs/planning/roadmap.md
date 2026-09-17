@@ -129,7 +129,7 @@ Multi RGB / RGBD / Video
 
 同一资产可以包含 reconstructed 和 generated 区域，不能用单个 mode 概括来源。
 
-模型中立执行基线已经闭环，专项约束见 [多视图与 Hybrid 契约](../design/multi-view-hybrid.md)，验证记录见 [Phase 6 多视图 Core 基线报告](../reports/phase6-core-baseline-v1.md)：严格 Observation IR、原子且文件名无关的 manifest 导入、集合 cardinality、通用 Backend 绑定、Backend 执行 metadata provenance，以及 Fake Backend 驱动的多视图端到端 workflow。该基线验证 Core 契约、canonicalization、component provenance、QA、BuildRun 和 release，不代表真实多视图模型可用。真实 geometry frontend、reconstruction 与 completion Backend 等待后续选型。
+模型中立执行基线已经闭环，专项约束见 [多视图与 Hybrid 契约](../design/multi-view-hybrid.md)，验证记录见 [Phase 6 多视图 Core 基线报告](../reports/phase6-core-baseline-v1.md)：严格 Observation IR、原子且文件名无关的 manifest 导入、集合 cardinality、通用 Backend 绑定、Backend 执行 metadata provenance，以及 Fake Backend 驱动的多视图端到端 workflow。该基线验证 Core 契约、canonicalization、component provenance、QA、BuildRun 和 release，不代表真实多视图模型可用。首个真实 geometry frontend 已选 DA3-Base，接入约束见 [DA3 契约](../design/da3-backend.md)；reconstruction 与 completion Backend 等待后续选型。
 
 ## 8. Phase 7：Scene to Assets
 
