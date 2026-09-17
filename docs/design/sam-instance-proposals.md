@@ -15,6 +15,11 @@ xywh 像素 bbox、area、原始 predicted_iou/stability_score、label=unknown�
 selection 的图像、顺序和 mask identity，来源标记 selected_model_proposals；未选择候选仍保留
 在决定证据中。身份是自行填写，不是认证账户。
 
+`review-instances` 提供仅绑定 `127.0.0.1` 的可视检查入口。服务只读取当前 proposals 引用的
+原图和 mask，浏览器明确维护 selected_ids 顺序，并通过带 session token、同源和 Host 校验的
+发布请求调用同一个 `select_instance_proposals` 边界。UI 不产生新的自动判断，也不改变
+`InstanceSelection@1.0` 的身份语义。
+
 默认 ViT-H：points_per_side=16、crop_n_layers=0、max_instances=20、min_area_pixels=64、
 pred_iou_thresh=.88、stability_score_thresh=.95。真实可用性必须固定 checkpoint digest 并完成
 GPU smoke；mock 测试只证明契约。SAM 不提供语义标签、世界位姿、尺度或对象关系。

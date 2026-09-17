@@ -49,7 +49,15 @@ assets-generator propose-instances --image scene.jpg --store '<STORE>' --output 
   --points-per-side 16 --max-instances 20 --device cuda
 ```
 
-查看 proposals.json 和 masks/ 后，明确选择需要的候选：
+启动仅监听 loopback 的可视检查页，在原图上查看 mask 叠加、明确勾选并调整输出顺序：
+
+```bash
+assets-generator review-instances --proposals '<PROPOSALS>/proposals-ref.json' \
+  --store '<STORE>' --output '<SELECTION>' --port 8765
+```
+
+浏览器打开命令输出的 `http://127.0.0.1:<PORT>/`，填写检查人后发布。也可继续使用
+非交互命令明确选择需要的候选：
 
 ```bash
 assets-generator select-instances --proposals '<PROPOSALS>/proposals-ref.json' \

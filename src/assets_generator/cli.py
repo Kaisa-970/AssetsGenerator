@@ -101,6 +101,13 @@ def _parser() -> argparse.ArgumentParser:
     for command in (proposals, choose):
         command.add_argument("--store", type=Path, required=True)
         command.add_argument("--output", type=Path, required=True)
+    instance_review = subparsers.add_parser(
+        "review-instances", help="Local visual review of instance proposals"
+    )
+    instance_review.add_argument("--proposals", required=True)
+    instance_review.add_argument("--store", type=Path, required=True)
+    instance_review.add_argument("--output", type=Path, required=True)
+    instance_review.add_argument("--port", type=int, default=8765)
     return parser
 
 
@@ -230,6 +237,21 @@ def _execute(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
         )
         print(json.dumps(selection_result, indent=2))
         return 0
+    if args.command == "review-instances":
+        from .instance_review import InstanceReviewSession, create_instance_review_server
+
+        instance_session = InstanceReviewSession(
+            args.store, _reference(args.proposals), args.output
+        )
+        server = create_instance_review_server(instance_session, args.port)
+        print(f"http://127.0.0.1:{server.server_port}/ (Ctrl+C 关闭)", flush=True)
+        try:
+            server.serve_forever()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            server.server_close()
+        return 0
     if args.command == "build-scene":
         from .scene_workflow import build_scene
 
@@ -349,8 +371,10 @@ def _execute(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
     if args.command == "review-candidate":
         from .alignment_review import AlignmentReviewSession, create_review_server
 
-        session = AlignmentReviewSession(args.store, _reference(args.candidate), args.output)
-        server = create_review_server(session, args.port)
+        alignment_session = AlignmentReviewSession(
+            args.store, _reference(args.candidate), args.output
+        )
+        server = create_review_server(alignment_session, args.port)
         print(f"http://127.0.0.1:{server.server_port}/ (Ctrl+C 关闭)", flush=True)
         try:
             server.serve_forever()
