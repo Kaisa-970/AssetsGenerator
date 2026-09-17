@@ -16,7 +16,10 @@ document.addEventListener('click', event => {
  const button = event.target.closest('button[data-model]');
  if (!button) return;
  if (location.protocol === 'file:') {
- document.querySelector('#viewer-note').textContent = '请通过本地 HTTP 服务打开此页，浏览器无法直接读取本地 GLB。'; return;
+ const status = button.closest('.model-panel').querySelector('.model-status');
+ status.textContent = '本地文件模式无法加载模型。请通过 HTTP 服务打开此页。';
+ status.setAttribute('role', 'alert');
+ return;
  }
  const panel = button.closest('.model-panel');
  if (active) { active.viewer.remove(); active.button.textContent='查看模型'; active.status.textContent=''; }
