@@ -12,6 +12,7 @@ from typing import Any
 
 from .artifact_store import LocalArtifactStore
 from .backend_registry import ResolvedPlan
+from .completion import _checked
 from .contracts import ContractError
 from .errors import classify_error
 from .models import ArtifactRef, BuildRun, NodeAttempt, StructuredValue
@@ -45,7 +46,10 @@ def extract_scene_objects(
     failure in the shared Artifact Store.
     """
     raw = json.loads(manifest_path.read_text())
-    if not isinstance(raw, dict) or set(raw) != {"schema_version", "image", "objects"}:
+    if not isinstance(raw, dict) or set(raw) not in (
+        {"schema_version", "image", "objects"},
+        {"schema_version", "image", "objects", "instance_selection"},
+    ):
         raise ContractError("scene extraction requires schema_version, image and objects")
     if raw["schema_version"] != "1.0":
         raise ContractError("unsupported scene extraction schema_version")
@@ -83,6 +87,21 @@ def extract_scene_objects(
         mask = import_input(obj["mask"], "binary_mask")
         validate_binary_mask(store, image, mask)
         inputs.append({"object_id": obj["object_id"], "mask": to_primitive(mask)})
+    selection_evidence = None
+    if "instance_selection" in raw:
+        selection_evidence = ArtifactRef(**raw["instance_selection"])
+        _checked(store, selection_evidence, "instance_selection")
+        decision = store.read_structured(selection_evidence)
+        proposal_ref = ArtifactRef(**decision["proposals"])
+        _checked(store, proposal_ref, "instance_proposals")
+        proposals = store.read_structured(proposal_ref)
+        indexed = {p["proposal_id"]: p for p in proposals["proposals"]}
+        expected_masks = [indexed[i]["mask"] for i in decision["selected_ids"]]
+        if (
+            proposals["image"] != to_primitive(image)
+            or [obj["mask"] for obj in inputs] != expected_masks
+        ):
+            raise ContractError("instance selection does not match image and ordered masks")
     request = store.persist_structured(
         StructuredValue(
             "scene_extraction_request",
@@ -92,7 +111,10 @@ def extract_scene_objects(
                 "schema_version": "1.0",
                 "image": to_primitive(image),
                 "objects": inputs,
-                "segmentation_source": "user",
+                "segmentation_source": "selected_model_proposals" if selection_evidence else "user",
+                "instance_selection": to_primitive(selection_evidence)
+                if selection_evidence
+                else None,
                 "seed": seed,
                 "pipeline_type": pipeline_type,
                 "resolved_plan_contract_digest": resolved_plan.contract_digest,
@@ -203,7 +225,11 @@ def extract_scene_objects(
                 node_id=attempt.node_id,
                 port_name="manifest",
                 artifact=reference,
-                derived_from=[request, *releases.values()],
+                derived_from=[
+                    request,
+                    *([selection_evidence] if selection_evidence else []),
+                    *releases.values(),
+                ],
                 operator="scene_extraction_publication",
                 backend="core",
                 backend_version="1",

@@ -32,3 +32,18 @@ Phase 6 关闭的是流程首版，不关闭原规划中质量/completion/video/
 对象 mask 提取批次通过 Fake Backend 契约/失败测试，未对真正多物体场景运行模型验收；
 真实装配 smoke 复用已有资产，不证明自动 scene understanding。后续重点为真实多物体输入
 验收和可替换的 detection/instance segmentation/pose Backend，物理与自动布局质量仍延期。
+
+## SAM v1 自动 mask 候选
+
+复用 sugar 环境中的 segment_anything 1.0 与本地 ViT-H checkpoint；没有下载或安装。
+checkpoint SHA256 为 `a7bf3b02f3ebf1267aba913ff637d9a2d5c33d3173bb679e46d9f338c26f262e`。
+以 VOC 2007_000121 双显示器场景执行真实 GPU smoke（points_per_side=8、max_instances=10），
+run `run_a7c0fc1c4c22416a8296842a2c984ac7` 成功并产生 10 个 unknown/unreviewed mask proposals。
+根据 VOC provided mask 只作诊断，两个最佳候选 IoU 分别为 0.9544、0.9447；该指标不进入
+SAM 语义标签，也不代表类别检测置信度。自动化 smoke 明确选择这两个候选验证交接，
+selection 保留全部未选择候选；不冒充人工质量批准。
+
+隔离 runner/adapter/Core/selection/extraction 交接测试覆盖本地 checkpoint 摘要前后校验、环境与
+安装身份、mask/area/bbox/分数、确定排序去重、路径逃逸、后端畸形响应和证据篡改拒绝。
+全量 445 项测试、Ruff、mypy、build 通过。真实候选到 TRELLIS.2 的串行提取另行运行，
+其结果不影响 SAM proposal Backend 的真实可用性结论。

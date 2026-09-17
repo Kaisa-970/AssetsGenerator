@@ -83,6 +83,24 @@ def _parser() -> argparse.ArgumentParser:
         command.add_argument("--store", type=Path, required=True)
         command.add_argument("--output", type=Path, required=True)
     _shape_arguments(extraction)
+    proposals = subparsers.add_parser(
+        "propose-instances", help="SAM automatic unknown-class mask proposals"
+    )
+    proposals.add_argument("--image", type=Path, required=True)
+    proposals.add_argument("--sam-python", type=Path, required=True)
+    proposals.add_argument("--checkpoint", type=Path, required=True)
+    proposals.add_argument("--points-per-side", type=int, default=16)
+    proposals.add_argument("--max-instances", type=int, default=20)
+    proposals.add_argument("--device", choices=["cuda", "cpu"], default="cuda")
+    choose = subparsers.add_parser(
+        "select-instances", help="Explicitly choose proposal IDs for extraction"
+    )
+    choose.add_argument("--proposals", required=True)
+    choose.add_argument("--proposal-id", action="append", required=True)
+    choose.add_argument("--reviewer", required=True)
+    for command in (proposals, choose):
+        command.add_argument("--store", type=Path, required=True)
+        command.add_argument("--output", type=Path, required=True)
     return parser
 
 
@@ -182,6 +200,36 @@ def main() -> int:
 
 
 def _execute(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
+    if args.command == "propose-instances":
+        from .backends.sam_instances import SAMInstanceProposer
+        from .instance_proposals import propose_instances
+
+        proposal_result = propose_instances(
+            image_path=args.image,
+            store_path=args.store,
+            output_path=args.output,
+            backend=SAMInstanceProposer(
+                args.sam_python,
+                args.checkpoint,
+                device=args.device,
+                points_per_side=args.points_per_side,
+                max_instances=args.max_instances,
+            ),
+        )
+        print(json.dumps(proposal_result, indent=2))
+        return 0
+    if args.command == "select-instances":
+        from .instance_proposals import select_instance_proposals
+
+        selection_result = select_instance_proposals(
+            proposals=_reference(args.proposals),
+            proposal_ids=args.proposal_id,
+            reviewer=args.reviewer,
+            store_path=args.store,
+            output_path=args.output,
+        )
+        print(json.dumps(selection_result, indent=2))
+        return 0
     if args.command == "build-scene":
         from .scene_workflow import build_scene
 

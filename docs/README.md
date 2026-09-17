@@ -3,6 +3,7 @@
 ## 架构与契约 · design
 
 - [Phase 7 场景到资产首版契约](design/scene-to-assets.md)
+- [SAM v1 实例候选契约](design/sam-instance-proposals.md)
 
 - [Completion 生成候选契约](design/completion-candidate.md)
 

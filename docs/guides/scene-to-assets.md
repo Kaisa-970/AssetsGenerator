@@ -38,3 +38,25 @@ assets-generator inspect --store '<STORE>' --artifact '<NEW_SCENE>/scene-ref.jso
 assets/<instance_id>/ 完整保留该实例原 AssetRelease 的 asset/release/files，不只是模型快照。
 同一资产可放置多次，原 AssetDefinition 不改动。场景 GLB 已转换为 +Y up，不能再次按
 canonical 轴解释。未验证遮挡、碰撞、物理关系、姿态质量或自动分割。
+
+## SAM 自动 mask 候选
+
+复用已有环境和本地 checkpoint，无需安装或下载 PyTorch：
+
+```bash
+assets-generator propose-instances --image scene.jpg --store '<STORE>' --output '<PROPOSALS>' \
+  --sam-python '<SAM_ENV>/bin/python' --checkpoint '<LOCAL_SAM_CHECKPOINT>' \
+  --points-per-side 16 --max-instances 20 --device cuda
+```
+
+查看 proposals.json 和 masks/ 后，明确选择需要的候选：
+
+```bash
+assets-generator select-instances --proposals '<PROPOSALS>/proposals-ref.json' \
+  --proposal-id '<ID_1>' --proposal-id '<ID_2>' --reviewer '<NAME>' \
+  --store '<STORE>' --output '<SELECTION>'
+assets-generator extract-scene --manifest '<SELECTION>/objects.json' ...
+```
+
+选择顺序决定 object_001、object_002。不要把 SAM 分数解释为类别置信度，也不要自动将
+全部候选送入 TRELLIS；重叠、部件和背景候选需要人工排除。
