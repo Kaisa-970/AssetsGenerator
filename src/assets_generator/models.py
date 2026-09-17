@@ -21,6 +21,7 @@ ARTIFACT_KINDS = frozenset(
         "quality_evidence",
         "zip_bundle",
         "observation_bundle",
+        "camera_collection",
         "asset_definition",
         "asset_release",
         "quality_report",
@@ -46,6 +47,7 @@ STRUCTURED_KINDS = frozenset(
         "quality_report",
         "export_profile",
         "segmentation_result",
+        "component_provenance",
     }
 )
 
@@ -162,6 +164,50 @@ class SpatialTransform:
 
 
 @dataclass(frozen=True)
+class CameraRecord:
+    camera_id: str
+    image_view_id: str
+    model: Literal["pinhole", "opencv"]
+    width: int
+    height: int
+    fx: float
+    fy: float
+    cx: float
+    cy: float
+    distortion: list[float]
+    camera_frame_id: str
+    T_world_camera: SpatialTransform | None
+    source: str
+    confidence: Confidence | None = None
+    score: float | None = None
+    score_method: str | None = None
+
+
+@dataclass(frozen=True)
+class ObservationView:
+    view_id: str
+    image: ArtifactRef
+    mask: ArtifactRef | None = None
+    depth: ArtifactRef | None = None
+    camera: CameraRecord | None = None
+
+
+@dataclass(frozen=True)
+class ObservationBundle:
+    observation_id: str
+    views: list[ObservationView]
+
+
+@dataclass(frozen=True)
+class ComponentProvenance:
+    component_id: str
+    artifact: ArtifactRef
+    source: Literal["observed", "reconstructed", "generated", "mixed"]
+    provenance_ids: list[str] = field(default_factory=list)
+    region_map: ArtifactRef | None = None
+
+
+@dataclass(frozen=True)
 class AABB:
     minimum: list[float]
     maximum: list[float]
@@ -236,6 +282,7 @@ class AssetDefinition:
     physics: dict[str, Any] | None
     source_observation_ids: list[str]
     quality_report_ids: list[str]
+    component_provenance: list[ComponentProvenance] = field(default_factory=list)
 
 
 @dataclass(frozen=True)

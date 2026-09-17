@@ -1,5 +1,7 @@
 import pytest
+from PIL import Image
 
+from assets_generator.artifact_store import LocalArtifactStore
 from assets_generator.cli import _parser, _shape_registry
 from assets_generator.contracts import ContractError
 from assets_generator.operators import TripoSRBackend
@@ -85,3 +87,37 @@ def test_shape_registry_registers_triposr_when_configured(tmp_path) -> None:
     assert registration.implementation.chunk_size == 4096
     assert registration.implementation.mc_resolution == 128
     assert registration.implementation.frame_validation == evidence.resolve()
+
+
+def test_import_observations_command_persists_bundle(tmp_path, monkeypatch, capsys) -> None:
+    import json
+    import sys
+
+    from assets_generator.cli import main
+
+    Image.new("RGB", (4, 4), "red").save(tmp_path / "view.png")
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(
+        json.dumps({"views": [{"view_id": "view_000", "image": "view.png"}]}),
+        encoding="utf-8",
+    )
+    store_path = tmp_path / "store"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "assets-generator",
+            "import-observations",
+            "--manifest",
+            str(manifest),
+            "--store",
+            str(store_path),
+        ],
+    )
+
+    assert main() == 0
+    reference = json.loads(capsys.readouterr().out)
+    bundle = LocalArtifactStore(store_path).read_structured(
+        __import__("assets_generator.models", fromlist=["ArtifactRef"]).ArtifactRef(**reference)
+    )
+    assert bundle["views"][0]["view_id"] == "view_000"

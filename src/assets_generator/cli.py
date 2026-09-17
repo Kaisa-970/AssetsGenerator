@@ -22,6 +22,10 @@ def _parser() -> argparse.ArgumentParser:
     compile_command.add_argument("--pipeline", type=Path)
     compile_command.add_argument("--operators", type=Path)
 
+    import_observations = subparsers.add_parser("import-observations")
+    import_observations.add_argument("--manifest", type=Path, required=True)
+    import_observations.add_argument("--store", type=Path, required=True)
+
     build = subparsers.add_parser("build")
     build.add_argument("--image", type=Path, required=True)
     build.add_argument("--mask", type=Path)
@@ -114,6 +118,13 @@ def main() -> int:
         pipeline = load_pipeline(args.pipeline) if args.pipeline else load_default_pipeline()
         compile_pipeline(pipeline, specs)
         print(f"{pipeline.name}@{pipeline.version}: valid")
+        return 0
+    if args.command == "import-observations":
+        from .artifact_store import LocalArtifactStore
+        from .observation_import import import_observation_manifest
+
+        reference = import_observation_manifest(args.manifest, LocalArtifactStore(args.store))
+        print(json.dumps(to_primitive(reference), indent=2))
         return 0
     from .operators import BiRefNetSegmentationBackend
     from .workflow import build_image_asset
