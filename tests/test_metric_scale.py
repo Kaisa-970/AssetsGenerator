@@ -4,6 +4,8 @@ import json
 
 import numpy as np
 import pytest
+import trimesh
+from PIL import Image
 from test_collision import _source_release
 
 from assets_generator.collision import build_collision_asset
@@ -120,6 +122,7 @@ def test_metric_scale_without_collision(tmp_path):
 )
 def test_metric_scale_rejects_invalid_measurement(tmp_path, overrides):
     store, release, _, _ = _source_release(tmp_path)
+    before = set((store.root / "runs").glob("*.json"))
     with pytest.raises(ContractError):
         calibrate_metric_scale(
             release=release,
@@ -128,6 +131,32 @@ def test_metric_scale_rejects_invalid_measurement(tmp_path, overrides):
             output_path=tmp_path / "bad",
         )
     assert not (tmp_path / "bad").exists()
+    created = set((store.root / "runs").glob("*.json")) - before
+    assert len(created) == 1
+    run = store.get_build_run(created.pop().stem)
+    assert run["status"] == "failed"
+    assert run["node_attempts"][-1]["node_id"] == "import_metric_measurement"
+    assert run["node_attempts"][-1]["error_code"] == "contract_error"
+
+
+def test_metric_scale_records_invalid_measurement_json(tmp_path):
+    store, release, _, _ = _source_release(tmp_path)
+    measurement = tmp_path / "invalid-measurement.json"
+    measurement.write_text("{", encoding="utf-8")
+    before = set((store.root / "runs").glob("*.json"))
+    with pytest.raises(ContractError, match="readable UTF-8 JSON"):
+        calibrate_metric_scale(
+            release=release,
+            measurement_path=measurement,
+            store_path=store.root,
+            output_path=tmp_path / "bad-json",
+        )
+    created = set((store.root / "runs").glob("*.json")) - before
+    assert len(created) == 1
+    run = store.get_build_run(created.pop().stem)
+    assert run["status"] == "failed"
+    assert run["node_attempts"][-1]["node_id"] == "import_metric_measurement"
+    assert run["node_attempts"][-1]["error_code"] == "contract_error"
 
 
 def test_metric_scale_rejects_already_metric_asset(tmp_path):
@@ -356,3 +385,164 @@ def test_metric_scale_materialization_failure_is_atomic(tmp_path, monkeypatch):
     assert run["node_attempts"][-1]["node_id"] == "materialize_release"
     assert run["node_attempts"][-1]["error_code"] == "release_failed"
     assert not (tmp_path / "failed").exists()
+
+
+def test_metric_scale_final_publish_failure_is_atomic(tmp_path, monkeypatch):
+    store, release, _, _ = _source_release(tmp_path)
+    monkeypatch.setattr(
+        "assets_generator.metric_scale._publish_staged_release",
+        lambda *args: (_ for _ in ()).throw(OSError("final publish failed")),
+    )
+    before = set((store.root / "runs").glob("*.json"))
+    with pytest.raises(OSError, match="final publish failed"):
+        calibrate_metric_scale(
+            release=release,
+            measurement_path=_measurement(tmp_path, store, release),
+            store_path=store.root,
+            output_path=tmp_path / "failed-final",
+        )
+    created = set((store.root / "runs").glob("*.json")) - before
+    assert len(created) == 1
+    run = store.get_build_run(created.pop().stem)
+    assert run["status"] == "failed"
+    assert run["node_attempts"][-1]["node_id"] == "materialize_release"
+    assert run["node_attempts"][-1]["error_code"] == "release_failed"
+    assert not (tmp_path / "failed-final").exists()
+    assert not list(tmp_path.glob(".failed-final.*.staged"))
+
+
+def test_metric_scale_preserves_region_map_provenance(tmp_path):
+    store, release, _, mesh = _source_release(tmp_path)
+    release_raw = store.read_structured(release)
+    asset = store.read_structured(ArtifactRef(**release_raw["asset_definition"]))
+    geometry_provenance = _persist_provenance(
+        store,
+        run_id="run_region_source",
+        node_id="reconstruct",
+        port_name="mesh",
+        artifact=mesh,
+        derived_from=[],
+        operator="reconstruction",
+        backend="test",
+        backend_version="1",
+        parameters={},
+        seed=None,
+        source="reconstructed",
+    )
+    region = store.persist_bytes(
+        b"region-map",
+        kind="quality_evidence",
+        schema_name="RegionMap",
+        schema_version="1.0",
+    )
+    region_provenance = _persist_provenance(
+        store,
+        run_id="run_region_source",
+        node_id="reconstruct",
+        port_name="region_map",
+        artifact=region,
+        derived_from=[],
+        operator="reconstruction",
+        backend="test",
+        backend_version="1",
+        parameters={},
+        seed=None,
+        source="reconstructed",
+    )
+    geometry_id = store.read_structured(geometry_provenance)["provenance_id"]
+    region_id = store.read_structured(region_provenance)["provenance_id"]
+    asset["component_provenance"] = [
+        {
+            "component_id": "body",
+            "artifact": to_primitive(mesh),
+            "source": "reconstructed",
+            "provenance_ids": [geometry_id, region_id],
+            "region_map": to_primitive(region),
+        }
+    ]
+    source_asset = store.persist_structured(
+        StructuredValue("asset_definition", "AssetDefinition", "1.0", asset)
+    )
+    release_raw["asset_definition"] = to_primitive(source_asset)
+    source_release = store.persist_structured(
+        StructuredValue("asset_release", "AssetRelease", "1.0", release_raw)
+    )
+    result = calibrate_metric_scale(
+        release=source_release,
+        measurement_path=_measurement(tmp_path, store, source_release),
+        store_path=store.root,
+        output_path=tmp_path / "metric-region",
+    )
+    component = store.read_structured(result.asset_definition)["component_provenance"][0]
+    assert component["region_map"] == to_primitive(region)
+    assert component["provenance_ids"][:2] == [geometry_id, region_id]
+    assert len(component["provenance_ids"]) == 3
+
+
+def test_metric_scale_preserves_texture_vertex_colors_and_scene_structure(tmp_path):
+    store, release, _, _ = _source_release(tmp_path)
+    textured = trimesh.creation.box(extents=[1.0, 1.0, 1.0])
+    textured.visual = trimesh.visual.texture.TextureVisuals(
+        uv=np.zeros((len(textured.vertices), 2)),
+        material=trimesh.visual.material.PBRMaterial(
+            baseColorTexture=Image.new("RGB", (2, 2), "red")
+        ),
+    )
+    colored = trimesh.creation.box(extents=[0.5, 0.5, 0.5])
+    colored.visual.vertex_colors = np.tile([20, 40, 80, 255], (len(colored.vertices), 1))
+    scene = trimesh.Scene()
+    scene.add_geometry(textured, node_name="textured", geom_name="textured")
+    scene.add_geometry(
+        colored,
+        node_name="colored",
+        geom_name="colored",
+        transform=trimesh.transformations.translation_matrix([2.0, 0.0, 0.0]),
+    )
+    data = scene.export(file_type="glb")
+    assert isinstance(data, bytes)
+    mesh = store.persist_bytes(
+        data,
+        kind="triangle_mesh",
+        schema_name="glTF",
+        schema_version="2.0",
+        identity_metadata={
+            "media_type": "model/gltf-binary",
+            "frame_id": "asset_canonical",
+            "unit": "relative_unit",
+            "up_axis": "+Z",
+            "forward_axis": "+X",
+        },
+    )
+    release_raw = store.read_structured(release)
+    asset = store.read_structured(ArtifactRef(**release_raw["asset_definition"]))
+    asset["geometry"]["visual_meshes"] = [to_primitive(mesh)]
+    source_asset = store.persist_structured(
+        StructuredValue("asset_definition", "AssetDefinition", "1.0", asset)
+    )
+    release_raw["asset_definition"] = to_primitive(source_asset)
+    source_release = store.persist_structured(
+        StructuredValue("asset_release", "AssetRelease", "1.0", release_raw)
+    )
+    result = calibrate_metric_scale(
+        release=source_release,
+        measurement_path=_measurement(tmp_path, store, source_release),
+        store_path=store.root,
+        output_path=tmp_path / "metric-appearance",
+    )
+    canonical = _load_scene(store.blob_path(result.visual_mesh).read_bytes())
+    release_result = store.read_structured(result.release_manifest)
+    exported = _load_scene(
+        store.blob_path(ArtifactRef(**release_result["files"]["geometry/visual.glb"])).read_bytes()
+    )
+    for loaded in (canonical, exported):
+        assert len(loaded.geometry) == 2
+        geometries = list(loaded.geometry.values())
+        assert any(
+            geometry.visual.kind == "texture"
+            and geometry.visual.material.baseColorTexture is not None
+            for geometry in geometries
+        )
+        colored_geometry = next(
+            geometry for geometry in geometries if geometry.visual.kind == "vertex"
+        )
+        assert np.all(colored_geometry.visual.vertex_colors[:, :3] == [20, 40, 80])

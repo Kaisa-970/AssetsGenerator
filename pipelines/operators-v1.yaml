@@ -111,6 +111,12 @@ operators:
     outputs:
       release: {kind: asset_release, carriers: [artifact_ref]}
 
+  - name: metric_scale_measurement_import
+    version: 1
+    inputs: {}
+    outputs:
+      measurement: {kind: metric_scale_measurement, carriers: [artifact_ref], schema_name: MetricScaleMeasurement, schema_version: "1.0"}
+
   - name: metric_scale_calibration
     version: 1
     inputs:

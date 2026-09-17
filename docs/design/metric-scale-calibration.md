@@ -15,4 +15,7 @@ semantics, category priors, camera metadata, or model output.
 The result is a new immutable AssetDefinition and AssetRelease. It changes `unit` to `meter`,
 `scale_status` to `metric`, recomputes the AABB, remaps component provenance to the scaled visual
 mesh, regenerates visual/collision GLBs, and records direct provenance for scaled geometry, QA, and
-the derived asset. Physics remains unchanged and no mass or material property is inferred.
+the derived asset. Assets with existing physics are rejected; no mass or material property is
+inferred. V1 requires every component entry to reference the single canonical visual mesh; a
+composition whose components retain separate mesh Artifacts is rejected until those component
+meshes can be scaled and remapped independently.

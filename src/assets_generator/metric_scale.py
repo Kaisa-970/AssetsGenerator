@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import uuid
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -46,7 +48,10 @@ class MetricScaleResult:
 
 
 def _measurement(path: Path) -> dict[str, Any]:
-    raw = json.loads(path.read_text(encoding="utf-8"))
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise ContractError("metric measurement must be readable UTF-8 JSON") from error
     required = {
         "schema_version",
         "source_asset_id",
@@ -114,23 +119,18 @@ def _export_glb(store: LocalArtifactStore, mesh: ArtifactRef) -> bytes:
     return data
 
 
+def _publish_staged_release(staging_path: Path, output_path: Path) -> None:
+    os.replace(staging_path, output_path)
+
+
 def calibrate_metric_scale(
     *, release: ArtifactRef, measurement_path: Path, store_path: Path, output_path: Path
 ) -> MetricScaleResult:
     store = LocalArtifactStore(store_path)
-    measurement_raw = _measurement(measurement_path)
-    measurement = store.persist_structured(
-        StructuredValue(
-            "metric_scale_measurement",
-            "MetricScaleMeasurement",
-            SCHEMA_VERSION,
-            measurement_raw,
-        )
-    )
-    attempt = NodeAttempt(
-        "calibrate_metric_scale",
+    import_attempt = NodeAttempt(
+        "import_metric_measurement",
         1,
-        "metric_scale_calibration@1",
+        "metric_scale_measurement_import@1",
         "core",
         "running",
         "executed",
@@ -143,13 +143,41 @@ def calibrate_metric_scale(
         "metric_scale_v1",
         "1",
         "running",
-        {"release": release, "measurement": measurement},
-        [attempt],
+        {"release": release},
+        [import_attempt],
         utc_now(),
         None,
     )
     _persist_build_run(store, run)
     try:
+        measurement_raw = _measurement(measurement_path)
+        measurement = store.persist_structured(
+            StructuredValue(
+                "metric_scale_measurement",
+                "MetricScaleMeasurement",
+                SCHEMA_VERSION,
+                measurement_raw,
+            )
+        )
+        import_spec = load_default_operator_specs()["metric_scale_measurement_import@1"]
+        validate_operator_outputs(import_spec, {"measurement": measurement}, store)
+        import_attempt.status = "succeeded"
+        import_attempt.finished_at = utc_now()
+        import_attempt.outputs = {"measurement": measurement}
+        run.inputs["measurement"] = measurement
+        attempt = NodeAttempt(
+            "calibrate_metric_scale",
+            1,
+            "metric_scale_calibration@1",
+            "core",
+            "running",
+            "executed",
+            utc_now(),
+            None,
+            None,
+        )
+        run.node_attempts.append(attempt)
+        _persist_build_run(store, run)
         if output_path.exists():
             raise FileExistsError(output_path)
         if not store.verify_digest(release):
@@ -316,9 +344,14 @@ def calibrate_metric_scale(
             raise ContractError("source component_provenance is invalid")
         remapped_components = []
         provenance_by_id = {}
+        visual_lineage_ids = {visual.artifact_id}
         for reference in store.find_artifacts("provenance_record"):
             record = store.read_structured(reference)
             provenance_by_id[record.get("provenance_id")] = record
+            if record.get("output_artifact_id") == visual.artifact_id:
+                derived = record.get("derived_from_artifact_ids")
+                if isinstance(derived, list):
+                    visual_lineage_ids.update(item for item in derived if isinstance(item, str))
         for component in components:
             if not isinstance(component, dict):
                 raise ContractError("source component_provenance entry is invalid")
@@ -330,15 +363,25 @@ def calibrate_metric_scale(
                 isinstance(item, str) for item in existing_ids
             ):
                 raise ContractError("component provenance_ids are invalid")
+            region_map = component.get("region_map")
+            region_map_id = None
+            if region_map is not None:
+                region_map_ref = _artifact(region_map, "component region_map")
+                if not store.verify_digest(region_map_ref):
+                    raise ContractError("component region_map has an invalid digest")
+                region_map_id = region_map_ref.artifact_id
+            has_geometry_lineage = False
             for provenance_id in existing_ids:
                 resolved_record = provenance_by_id.get(provenance_id)
-                if (
-                    resolved_record is None
-                    or resolved_record.get("output_artifact_id") != visual.artifact_id
-                ):
-                    raise ContractError(
-                        "component provenance_id does not resolve to the source mesh"
-                    )
+                if resolved_record is None:
+                    raise ContractError("component provenance_id does not resolve")
+                output_artifact_id = resolved_record.get("output_artifact_id")
+                if output_artifact_id in visual_lineage_ids:
+                    has_geometry_lineage = True
+                elif output_artifact_id != region_map_id:
+                    raise ContractError("component provenance_id is unrelated to its geometry")
+            if not has_geometry_lineage:
+                raise ContractError("component provenance lacks geometry lineage")
             remapped_components.append(
                 {
                     **component,
@@ -592,12 +635,21 @@ def calibrate_metric_scale(
             None,
         )
         run.node_attempts.append(materialize)
+        running_run_ref = _persist_build_run(store, run)
+        absolute_output = output_path.expanduser().absolute()
+        staging_path = absolute_output.parent / f".{absolute_output.name}.{uuid.uuid4().hex}.staged"
+        _materialize_release(store, staging_path, release_ref, result_release, running_run_ref)
         materialize.status = "succeeded"
         materialize.finished_at = utc_now()
         run.status = "succeeded"
         run.finished_at = materialize.finished_at
-        run_ref = _persist_build_run(store, run)
-        _materialize_release(store, output_path, release_ref, result_release, run_ref)
+        final_run_ref = _persist_build_run(store, run)
+        final_run_path = store.blob_path(final_run_ref)
+        target_run_path = staging_path / "run.json"
+        temporary_run_path = target_run_path.with_name(f".run.{uuid.uuid4().hex}.tmp")
+        temporary_run_path.write_bytes(final_run_path.read_bytes())
+        os.replace(temporary_run_path, target_run_path)
+        _publish_staged_release(staging_path, absolute_output)
         return MetricScaleResult(
             run.run_id,
             measurement,
@@ -609,6 +661,8 @@ def calibrate_metric_scale(
             output_path.absolute(),
         )
     except Exception as error:
+        if "staging_path" in locals():
+            shutil.rmtree(staging_path, ignore_errors=True)
         active = run.node_attempts[-1]
         active.status = "failed"
         active.finished_at = utc_now()
