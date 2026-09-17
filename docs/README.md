@@ -26,6 +26,14 @@
 
 ## 评测报告 · reports
 
+- [2026-09-17：已观测表面与 TSDF 融合诊断](reports/tsdf-surface-diagnosis-v1.md)
+
+- [2026-09-17：DA3 视图数与分辨率对照](reports/da3-view-resolution-v1.md)
+
+- [2026-09-17：DA3 / TSDF 缺面诊断](reports/da3-missing-surface-diagnosis-v1.md)
+
+- [2026-09-17：DTU 多视图 TSDF 参数试评](reports/dtu-tsdf-pilot-v1.md)
+
 - [2026-09-17：Open3D TSDF 接入验证](reports/open3d-tsdf-smoke-v1.md)
 
 - [2026-09-17：DA3-Base 多帧资源验证](reports/da3-frame-scaling-v1.md)
