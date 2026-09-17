@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
@@ -13,6 +15,53 @@ AXIS_TIE_EPSILON = 1e-8
 
 class SpatialContractError(ValueError):
     pass
+
+
+def validate_backend_native_frame(frame: BackendNativeFrame) -> None:
+    if not isinstance(frame.frame_id, str) or not frame.frame_id:
+        raise SpatialContractError("BackendNativeFrame requires frame_id")
+    if not isinstance(frame.handedness, str) or frame.handedness not in {"right", "left"}:
+        raise SpatialContractError(f"invalid handedness: {frame.handedness}")
+    axes = {"+X", "-X", "+Y", "-Y", "+Z", "-Z"}
+    if not isinstance(frame.up_axis, str) or frame.up_axis not in axes:
+        raise SpatialContractError(f"invalid up axis: {frame.up_axis}")
+    if frame.forward_axis is not None:
+        if not isinstance(frame.forward_axis, str) or frame.forward_axis not in axes:
+            raise SpatialContractError(f"invalid forward axis: {frame.forward_axis}")
+        if abs(float(_axis_vector(frame.forward_axis) @ _axis_vector(frame.up_axis))) > 0.0:
+            raise SpatialContractError("up and forward axes must be orthogonal")
+    if not isinstance(frame.forward_status, str) or frame.forward_status not in {
+        "declared",
+        "estimated",
+        "unknown",
+    }:
+        raise SpatialContractError(f"invalid forward status: {frame.forward_status}")
+    if not isinstance(frame.unit, str) or frame.unit not in {"meter", "relative_unit"}:
+        raise SpatialContractError(f"invalid native frame unit: {frame.unit}")
+    if frame.forward_axis is None and frame.forward_status != "unknown":
+        raise SpatialContractError("missing forward axis requires unknown forward status")
+    if frame.forward_axis is not None and frame.forward_status == "unknown":
+        raise SpatialContractError("known forward axis requires declared or estimated status")
+
+
+def validate_mesh_native_frame(
+    identity_metadata: Mapping[str, Any], frame: BackendNativeFrame
+) -> None:
+    validate_backend_native_frame(frame)
+    if identity_metadata.get("frame_id") != frame.frame_id:
+        raise SpatialContractError("mesh frame_id does not match BackendNativeFrame")
+    if identity_metadata.get("unit") != frame.unit:
+        raise SpatialContractError("mesh unit does not match BackendNativeFrame")
+    if (
+        identity_metadata.get("up_axis") is not None
+        and identity_metadata["up_axis"] != frame.up_axis
+    ):
+        raise SpatialContractError("mesh up_axis does not match BackendNativeFrame")
+    if (
+        identity_metadata.get("forward_axis") is not None
+        and identity_metadata["forward_axis"] != frame.forward_axis
+    ):
+        raise SpatialContractError("mesh forward_axis does not match BackendNativeFrame")
 
 
 @dataclass(frozen=True)
@@ -72,6 +121,7 @@ def canonicalize_vertices(
     vertices: NDArray[np.float64],
     native_frame: BackendNativeFrame,
 ) -> CanonicalizationResult:
+    validate_backend_native_frame(native_frame)
     points = np.asarray(vertices, dtype=np.float64)
     if points.ndim != 2 or points.shape[1] != 3 or len(points) == 0:
         raise SpatialContractError("vertices must be a non-empty Nx3 array")

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from assets_generator.models import BackendNativeFrame
-from assets_generator.spatial import canonicalize_vertices
+from assets_generator.spatial import SpatialContractError, canonicalize_vertices
 
 
 def test_canonicalization_sets_floor_center_origin_and_relative_scale() -> None:
@@ -47,3 +48,45 @@ def test_unknown_forward_uses_longest_horizontal_extent() -> None:
     extents = np.ptp(result.vertices, axis=0)
     assert extents[0] >= extents[1]
     assert result.spatial_info.forward_status == "estimated"
+
+
+def test_canonicalization_rejects_unknown_native_unit() -> None:
+    native = BackendNativeFrame("native", "right", "+Z", None, "unknown", "millimeter")
+
+    with pytest.raises(SpatialContractError, match="invalid native frame unit"):
+        canonicalize_vertices(np.array([[0.0, 0.0, 0.0], [1.0, 1.0, 1.0]]), native)
+
+
+@pytest.mark.parametrize(
+    ("native", "message"),
+    [
+        (
+            BackendNativeFrame("native", "right", "+Z", None, "declared", "relative_unit"),
+            "missing forward axis requires unknown",
+        ),
+        (
+            BackendNativeFrame("native", "right", "+Z", "+X", "unknown", "relative_unit"),
+            "known forward axis requires",
+        ),
+        (
+            BackendNativeFrame(123, "right", "+Z", None, "unknown", "relative_unit"),  # type: ignore[arg-type]
+            "requires frame_id",
+        ),
+    ],
+)
+def test_canonicalization_rejects_inconsistent_native_frame(native, message) -> None:
+    with pytest.raises(SpatialContractError, match=message):
+        canonicalize_vertices(np.array([[0.0, 0.0, 0.0], [1.0, 1.0, 1.0]]), native)
+
+
+@pytest.mark.parametrize("up", ["+X", "-X", "+Y", "-Y", "+Z", "-Z"])
+@pytest.mark.parametrize("forward", ["+X", "-X", "+Y", "-Y", "+Z", "-Z"])
+def test_native_frame_axis_pairs(up, forward) -> None:
+    from assets_generator.spatial import validate_backend_native_frame
+
+    frame = BackendNativeFrame("native", "right", up, forward, "declared", "relative_unit")
+    if up[-1] == forward[-1]:
+        with pytest.raises(SpatialContractError, match="orthogonal"):
+            validate_backend_native_frame(frame)
+    else:
+        validate_backend_native_frame(frame)
