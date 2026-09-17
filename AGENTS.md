@@ -3,9 +3,9 @@
 ## 项目与当前阶段
 
 - `AssetsGenerator / Real-to-Sim Asset Compiler` 将现实观测编译为可追溯、可校验的结构化 3D 资产。
-- 当前进入 Phase 8 首版：先实现单资产可选 collision generation；Phase 6 和 Phase 7 流程首版均已闭环。Phase 4 已关闭，Phase 5 CameraRegistration/render-back QA 显式延期。
+- 当前处于 Phase 8 首版：单资产可选 collision generation 和显式两点 metric scale calibration 已完成；Phase 6 和 Phase 7 流程首版均已闭环。Phase 4 已关闭，Phase 5 CameraRegistration/render-back QA 显式延期。
 - DA3-Base 是首个真实 geometry frontend，Open3D TSDF 是首个 reconstruction Backend；已完成真实 DA3 → Open3D → GLB 发布 smoke，尚未完成代表性物体质量验收，也未关闭完整 Phase 6。
-- Phase 7 已完成 SAM unknown mask 候选、显式选择、逐对象生成、可视人工布局、SceneDefinition/GLB、父子 BuildRun 和完整 provenance；不宣称语义检测、自动位姿、尺度恢复或物理可用。当前 Phase 8 先做 canonical collision mesh 的确定性 CPU 路径、发布和 QA；metric calibration、刚体参数、USD/IsaacUSD 和 runtime 同步延期。完整 Phase 6 的质量调优、几何约束 completion、自动配准和拓扑融合仍延期。
+- Phase 7 已完成 SAM unknown mask 候选、显式选择、逐对象生成、可视人工布局、SceneDefinition/GLB、父子 BuildRun 和完整 provenance；不宣称语义检测或自动位姿。Phase 8 已完成 canonical collision mesh 与显式测量驱动的 meter 标定；当前下一切片是仅接受用户明确提供的刚体参数。不得自动估计 mass、friction、inertia；USD/IsaacUSD、runtime 同步和 articulation 仍延期。完整 Phase 6 的质量调优、几何约束 completion、自动配准和拓扑融合仍延期。
 - 单图 TRELLIS.2 / TripoSR 基线须保持；TripoSR 遵守 `docs/design/triposr-backend.md`。真实 Backend 使用独立环境，Fake Backend 或 smoke 不替代质量 benchmark。
 - 当前不要扩展分布式调度、完整 FrameGraph、通用 schema migration 或与本阶段无关的平台能力。
 - 主要目录：源码 `src/assets_generator/`，测试 `tests/`，Pipeline 配置 `pipelines/`，文档 `docs/`。
