@@ -45,5 +45,25 @@ selection 保留全部未选择候选；不冒充人工质量批准。
 
 隔离 runner/adapter/Core/selection/extraction 交接测试覆盖本地 checkpoint 摘要前后校验、环境与
 安装身份、mask/area/bbox/分数、确定排序去重、路径逃逸、后端畸形响应和证据篡改拒绝。
-全量 445 项测试、Ruff、mypy、build 通过。真实候选到 TRELLIS.2 的串行提取另行运行，
-其结果不影响 SAM proposal Backend 的真实可用性结论。
+每个 mask 具有独立的 ExecutionOutput/provenance；人工 selection 具有最小 BuildRun、user-source
+provenance 和失败状态。runner 的实际 AMG 参数与配置参数分别保留，依赖身份明确限定为安装元数据。
+
+同一选择先用 TRELLIS.2 串行提取：object_001 成功，object_002 在采样完成后的 CuMesh
+`fill_holes` 报 CUDA `invalid configuration argument`。父运行 `run_9e8243ae831f47329228094a0655905c`
+正确记录第一个子运行成功、第二个子运行失败及精确 child_run，未留下最终批次目录。这是当前
+TRELLIS.2 后处理对该输入的 Backend 边界，不是 SAM 或 Core 证据链成功结论。
+
+随后复用已验证的 TRELLTS 环境、本地 TripoSR 模型和 native-frame 证据，不下载依赖或权重，
+对两个选择串行提取成功。父运行 `run_4f9322a55d004423a5ea42557be29564` 产生两个标准
+AssetRelease：`sha256:6e4c8b535cfb1dc97e08a20574b1baa8887d3485e0409417f4f37b33d59c59ad`
+与 `sha256:07cf71b284293e60eed6b923b88be1296f16e270868a834bd7126cf05900fd08`；
+所有 release.files 与 Store 逐字节一致。再以显式人工位姿装配场景，运行
+`run_9b13eae58ced4d9cb4af44d2b89cd485` 成功，SceneDefinition 为
+`sha256:e3280a292ed9e37cb5258a4ae3f6dd4bed123555809c9c1adcea9a768fa3035c`，
+GLB 为 `sha256:42bc9ea76537893e4365cdf2225394db34a99f5f671c664b82b06f4d33289dd2`；
+重新加载得到 2 个几何节点、308,373 个面。证据位于
+`<DATASET_ROOT>/phase7-sam-smoke-v1/`。该验收只证明 workflow、证据链和资产发布可运行，
+不宣称语义检测、自动位姿、尺度恢复或视觉质量达标。
+
+可视实例审查通过 loopback-only `review-instances` 提供原图 mask 叠加、显式勾选和顺序调整，
+仍复用同一 selection 发布边界。全量 455 项测试、Ruff、mypy 和 build 通过。

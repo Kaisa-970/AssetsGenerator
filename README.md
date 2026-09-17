@@ -64,7 +64,9 @@ Multi RGB / RGBD manifest
 
 当前实现包含 `trellis2` 和 `triposr` 两个 Shape Backend。TripoSR 已完成独立环境预检、真实 GPU smoke、native frame 验证及飞机/自行车串行回归，Phase 4 已关闭；自动 QA 与运行证据见 [Phase 4 TripoSR 验证报告](docs/reports/phase4-triposr-validation-v1.md)。Phase 5 已显式延期。
 
-Phase 6 已接入 DA3-Base geometry frontend 和 Open3D TSDF reconstruction Backend，主交付为带顶点颜色的三角网格；已完成 DA3 的 4/8/16 帧资源验证及真实 DA3 → Open3D → GLB 发布 smoke，见 [Open3D 验证报告](docs/reports/open3d-tsdf-smoke-v1.md)。Fake Backend 仅用于测试；代表性物体质量 benchmark、TSDF 参数 profile、completion 和正式质量阈值尚未完成，完整 Phase 6 尚未关闭。`import-observations` 已提供 CLI；多视图构建目前通过 Python API 编排，见 [Open3D 接入指南](docs/guides/open3d-environment.md)，多视图 CLI 构建入口尚未开放。
+Phase 6 已接入 DA3-Base geometry frontend 和 Open3D TSDF reconstruction Backend，主交付为带顶点颜色的三角网格；已完成 DA3 的 4/8/16 帧资源验证及真实 DA3 → Open3D → GLB 发布 smoke，见 [Open3D 验证报告](docs/reports/open3d-tsdf-smoke-v1.md)。Fake Backend 仅用于测试；代表性物体质量 benchmark、TSDF 参数 profile、completion 和正式质量阈值尚未完成。Phase 6 流程首版已经闭环，统一 CLI 提供多视图构建、独立生成候选、人工检查和运行查询，见 [Phase 6 CLI 指南](docs/guides/phase6-cli.md)。
+
+Phase 7 首版已提供 SAM 未知类别 mask 候选、loopback 可视选择、逐对象 Shape Backend 生成、显式人工位姿和 SceneDefinition/场景 GLB 发布。真实双对象链路已使用 TripoSR 完成验收；该流程不宣称语义检测、自动位姿、尺度恢复或物理可用，见 [Scene to Assets 指南](docs/guides/scene-to-assets.md) 和 [Phase 7 报告](docs/reports/phase7-scene-v1.md)。
 
 安装开发环境并检查固定 Pipeline：
 
