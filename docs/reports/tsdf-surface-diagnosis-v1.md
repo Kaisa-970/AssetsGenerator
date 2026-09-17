@@ -65,4 +65,3 @@ completion 契约，并标注生成区域，不能称为纯重建。重力/摆�
 
 本轮无 Core 代码变更、无 GPU 模型重跑。真实 CPU TSDF 与射线诊断均已执行，
 原始深度和基线网格摘要见 source.json。文档通过 git diff --check；未重跑全量代码测试。
-

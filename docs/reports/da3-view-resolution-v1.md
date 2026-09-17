@@ -60,4 +60,3 @@ TSDF 参数和环境 provenance 均校验通过（仓库外 `validate.py`）。
 
 本轮未改 Core 运行代码，无包安装、无 PyTorch 下载。GPU/CPU 四组实测及发布证据检查已执行；
 未重跑全量代码测试，沿用 337 项基线。文档通过 git diff --check。
-
