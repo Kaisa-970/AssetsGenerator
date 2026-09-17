@@ -398,7 +398,10 @@ def build_multi_view_asset(
     runtime = Phase1Runtime(store, pipeline, specs)
     run_id = f"run_{uuid.uuid4().hex}"
     export_profile = StructuredValue(
-        "export_profile", "GLTF2Profile", SCHEMA_VERSION, {"profile": "gltf2-v1"}
+        "export_profile",
+        "GLTF2Profile",
+        SCHEMA_VERSION,
+        {"profile": "gltf2-v1", "appearance_mode": "apply_material"},
     )
     run_inputs: dict[str, ArtifactRef | StructuredValue] = {
         "observations": observations,
@@ -882,7 +885,14 @@ def build_multi_view_asset(
         def execute_export() -> tuple[
             tuple[ArtifactRef, AssetRelease, ArtifactRef, ArtifactRef], dict[str, Any]
         ]:
-            glb, _ = export_release(store, asset_ref, canonical.mesh, material, report_ref)
+            glb, _ = export_release(
+                store,
+                asset_ref,
+                canonical.mesh,
+                material,
+                report_ref,
+                appearance_mode="apply_material",
+            )
             export_provenance = _persist_provenance(
                 store,
                 run_id=run_id,
@@ -897,7 +907,7 @@ def build_multi_view_asset(
                 operator="export",
                 backend="core",
                 backend_version="0.1.0",
-                parameters={"profile": "gltf2-v1"},
+                parameters={"profile": "gltf2-v1", "appearance_mode": "apply_material"},
                 seed=None,
                 source="derived",
             )

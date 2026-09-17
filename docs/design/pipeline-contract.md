@@ -309,7 +309,7 @@ Primary Segmentation Backend。`PrepareObservationOperator` 负责验证 image/m
 
 `AssembleAssetOperator` 只组装 AssetDefinition，不执行格式导出。若没有 semantic 输入，它写入 `semantic_class = null, source = unknown`，不调用额外识别模型。geometry、material、spatial、observation 和 quality 引用各自已有 provenance；组装操作本身另有一条 provenance 记录。
 
-ExportOperator 读取已组装的 AssetDefinition、canonical mesh 和 PBRMaterial，将材质因子及可选纹理应用到 GLB，产生带 `gltf_export` frame 的 GLB Artifact，以及引用 AssetDefinition、GLB、纹理和报告的 AssetRelease manifest。纹理必须可解码；存在纹理时 mesh 必须提供逐顶点 UV。
+ExportOperator 读取已组装的 AssetDefinition、canonical mesh、PBRMaterial 和 GLTF2Profile，通过显式 `appearance_mode` 选择外观来源。单图流程使用 `preserve_mesh`，保留 mesh 内嵌纹理、UV、顶点颜色及各 geometry 的材质绑定；从 GLB 提取的颜色摘要不覆盖原有外观。多视图流程使用 `apply_material`，将独立 PBRMaterial 的因子及可选纹理应用到每个 geometry；纹理必须可解码，存在纹理时 mesh 必须提供逐顶点 UV。导出产生带 `gltf_export` frame 的 GLB Artifact，以及引用 AssetDefinition、GLB、纹理和报告的 AssetRelease manifest。外观模式记录在 export profile、GLB identity metadata 和导出 provenance 中。
 
 `when` 在规划阶段解析，`?` 表示引用可能缺失，只能绑定最小基数为 0 的端口；`one` 和 `one_or_more` 在编译期拒绝可选引用。可选输入缺失时，Operator 根据自己的检查适用性处理，不能把缺失自动当成运行失败。
 

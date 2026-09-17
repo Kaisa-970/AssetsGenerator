@@ -251,7 +251,10 @@ def build_image_asset(
             _import_image(store, mask_path, "binary_mask") if mask_path is not None else None
         )
         export_profile = StructuredValue(
-            "export_profile", "GLTF2Profile", SCHEMA_VERSION, {"profile": "gltf2-v1"}
+            "export_profile",
+            "GLTF2Profile",
+            SCHEMA_VERSION,
+            {"profile": "gltf2-v1", "appearance_mode": "preserve_mesh"},
         )
         run.inputs = {
             "source_image": image_ref,
@@ -534,7 +537,14 @@ def build_image_asset(
         def execute_export() -> tuple[
             tuple[ArtifactRef, AssetRelease, ArtifactRef, ArtifactRef], dict[str, Any]
         ]:
-            glb, _ = export_release(store, asset_ref, canonical.mesh, material, report_ref)
+            glb, _ = export_release(
+                store,
+                asset_ref,
+                canonical.mesh,
+                material,
+                report_ref,
+                appearance_mode="preserve_mesh",
+            )
             export_provenance = _persist_provenance(
                 store,
                 run_id=run_id,
@@ -545,7 +555,7 @@ def build_image_asset(
                 operator="export",
                 backend="core",
                 backend_version="0.1.0",
-                parameters={"profile": "gltf2-v1"},
+                parameters={"profile": "gltf2-v1", "appearance_mode": "preserve_mesh"},
                 seed=None,
                 source="derived",
             )
@@ -573,7 +583,7 @@ def build_image_asset(
             {
                 "asset": asset_ref,
                 "mesh": canonical.mesh,
-                "material": generated.material,
+                "material": generated_material,
                 "quality": report_ref,
                 "profile": export_profile,
             },

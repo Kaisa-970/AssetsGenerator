@@ -577,3 +577,97 @@ def test_provided_mask_is_validated_by_resolve_mask_node(tmp_path) -> None:
     run = store.get_build_run(run_id)
     assert run["node_attempts"][-1]["node_id"] == "resolve_mask"
     assert run["node_attempts"][-1]["error_code"] == "output_invalid"
+
+
+@pytest.mark.parametrize("appearance", ["texture", "vertex_colors", "multiple_materials"])
+def test_image_workflow_preserves_mesh_appearance(tmp_path, appearance) -> None:
+    import numpy as np
+
+    scene = trimesh.Scene()
+    for index in range(2 if appearance == "multiple_materials" else 1):
+        mesh = trimesh.creation.box(extents=[1.0 + index, 2.0, 3.0])
+        if appearance == "vertex_colors":
+            colors = np.array(
+                [[20 + i * 20, 200 - i * 10, 40 + i * 15, 255] for i in range(8)],
+                dtype=np.uint8,
+            )
+            mesh.visual = trimesh.visual.ColorVisuals(mesh=mesh, vertex_colors=colors)
+        else:
+            pixels = np.array(
+                [
+                    [[12, 34, 56, 255], [240, 20, 60, 255]],
+                    [[50, 180, 70, 255], [90, 100, 220, 255]],
+                ],
+                dtype=np.uint8,
+            )
+            material = trimesh.visual.material.PBRMaterial(
+                name=f"material_{index}",
+                baseColorFactor=[180, 100 + index * 90, 60, 255],
+                baseColorTexture=Image.fromarray(pixels) if appearance == "texture" else None,
+                metallicFactor=0.2 + index * 0.3,
+                roughnessFactor=0.7 - index * 0.2,
+            )
+            mesh.visual = trimesh.visual.texture.TextureVisuals(
+                uv=np.array([[i % 2, (i // 2) % 2] for i in range(8)], dtype=float),
+                material=material,
+            )
+        mesh.apply_translation([index * 3, 0, 0])
+        scene.add_geometry(mesh, geom_name=f"part_{index}", node_name=f"node_{index}")
+    source_glb = scene.export(file_type="glb")
+    expected = trimesh.load(io.BytesIO(source_glb), file_type="glb", force="scene")
+
+    class AppearanceBackend(ContractBackend):
+        def generate(self, store, rgba, *, seed=42, pipeline_type="512"):
+            value = super().generate(store, rgba, seed=seed, pipeline_type=pipeline_type)
+            mesh_ref = store.persist_bytes(
+                source_glb,
+                kind="triangle_mesh",
+                schema_name="glTF",
+                schema_version="2.0",
+                identity_metadata={
+                    "frame_id": "contract_native",
+                    "unit": "relative_unit",
+                    "up_axis": "+Y",
+                    "forward_axis": None,
+                },
+            )
+            return ShapeOutput(mesh_ref, value.material, value.native_frame, value.backend_metadata)
+
+    image_path, mask_path = tmp_path / "image.png", tmp_path / "mask.png"
+    Image.new("RGB", (8, 8), (200, 100, 50)).save(image_path)
+    Image.new("L", (8, 8), 255).save(mask_path)
+    output = tmp_path / "release"
+    build_image_asset(
+        image_path=image_path,
+        mask_path=mask_path,
+        store_path=tmp_path / "store",
+        output_path=output,
+        backend=AppearanceBackend(),
+        asset_name="appearance",
+    )
+    actual = trimesh.load(output / "geometry/visual.glb", force="scene")
+    assert set(actual.geometry) == set(expected.geometry)
+    for name, original in expected.geometry.items():
+        exported = actual.geometry[name]
+        assert exported.visual.kind == original.visual.kind
+        np.testing.assert_array_equal(exported.faces, original.faces)
+        if appearance == "vertex_colors":
+            np.testing.assert_array_equal(
+                exported.visual.vertex_colors, original.visual.vertex_colors
+            )
+        else:
+            before, after = original.visual.material, exported.visual.material
+            assert after.name == before.name
+            np.testing.assert_array_equal(after.baseColorFactor, before.baseColorFactor)
+            assert after.metallicFactor == before.metallicFactor
+            assert after.roughnessFactor == before.roughnessFactor
+            np.testing.assert_allclose(exported.visual.uv, original.visual.uv)
+            if appearance == "texture":
+                np.testing.assert_array_equal(
+                    np.asarray(after.baseColorTexture), np.asarray(before.baseColorTexture)
+                )
+    for node in expected.graph.nodes_geometry:
+        assert actual.graph[node][1] == expected.graph[node][1]
+    records = [json.loads(path.read_text()) for path in (output / "provenance").glob("*.json")]
+    export_record = next(record for record in records if record["operator"] == "export")
+    assert export_record["parameters"]["appearance_mode"] == "preserve_mesh"

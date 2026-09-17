@@ -314,7 +314,7 @@ quality_evidence
 zip_bundle
 ```
 
-`PBRMaterial` 是结构化材质值，可以只包含颜色因子，也可以引用纹理 Artifact。ExportOperator 必须把该值实际应用到交付 GLB；引用纹理时纹理必须可解码，mesh 必须提供逐顶点 UV。V1 不强制完整 BaseColor、Normal、Roughness、Metallic 通道。
+`PBRMaterial` 是结构化材质值，可以只包含颜色因子，也可以引用纹理 Artifact。ExportOperator 在 `apply_material` 模式下把该值实际应用到交付 GLB；引用纹理时纹理必须可解码，mesh 必须提供逐顶点 UV。`preserve_mesh` 模式保留 GLB 自带的纹理、顶点颜色及多材质绑定，结构化颜色摘要不替代 mesh 外观；当前单图流程使用此模式。V1 不强制完整 BaseColor、Normal、Roughness、Metallic 通道。
 
 `SemanticInfo` 允许未知值：
 

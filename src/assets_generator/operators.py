@@ -977,6 +977,7 @@ def remap_component_provenance(
 
 
 def material_from_glb(store: LocalArtifactStore, mesh: ArtifactRef) -> PBRMaterial:
+    """Summarize a color factor; the mesh remains authoritative for its appearance."""
     scene = _load_scene(store.blob_path(mesh).read_bytes())
     for geometry in scene.geometry.values():
         material = getattr(geometry.visual, "material", None)
@@ -993,37 +994,44 @@ def export_release(
     canonical_mesh: ArtifactRef,
     material: PBRMaterial,
     quality_ref: ArtifactRef,
+    *,
+    appearance_mode: Literal["preserve_mesh", "apply_material"],
 ) -> tuple[ArtifactRef, AssetRelease]:
     scene = _load_scene(store.blob_path(canonical_mesh).read_bytes())
-    texture_fields = {
-        "baseColorTexture": material.base_color_texture,
-        "normalTexture": material.normal_texture,
-        "metallicRoughnessTexture": material.metallic_roughness_texture,
-        "emissiveTexture": material.emissive_texture,
-    }
-    textures: dict[str, Image.Image] = {}
-    for field_name, reference in texture_fields.items():
-        if reference is None:
-            continue
-        try:
-            with Image.open(store.blob_path(reference)) as image:
-                image.load()
-                textures[field_name] = image.copy()
-        except (OSError, ValueError) as error:
-            raise OperatorExecutionError(
-                f"PBRMaterial {field_name} is not a decodable image: {error}"
-            ) from error
-    color = np.clip(np.asarray(material.base_color_factor, dtype=np.float64), 0.0, 1.0)
-    trimesh_material = trimesh.visual.material.PBRMaterial(
-        baseColorFactor=np.rint(color * 255.0).astype(np.uint8),
-        alphaMode=material.alpha_mode,
-        **textures,
-    )
-    for geometry in scene.geometry.values():
-        uv = getattr(geometry.visual, "uv", None)
-        if textures and (uv is None or len(uv) != len(geometry.vertices)):
-            raise ContractError("textured PBRMaterial requires per-vertex UV coordinates")
-        geometry.visual = trimesh.visual.texture.TextureVisuals(uv=uv, material=trimesh_material)
+    if appearance_mode not in {"preserve_mesh", "apply_material"}:
+        raise ContractError(f"invalid export appearance mode: {appearance_mode}")
+    if appearance_mode == "apply_material":
+        texture_fields = {
+            "baseColorTexture": material.base_color_texture,
+            "normalTexture": material.normal_texture,
+            "metallicRoughnessTexture": material.metallic_roughness_texture,
+            "emissiveTexture": material.emissive_texture,
+        }
+        textures: dict[str, Image.Image] = {}
+        for field_name, reference in texture_fields.items():
+            if reference is None:
+                continue
+            try:
+                with Image.open(store.blob_path(reference)) as image:
+                    image.load()
+                    textures[field_name] = image.copy()
+            except (OSError, ValueError) as error:
+                raise OperatorExecutionError(
+                    f"PBRMaterial {field_name} is not a decodable image: {error}"
+                ) from error
+        color = np.clip(np.asarray(material.base_color_factor, dtype=np.float64), 0.0, 1.0)
+        trimesh_material = trimesh.visual.material.PBRMaterial(
+            baseColorFactor=np.rint(color * 255.0).astype(np.uint8),
+            alphaMode=material.alpha_mode,
+            **textures,
+        )
+        for geometry in scene.geometry.values():
+            uv = getattr(geometry.visual, "uv", None)
+            if textures and (uv is None or len(uv) != len(geometry.vertices)):
+                raise ContractError("textured PBRMaterial requires per-vertex UV coordinates")
+            geometry.visual = trimesh.visual.texture.TextureVisuals(
+                uv=uv, material=trimesh_material
+            )
     canonical_to_gltf = np.array(
         [[0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0], [1.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 1.0]],
         dtype=np.float64,
@@ -1046,6 +1054,7 @@ def export_release(
             "up_axis": "+Y",
             "forward_axis": "+Z",
             "export_profile": "gltf2-v1",
+            "appearance_mode": appearance_mode,
         },
     )
     release = AssetRelease(
