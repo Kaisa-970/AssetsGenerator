@@ -3,9 +3,11 @@
 ## 项目与当前阶段
 
 - `AssetsGenerator / Real-to-Sim Asset Compiler` 将现实观测编译为可追溯、可校验的结构化 3D 资产。
-- 当前进入 Phase 4：在既有单图 vertical slice 和 Phase 3 基线之上，实现 Backend registry、`ResolvedPlan`、配置驱动的 Backend 绑定和第二个 Shape Backend。
-- 第二个 Shape Backend 已选定为 TripoSR；实现必须遵守 `docs/design/triposr-backend.md`，并使用独立环境。真实 GPU 验证前不得声称 Backend 可用。
-- 当前不要扩展与 Backend 可替换性无关的 Router 策略、分布式调度、完整 FrameGraph、通用 schema migration 或其他平台能力。
+- 当前处于 Phase 6：多视图与 Hybrid。Phase 4 已关闭，Phase 5 CameraRegistration/render-back QA 显式延期。
+- DA3-Base 是首个真实 geometry frontend，Open3D TSDF 是首个 reconstruction Backend；已完成真实 DA3 → Open3D → GLB 发布 smoke，尚未完成代表性物体质量验收，也未关闭完整 Phase 6。
+- 当前重点是代表性静态物体数据评测、TSDF 参数 profile、质量边界与阈值，以及 completion 触发条件和融合设计。遵守 `docs/design/da3-backend.md`、`docs/design/open3d-backend.md` 和 `docs/design/multi-view-hybrid.md`。
+- 单图 TRELLIS.2 / TripoSR 基线须保持；TripoSR 遵守 `docs/design/triposr-backend.md`。真实 Backend 使用独立环境，Fake Backend 或 smoke 不替代质量 benchmark。
+- 当前不要扩展分布式调度、完整 FrameGraph、通用 schema migration 或与本阶段无关的平台能力。
 - 主要目录：源码 `src/assets_generator/`，测试 `tests/`，Pipeline 配置 `pipelines/`，文档 `docs/`。
 
 ## 权威文档

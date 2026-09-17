@@ -64,7 +64,7 @@ Multi RGB / RGBD manifest
 
 当前实现包含 `trellis2` 和 `triposr` 两个 Shape Backend。TripoSR 已完成独立环境预检、真实 GPU smoke、native frame 验证及飞机/自行车串行回归，Phase 4 已关闭；自动 QA 与运行证据见 [Phase 4 TripoSR 验证报告](docs/reports/phase4-triposr-validation-v1.md)。Phase 5 已显式延期。
 
-Phase 6 当前只证明 Pipeline Core 能严格编排多视图契约。Fake Backend 仅用于测试，首个真实 geometry frontend 已选 DA3-Base；reconstruction 表示与 Backend、completion、数据集和阈值尚未选定，因此不得将当前 Phase 6 状态解释为真实多视图模型可用。`import-observations` 已提供 CLI；多视图构建目前通过 `assets_generator.multi_view_workflow.build_multi_view_asset()` 编排，CLI 构建入口等待真实 Backend 注册后再开放。
+Phase 6 已接入 DA3-Base geometry frontend 和 Open3D TSDF reconstruction Backend，主交付为带顶点颜色的三角网格；已完成 DA3 的 4/8/16 帧资源验证及真实 DA3 → Open3D → GLB 发布 smoke，见 [Open3D 验证报告](docs/reports/open3d-tsdf-smoke-v1.md)。Fake Backend 仅用于测试；代表性物体质量 benchmark、TSDF 参数 profile、completion 和正式质量阈值尚未完成，完整 Phase 6 尚未关闭。`import-observations` 已提供 CLI；多视图构建目前通过 Python API 编排，见 [Open3D 接入指南](docs/guides/open3d-environment.md)，多视图 CLI 构建入口尚未开放。
 
 安装开发环境并检查固定 Pipeline：
 

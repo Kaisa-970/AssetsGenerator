@@ -5,7 +5,7 @@
 
 ## 1. 范围
 
-Phase 6 将输入从单张 RGB 扩展为显式多视图观测，并为重建与生成式补全共存建立来源契约。Core 基线不绑定具体模型；首个真实 geometry frontend 后续选择 DA3-Base，见 [DA3 契约](da3-backend.md)，reconstruction/completion Backend 尚未选定，也不包含 Phase 5 的 CameraRegistration 和 render-back gate。
+Phase 6 将输入从单张 RGB 扩展为显式多视图观测，并为重建与生成式补全共存建立来源契约。Core 基线不绑定具体模型；首个真实 geometry frontend 已接入 DA3-Base，见 [DA3 契约](da3-backend.md)，reconstruction 选择 [Open3D TSDF](open3d-backend.md)，completion Backend 尚未选定，也不包含 Phase 5 的 CameraRegistration 和 render-back gate。
 
 当前最小数据流：
 
@@ -104,7 +104,7 @@ region_map (optional ArtifactRef, kind = quality_evidence)
 
 `reconstruction@1` 输出的 component 必须引用其 native mesh。Canonicalization 只做刚体方向变换和统一尺度，不改变拓扑，因此 Core 将 component 的 artifact 引用显式重映射到 canonical mesh，并保留 source、provenance IDs 和已有 region map。若 component 引用其他 mesh，Core 拒绝输出；未来若引入改变拓扑的处理，必须定义新的 region map 转换契约。
 
-当前执行基线不接受 Backend 自行填写无法在本 Run 中验证的 `provenance_ids`。Core 在 reconstruction 成功后为 native mesh 创建 reconstruction ProvenanceRecord，并将其 ID 注入每个 component；存在 region map 时，还会为该证据创建独立 ProvenanceRecord，并把第二个 ID 注入对应 component。assemble provenance 的派生关系同时包含 mesh 和 region map Artifact。材质引用的纹理必须是可解码的图像 Artifact；有纹理时 mesh 必须提供逐顶点 UV。ExportOperator 将 PBR 参数与纹理嵌入 `geometry/visual.glb`，同时把原纹理 Artifact 随 AssetRelease 物化。
+当前执行基线不接受 Backend 自行填写无法在本 Run 中验证的 `provenance_ids`。Core 在 reconstruction 成功后为 native mesh 创建 reconstruction ProvenanceRecord，并将其 ID 注入每个 component；存在 region map 时，还会为该证据创建独立 ProvenanceRecord，并把第二个 ID 注入对应 component。assemble provenance 的派生关系同时包含 mesh 和 region map Artifact。材质引用的纹理必须是可解码的图像 Artifact；有纹理时 mesh 必须提供逐顶点 UV。默认 `apply_material` 模式下，ExportOperator 将 PBR 参数与纹理嵌入 `geometry/visual.glb`，同时把原纹理 Artifact 随 AssetRelease 物化。输出顶点颜色的 Backend 使用显式 `export_appearance_mode="preserve_mesh"` 保留 mesh 外观。
 
 ## 6. 跳过 Phase 5 的边界
 
@@ -130,8 +130,8 @@ geometry frontend 输出的 camera 是重建输入或估计结果，不等同于
 
 以下事项等待产品或模型选择，不阻塞基础契约：
 
-- DA3-Base 在代表性输入上的质量与资源验收；
-- reconstruction 的主交付表示及真实 Backend；
+- 代表性静态物体多视图质量 benchmark（已有 DA3 4/8/16 帧资源 smoke 不替代质量验收）；
+- TSDF 参数 profile、网格完整性与颜色质量边界（已有真实顶点颜色网格发布 smoke）；
 - completion 触发条件、模型和融合方式；
 - region provenance 的 face/vertex/sidecar 具体编码；
 - video 抽帧、镜头切分和时间戳策略；
