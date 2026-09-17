@@ -136,7 +136,7 @@ class ExecutionOutput:
 ```
 
 ```text
-output_id = unique(run_id, node_id, attempt, port_name)
+output_id = unique(run_id, node_id, attempt, port_name[, element_id])
 ```
 
 两次 Run 即使产生相同字节和相同 Artifact，也拥有不同的 `ExecutionOutput` 和 provenance 记录。

@@ -205,7 +205,7 @@ Render-back 在 Phase 1 允许 `applicable=false, status=skipped`。Collision �
 3. Phase 4 Registry、ResolvedPlan、第二个 Shape Backend 与比较运行：已关闭
 4. Phase 5 CameraRegistration 与 render-back gate：显式延期
 5. Phase 6 多图与 Hybrid 模型中立 Core：当前已建立执行基线
-6. 真实多视图 Backend、completion 和 benchmark：等待模型与数据集选择
+6. DA3/Open3D 真实多视图与独立生成候选、人工对齐/区域组合、标准发布已实现；几何约束 completion 和代表性质量验收延期，见 Roadmap。
 7. Scene-to-Asset 与 Real-to-Sim：后续阶段
 ```
 

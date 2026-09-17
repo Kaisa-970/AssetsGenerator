@@ -125,3 +125,5 @@ run.json
 ### Pipeline versions
 
 `image_asset_v2` is the supported default Phase 2 pipeline. `image_asset_v1.yaml` is retained as a historical Phase 1 baseline and is not selected by the default build command.
+
+统一多视图重建、生成候选、人工检查及运行查询命令见 [Phase 6 CLI 指南](docs/guides/phase6-cli.md)。

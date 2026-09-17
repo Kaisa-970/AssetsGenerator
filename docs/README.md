@@ -21,6 +21,8 @@
 
 ## 操作指南 · guides
 
+- [Phase 6 统一 CLI 完整流程](guides/phase6-cli.md)
+
 - [生成候选包](guides/completion-candidate.md)
 
 - [VOC 数据准备、批量评测与交互预览](guides/benchmark-voc.md)
