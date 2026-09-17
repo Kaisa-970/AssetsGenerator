@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import shutil
 import uuid
 from dataclasses import dataclass
@@ -193,6 +194,7 @@ def build_image_asset(
     seed: int = 42,
     pipeline_type: str = "512",
     asset_name: str | None = None,
+    run_id: str | None = None,
 ) -> BuildResult:
     if backend_name is not None and backend is None:
         raise ContractError("backend_name requires an inline backend")
@@ -202,7 +204,12 @@ def build_image_asset(
     if configured_sources > 1:
         raise ContractError("configure exactly one of backend, backend_registry, or resolved_plan")
     store = LocalArtifactStore(store_path)
-    run_id = f"run_{uuid.uuid4().hex}"
+    if run_id is None:
+        run_id = f"run_{uuid.uuid4().hex}"
+    elif not re.fullmatch(r"run_[A-Za-z0-9_-]+", run_id):
+        raise ContractError("invalid explicit run_id")
+    if (store.root / "runs" / f"{run_id}.json").exists():
+        raise ContractError("explicit run_id already exists")
     pipeline = load_default_pipeline()
     specs = load_default_operator_specs()
     compile_pipeline(pipeline, specs)

@@ -427,3 +427,9 @@ candidate/alignment/transform，追加保留确认和拒绝记录，不修改原
 `alignment_selection`、`region_selection`、`component_composition` 分别记录采用的检查决定、
 精确区域与原始面编号、未融合的组件组合包。三者为不可变关联/证据 Artifact，
 详细字段与边界见 [候选契约](completion-candidate.md#恢复选定与区域组合-v1)。
+
+## 显式场景首版
+
+新增 scene_request、asset_instance、scene_definition 与 scene_extraction_request、scene_extraction
+Artifact。实例引用精确 AssetDefinition/AssetRelease，用户位姿只进入实例，不修改资产定义。
+详见 [场景到资产契约](scene-to-assets.md)。

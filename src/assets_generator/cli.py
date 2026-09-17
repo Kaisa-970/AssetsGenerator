@@ -72,6 +72,17 @@ def _parser() -> argparse.ArgumentParser:
     selection = inspect.add_mutually_exclusive_group(required=True)
     selection.add_argument("--artifact", help="Artifact ID or reference JSON")
     selection.add_argument("--run", help="BuildRun ID")
+    scene = subparsers.add_parser(
+        "build-scene", help="Assemble supplied releases and explicit poses"
+    )
+    extraction = subparsers.add_parser(
+        "extract-scene", help="Generate objects from supplied scene masks"
+    )
+    for command in (scene, extraction):
+        command.add_argument("--manifest", type=Path, required=True)
+        command.add_argument("--store", type=Path, required=True)
+        command.add_argument("--output", type=Path, required=True)
+    _shape_arguments(extraction)
     return parser
 
 
@@ -171,6 +182,39 @@ def main() -> int:
 
 
 def _execute(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
+    if args.command == "build-scene":
+        from .scene_workflow import build_scene
+
+        print(
+            json.dumps(
+                build_scene(
+                    manifest_path=args.manifest, store_path=args.store, output_path=args.output
+                ),
+                indent=2,
+            )
+        )
+        return 0
+    if args.command == "extract-scene":
+        from .scene_extraction import extract_scene_objects
+
+        scene_plan = resolve_plan(
+            load_default_pipeline(),
+            _shape_registry(args),
+            operator_specs=load_default_operator_specs(),
+            backend_overrides={"generate_shape": args.shape_backend}
+            if args.shape_backend
+            else None,
+        )
+        extraction = extract_scene_objects(
+            manifest_path=args.manifest,
+            store_path=args.store,
+            output_path=args.output,
+            resolved_plan=scene_plan,
+            seed=args.seed,
+            pipeline_type=args.pipeline_type,
+        )
+        print(json.dumps(to_primitive(extraction), indent=2))
+        return 0
     if args.command == "compile-pipeline":
         specs = (
             load_operator_specs(args.operators) if args.operators else load_default_operator_specs()

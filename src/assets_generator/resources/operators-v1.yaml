@@ -118,3 +118,12 @@ operators:
       regions: {kind: region_selection, carriers: [artifact_ref], schema_name: RegionSelection, schema_version: "1.0"}
       manifest: {kind: component_composition, carriers: [artifact_ref], schema_name: ComponentComposition, schema_version: "1.0"}
       provenance: {kind: provenance_record, carriers: [artifact_ref]}
+
+  - name: assemble_scene
+    version: 1
+    inputs:
+      request: {kind: scene_request, carriers: [artifact_ref], schema_name: SceneRequest, schema_version: "1.0"}
+    outputs:
+      scene: {kind: scene_definition, carriers: [artifact_ref], schema_name: SceneDefinition, schema_version: "1.0"}
+      instances: {kind: asset_instance, cardinality: one_or_more, carriers: [artifact_ref], schema_name: AssetInstance, schema_version: "1.0"}
+      glb: {kind: gltf_asset, carriers: [artifact_ref], requires_frame: true, requires_unit: true}

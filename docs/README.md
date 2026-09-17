@@ -2,6 +2,8 @@
 
 ## 架构与契约 · design
 
+- [Phase 7 场景到资产首版契约](design/scene-to-assets.md)
+
 - [Completion 生成候选契约](design/completion-candidate.md)
 
 - [总体架构与验收标准](design/architecture.md)
@@ -21,6 +23,8 @@
 
 ## 操作指南 · guides
 
+- [Phase 7 场景到资产使用指南](guides/scene-to-assets.md)
+
 - [Phase 6 统一 CLI 完整流程](guides/phase6-cli.md)
 
 - [生成候选包](guides/completion-candidate.md)
@@ -31,6 +35,8 @@
 - [DA3 独立环境与 Python 接入](guides/da3-environment.md)
 
 ## 评测报告 · reports
+
+- [2026-09-17：Phase 6 CLI 与 Phase 7 显式场景首版](reports/phase7-scene-v1.md)
 
 - [2026-09-17：标准组合发布与 Phase 6 首版流程里程碑](reports/composition-release-smoke-v1.md)
 

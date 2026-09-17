@@ -34,6 +34,11 @@ ARTIFACT_KINDS = frozenset(
         "quality_report",
         "provenance_record",
         "build_run",
+        "scene_request",
+        "scene_extraction_request",
+        "scene_extraction",
+        "asset_instance",
+        "scene_definition",
     }
 )
 

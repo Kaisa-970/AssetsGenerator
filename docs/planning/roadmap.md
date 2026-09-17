@@ -144,7 +144,13 @@ Phase 5 CameraRegistration/render-back QA 继续延期；当前不宣称质量�
 
 ## 8. Phase 7：Scene to Assets
 
-借鉴 FIRE3D，引入 Detection、Instance Segmentation、Object Pose、Canonicalization、Completion 和 SceneDefinition。
+长期借鉴 FIRE3D，引入 Detection、Instance Segmentation、Object Pose、Canonicalization、Completion 和 SceneDefinition。
+
+当前开始 Phase 7 首版：显式提供 scene image/object masks，串行复用 Shape Backend 生成独立资产；
+再以精确 release 引用和人工 canonical→world 位姿创建独立 AssetInstance/SceneDefinition。
+已保留父子 BuildRun、实例 provenance、完整嵌套资产包与原子发布。自动 detection/segmentation、
+位姿估计、几何约束 completion 与场景质量验收延期，不以人工输入冒充模型能力。
+使用见 [指南](../guides/scene-to-assets.md)。
 
 ```text
 Scene Observation
