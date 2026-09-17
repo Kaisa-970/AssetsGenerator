@@ -111,6 +111,39 @@ operators:
     outputs:
       release: {kind: asset_release, carriers: [artifact_ref]}
 
+  - name: metric_scale_calibration
+    version: 1
+    inputs:
+      source_asset: {kind: asset_definition, carriers: [artifact_ref]}
+      measurement: {kind: metric_scale_measurement, carriers: [artifact_ref], schema_name: MetricScaleMeasurement, schema_version: "1.0"}
+      visual: {kind: triangle_mesh, carriers: [artifact_ref], requires_frame: true, requires_unit: true}
+      collision: {kind: collision_mesh, cardinality: zero_or_one, carriers: [artifact_ref], requires_frame: true, requires_unit: true}
+    outputs:
+      asset: {kind: asset_definition, carriers: [artifact_ref]}
+      visual: {kind: triangle_mesh, carriers: [artifact_ref], requires_frame: true, requires_unit: true}
+      collision: {kind: collision_mesh, cardinality: zero_or_one, carriers: [artifact_ref], requires_frame: true, requires_unit: true}
+      report: {kind: quality_report, carriers: [artifact_ref]}
+
+  - name: metric_scale_export
+    version: 1
+    inputs:
+      visual: {kind: triangle_mesh, carriers: [artifact_ref], requires_frame: true, requires_unit: true}
+      collision: {kind: collision_mesh, cardinality: zero_or_one, carriers: [artifact_ref], requires_frame: true, requires_unit: true}
+    outputs:
+      visual_glb: {kind: gltf_asset, carriers: [artifact_ref], requires_frame: true, requires_unit: true}
+      collision_glb: {kind: gltf_asset, cardinality: zero_or_one, carriers: [artifact_ref], requires_frame: true, requires_unit: true}
+
+  - name: metric_scale_release
+    version: 1
+    inputs:
+      source_release: {kind: asset_release, carriers: [artifact_ref]}
+      asset: {kind: asset_definition, carriers: [artifact_ref]}
+      visual_glb: {kind: gltf_asset, carriers: [artifact_ref], requires_frame: true, requires_unit: true}
+      collision_glb: {kind: gltf_asset, cardinality: zero_or_one, carriers: [artifact_ref], requires_frame: true, requires_unit: true}
+      report: {kind: quality_report, carriers: [artifact_ref]}
+    outputs:
+      release: {kind: asset_release, carriers: [artifact_ref]}
+
   - name: assemble_asset
     version: 1
     inputs:

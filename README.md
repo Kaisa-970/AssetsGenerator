@@ -73,6 +73,10 @@ mesh 派生同 frame/unit 的 `collision_mesh`，发布新的不可变 AssetDefi
 并记录 collision QA 和 provenance；不执行 metric calibration 或刚体参数估计。使用见
 [Collision Generation 指南](docs/guides/collision-generation.md)。
 
+Phase 8 还提供显式两点距离的 metric scale calibration。调用方提供 canonical 空间中的两点
+及真实米制距离，Core 对 visual/collision geometry 统一缩放并发布新的 meter-unit 资产；不从
+图像或类别先验猜测尺度。使用见 [Metric Scale Calibration 指南](docs/guides/metric-scale-calibration.md)。
+
 安装开发环境并检查固定 Pipeline：
 
 ```bash

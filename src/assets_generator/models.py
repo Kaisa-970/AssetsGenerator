@@ -44,6 +44,7 @@ ARTIFACT_KINDS = frozenset(
         "asset_instance",
         "scene_definition",
         "scene_layout_review",
+        "metric_scale_measurement",
     }
 )
 

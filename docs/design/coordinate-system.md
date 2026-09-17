@@ -120,6 +120,10 @@ V1 使用确定性机械规则：
 
 只有后续 Operator 获得可靠证据时，才生成新的 canonical Artifact。
 
+Phase 8 首个尺度标定路径接受持久化的两点距离测量，将 `relative_unit` canonical geometry
+统一缩放为 meter。visual、collision、AABB 和 component provenance 必须同步更新；标定不改变
+轴、原点或 forward 状态，也不从单图或类别先验推断距离。
+
 ## 6. AssetSpatialInfo
 
 ```python

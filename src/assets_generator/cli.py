@@ -122,6 +122,13 @@ def _parser() -> argparse.ArgumentParser:
     collision.add_argument("--store", type=Path, required=True)
     collision.add_argument("--output", type=Path, required=True)
     collision.add_argument("--method", choices=["convex-hull"], default="convex-hull")
+    calibration = subparsers.add_parser(
+        "calibrate-scale", help="Apply an explicit point-distance metric scale measurement"
+    )
+    calibration.add_argument("--release", required=True, help="Artifact ID or reference JSON")
+    calibration.add_argument("--measurement", type=Path, required=True)
+    calibration.add_argument("--store", type=Path, required=True)
+    calibration.add_argument("--output", type=Path, required=True)
     return parser
 
 
@@ -221,6 +228,17 @@ def main() -> int:
 
 
 def _execute(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
+    if args.command == "calibrate-scale":
+        from .metric_scale import calibrate_metric_scale
+
+        scale_result = calibrate_metric_scale(
+            release=_reference(args.release),
+            measurement_path=args.measurement,
+            store_path=args.store,
+            output_path=args.output,
+        )
+        print(json.dumps(to_primitive(scale_result), indent=2))
+        return 0
     if args.command == "build-collision":
         from .collision import build_collision_asset
 
