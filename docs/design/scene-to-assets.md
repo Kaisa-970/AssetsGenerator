@@ -73,6 +73,21 @@ World 使用右手、+Z up、+X forward，位姿遵循列向量
 精确资产与 release 引用、唯一实例 ID 及显式位姿；同一资产允许多次实例化。
 `SceneDefinition` 引用实例集合，保留人工布局来源。显式提供的场景不等同于自动估计的场景。
 
+`review-scene-layout` 接受省略 `world_pose` 的布局草稿；草稿实例只允许 `instance_id` 和
+精确 `AssetRelease` 引用。loopback-only 前端加载各 release 的 GLB，用户逐实例编辑平移、
+yaw/pitch/roll 和正统一缩放。服务端负责根据 AssetDefinition 构造带作用域的 source frame，
+生成完整布局 manifest，并以现有 `build_scene` 作为唯一场景构造边界。浏览器不得指定输出路径、
+frame 或 release。`SceneLayoutReview@1.0` 作为独立不可变证据记录完整布局及其摘要、精确
+SceneDefinition、BuildRun、自报 reviewer 和时间；它不改变 SceneDefinition 的身份语义。
+
+审查服务使用外层原子发布目录：完整 layout、SceneLayoutReview、review provenance、父 BuildRun
+和子场景包同时出现。父运行引用精确的 `build_scene` 子运行；review 证据持久化或最终发布失败时
+不留下最终目录，但父子运行记录仍可在 Artifact Store 中查询。
+
+HTTP 服务只绑定 `127.0.0.1`，检查 Host、同源 Origin、随机会话 token 和请求体上限；GLB
+只通过会话启动时建立的固定索引提供，不接受文件路径。Three.js 预览使用和发布相同的
+canonical→glTF 基变换。
+
 释放的资产 GLB 已从 canonical 轴通过 E 转换为 glTF 轴。场景导出必须使用
 `E * T_world_asset * inverse(E)` 作用于已释放的 GLB；不能直接将 canonical 位姿
 作用于 glTF 几何。场景保留实例边界和材质，变换/provenance 可回查，原资产不修改。

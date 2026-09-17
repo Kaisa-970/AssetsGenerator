@@ -430,6 +430,8 @@ candidate/alignment/transform，追加保留确认和拒绝记录，不修改原
 
 ## 显式场景首版
 
-新增 scene_request、asset_instance、scene_definition 与 scene_extraction_request、scene_extraction
-Artifact。实例引用精确 AssetDefinition/AssetRelease，用户位姿只进入实例，不修改资产定义。
+新增 scene_request、asset_instance、scene_definition、scene_layout_review 与
+scene_extraction_request、scene_extraction Artifact。实例引用精确 AssetDefinition/AssetRelease，
+用户位姿只进入实例，不修改资产定义。scene_layout_review 保存人工发布布局的检查人、完整
+布局摘要、精确 SceneDefinition 和 BuildRun 关联，不替代 scene_request 或 scene_definition。
 详见 [场景到资产契约](scene-to-assets.md)。

@@ -29,6 +29,27 @@ assets-generator extract-scene --manifest objects.json --store '<STORE>' --outpu
 世界使用 +Z up/+X forward；矩阵为列向量 canonical→world，平移是世界单位。
 同单位才可放置；正统一缩放只是人工放置参数，不证明公制尺度。
 
+也可先写不含矩阵的布局草稿，并在本机可视编辑器中放置。草稿只包含 frame、unit、
+instance_id 和精确 release 引用：
+
+```json
+{"schema_version":"1.0","frame_id":"scene_world","unit":"relative_unit","instances":[
+  {"instance_id":"chair_1","release":{"artifact_id":"sha256:..."}},
+  {"instance_id":"table_1","release":{"artifact_id":"sha256:..."}}
+]}
+```
+
+```bash
+assets-generator review-scene-layout --manifest layout-draft.json \
+  --store '<STORE>' --output '<NEW_SCENE>' --port 8765
+```
+
+浏览器中选择实例，编辑 XYZ、yaw/pitch/roll 和正统一缩放，填写检查人后发布。服务仅监听
+loopback；发布通过既有 `build_scene` 构造场景，并将 `layout.json`、场景包、
+`SceneLayoutReview@1.0`、review provenance 和父子运行记录原子写入 `<NEW_SCENE>`。
+Review 记录自报检查人、时间、完整布局、布局摘要、SceneDefinition 和精确 scene run_id。
+预览依赖联网加载固定版本 Three.js；这仍是人工布局，不是位姿估计或物理验证。
+
 ```bash
 assets-generator build-scene --manifest layout.json --store '<STORE>' --output '<NEW_SCENE>'
 assets-generator inspect --store '<STORE>' --artifact '<NEW_SCENE>/scene-ref.json'

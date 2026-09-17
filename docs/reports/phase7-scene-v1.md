@@ -67,3 +67,18 @@ GLB 为 `sha256:42bc9ea76537893e4365cdf2225394db34a99f5f671c664b82b06f4d33289dd2
 
 可视实例审查通过 loopback-only `review-instances` 提供原图 mask 叠加、显式勾选和顺序调整，
 仍复用同一 selection 发布边界。全量 455 项测试、Ruff、mypy 和 build 通过。
+
+## 可视场景布局
+
+`review-scene-layout` 接收只含 release 引用的布局草稿，在同一 Three.js 视口中编辑每个实例的
+XYZ、yaw/pitch/roll 和正统一缩放。服务端生成 canonical→world 矩阵，并继续调用 `build_scene`
+完成 frame、unit、similarity 和发布校验。最终目录原子包含 layout、SceneLayoutReview、user-source
+provenance、父 BuildRun 和完整子场景包；父运行引用精确 scene child run。
+
+真实 HTTP smoke 复用上述两个 TripoSR release，以两侧平移布局发布成功。人工布局父运行
+`run_a16a93cee10f4f4b9870f43b004ae57d`、子场景运行
+`run_cace94a963f34bdb8ca955be4f267901` 均成功；SceneLayoutReview 为
+`sha256:1ae078bf2ac29960dbf646065994aa6b5e007f006a86b673780dfd36172a6555`，
+SceneDefinition 为 `sha256:3f97fdb2a75ec2ad7183d19c5c670bd58b430cf606cc6928fb2fe795c5319d0e`。
+GLB 重新加载仍为 2 个节点、308,373 个面。该 smoke 使用自动化 reviewer 名称验证工作流，
+不构成人工质量批准。全量 462 项测试、Ruff 和 mypy 通过。

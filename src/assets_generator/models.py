@@ -37,10 +37,12 @@ ARTIFACT_KINDS = frozenset(
         "instance_proposals",
         "instance_selection",
         "scene_request",
+        "scene_layout_manifest",
         "scene_extraction_request",
         "scene_extraction",
         "asset_instance",
         "scene_definition",
+        "scene_layout_review",
     }
 )
 

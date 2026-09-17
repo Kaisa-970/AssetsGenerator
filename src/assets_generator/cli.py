@@ -108,6 +108,13 @@ def _parser() -> argparse.ArgumentParser:
     instance_review.add_argument("--store", type=Path, required=True)
     instance_review.add_argument("--output", type=Path, required=True)
     instance_review.add_argument("--port", type=int, default=8765)
+    layout_review = subparsers.add_parser(
+        "review-scene-layout", help="Local visual editing and publication of a scene layout"
+    )
+    layout_review.add_argument("--manifest", type=Path, required=True)
+    layout_review.add_argument("--store", type=Path, required=True)
+    layout_review.add_argument("--output", type=Path, required=True)
+    layout_review.add_argument("--port", type=int, default=8765)
     return parser
 
 
@@ -263,6 +270,22 @@ def _execute(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
                 indent=2,
             )
         )
+        return 0
+    if args.command == "review-scene-layout":
+        from .scene_layout_review import (
+            SceneLayoutReviewSession,
+            create_scene_layout_review_server,
+        )
+
+        layout_session = SceneLayoutReviewSession(args.store, args.manifest, args.output)
+        server = create_scene_layout_review_server(layout_session, args.port)
+        print(f"http://127.0.0.1:{server.server_port}/ (Ctrl+C 关闭)", flush=True)
+        try:
+            server.serve_forever()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            server.server_close()
         return 0
     if args.command == "extract-scene":
         from .scene_extraction import extract_scene_objects

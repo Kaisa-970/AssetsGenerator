@@ -52,9 +52,17 @@ def _release_files(store: LocalArtifactStore, release: ArtifactRef) -> dict[str,
     return result
 
 
-def build_scene(*, manifest_path: Path, store_path: Path, output_path: Path) -> dict[str, Any]:
+def build_scene(
+    *, manifest_path: Path, store_path: Path, output_path: Path, run_id: str | None = None
+) -> dict[str, Any]:
     """Publish supplied releases and explicit canonical-to-world poses as independent instances."""
     store = LocalArtifactStore(store_path)
+    if run_id is None:
+        run_id = f"run_{uuid.uuid4().hex}"
+    elif not re.fullmatch(r"run_[A-Za-z0-9_-]+", run_id):
+        raise ContractError("invalid explicit run_id")
+    if (store.root / "runs" / f"{run_id}.json").exists():
+        raise ContractError("explicit run_id already exists")
     raw = json.loads(manifest_path.read_text())
     if not isinstance(raw, dict):
         raise ContractError("scene manifest must be an object")
@@ -150,7 +158,7 @@ def build_scene(*, manifest_path: Path, store_path: Path, output_path: Path) -> 
         None,
     )
     run = BuildRun(
-        f"run_{uuid.uuid4().hex}",
+        run_id,
         "scene_asset_v1",
         "1",
         "running",

@@ -119,6 +119,31 @@ def test_scene_publish_failure(tmp_path, monkeypatch):
     assert not (tmp_path / "scene").exists()
 
 
+def test_scene_explicit_run_id_is_validated_and_cannot_overwrite(tmp_path):
+    store, path, _, _ = setup(tmp_path)
+    with pytest.raises(ContractError, match="invalid explicit run_id"):
+        build_scene(
+            manifest_path=path,
+            store_path=store.root,
+            output_path=tmp_path / "bad-run",
+            run_id="../bad",
+        )
+    result = build_scene(
+        manifest_path=path,
+        store_path=store.root,
+        output_path=tmp_path / "first-scene",
+        run_id="run_explicit_scene",
+    )
+    assert result["run_id"] == "run_explicit_scene"
+    with pytest.raises(ContractError, match="already exists"):
+        build_scene(
+            manifest_path=path,
+            store_path=store.root,
+            output_path=tmp_path / "second-scene",
+            run_id="run_explicit_scene",
+        )
+
+
 @pytest.mark.parametrize(
     "raw",
     [

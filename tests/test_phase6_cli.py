@@ -191,3 +191,42 @@ def test_instance_review_cli_closes_server_on_interrupt(tmp_path, monkeypatch, c
     assert main() == 0
     assert seen["closed"]
     assert "http://127.0.0.1:23456/" in capsys.readouterr().out
+
+
+def test_scene_layout_review_cli_closes_server_on_interrupt(tmp_path, monkeypatch, capsys):
+    from assets_generator import scene_layout_review
+
+    seen = {}
+
+    class Server:
+        server_port = 34567
+
+        def serve_forever(self):
+            raise KeyboardInterrupt
+
+        def server_close(self):
+            seen["closed"] = True
+
+    monkeypatch.setattr(scene_layout_review, "SceneLayoutReviewSession", lambda *args: args)
+    monkeypatch.setattr(
+        scene_layout_review, "create_scene_layout_review_server", lambda *args: Server()
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "assets-generator",
+            "review-scene-layout",
+            "--manifest",
+            str(tmp_path / "draft.json"),
+            "--store",
+            str(tmp_path / "store"),
+            "--output",
+            str(tmp_path / "scene"),
+            "--port",
+            "0",
+        ],
+    )
+    assert main() == 0
+    assert seen["closed"]
+    assert "http://127.0.0.1:34567/" in capsys.readouterr().out
