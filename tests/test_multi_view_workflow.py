@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import json
 
+import numpy as np
 import pytest
 import trimesh
 from PIL import Image
@@ -1421,3 +1422,68 @@ def test_multi_view_release_materialization_failure_is_atomic(tmp_path, monkeypa
     assert run["node_attempts"][-1]["node_id"] == "materialize_release"
     assert run["node_attempts"][-1]["status"] == "failed"
     assert run["node_attempts"][-1]["error_code"] == "release_failed"
+
+
+def test_multi_view_preserves_reconstructed_vertex_colors(tmp_path) -> None:
+    class ColoredReconstruction(ContractReconstruction):
+        def reconstruct(self, store, observations, cameras, depths, points):
+            value = super().reconstruct(store, observations, cameras, depths, points)
+            mesh = trimesh.creation.box(extents=[1.0, 2.0, 3.0])
+            mesh.visual.vertex_colors = np.array(
+                [[20 + i * 20, 200 - i * 10, 40 + i * 15, 255] for i in range(8)],
+                dtype=np.uint8,
+            )
+            self.expected_colors = mesh.visual.vertex_colors.copy()
+            reference = store.persist_bytes(
+                trimesh.Scene(mesh).export(file_type="glb"),
+                kind="triangle_mesh",
+                schema_name="glTF",
+                schema_version="2.0",
+                identity_metadata={
+                    "frame_id": "reconstruction_native",
+                    "unit": "relative_unit",
+                    "up_axis": "+Y",
+                    "forward_axis": None,
+                },
+            )
+            component = StructuredValue(
+                "component_provenance",
+                "ComponentProvenance",
+                SCHEMA_VERSION,
+                to_primitive(ComponentProvenance("body", reference, "reconstructed")),
+            )
+            return ReconstructionOutput(
+                reference, value.material, value.native_frame, [component], value.backend_metadata
+            )
+
+    store_path = tmp_path / "store"
+    store = LocalArtifactStore(store_path)
+    observations = _observations(tmp_path, store)
+    backend = ColoredReconstruction()
+    output = tmp_path / "release"
+    build_multi_view_asset(
+        observations=observations,
+        store_path=store_path,
+        output_path=output,
+        resolved_plan=_plan(ContractGeometryFrontend(), backend),
+        export_appearance_mode="preserve_mesh",
+    )
+    scene = trimesh.load(output / "geometry/visual.glb", force="scene")
+    geometry = next(iter(scene.geometry.values()))
+    assert geometry.visual.kind == "vertex"
+    np.testing.assert_array_equal(geometry.visual.vertex_colors, backend.expected_colors)
+    records = [json.loads(p.read_text()) for p in (output / "provenance").glob("*.json")]
+    record = next(record for record in records if record["operator"] == "export")
+    assert record["parameters"]["appearance_mode"] == "preserve_mesh"
+
+
+def test_multi_view_rejects_invalid_export_appearance_mode(tmp_path) -> None:
+    store = LocalArtifactStore(tmp_path / "store")
+    with pytest.raises(ContractError, match="invalid export appearance mode"):
+        build_multi_view_asset(
+            observations=_observations(tmp_path, store),
+            store_path=tmp_path / "store",
+            output_path=tmp_path / "release",
+            resolved_plan=_plan(ContractGeometryFrontend(), ContractReconstruction()),
+            export_appearance_mode="guess",
+        )

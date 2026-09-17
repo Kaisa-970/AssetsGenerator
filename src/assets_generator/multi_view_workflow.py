@@ -4,7 +4,7 @@ import math
 import re
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from PIL import Image
 
@@ -377,7 +377,10 @@ def build_multi_view_asset(
     resolved_plan: ResolvedPlan,
     semantics: SemanticInfo | None = None,
     asset_name: str | None = None,
+    export_appearance_mode: Literal["preserve_mesh", "apply_material"] = "apply_material",
 ) -> BuildResult:
+    if export_appearance_mode not in {"preserve_mesh", "apply_material"}:
+        raise ContractError(f"invalid export appearance mode: {export_appearance_mode}")
     store = LocalArtifactStore(store_path)
     pipeline = load_multi_view_pipeline()
     specs = load_default_operator_specs()
@@ -401,7 +404,7 @@ def build_multi_view_asset(
         "export_profile",
         "GLTF2Profile",
         SCHEMA_VERSION,
-        {"profile": "gltf2-v1", "appearance_mode": "apply_material"},
+        {"profile": "gltf2-v1", "appearance_mode": export_appearance_mode},
     )
     run_inputs: dict[str, ArtifactRef | StructuredValue] = {
         "observations": observations,
@@ -891,7 +894,7 @@ def build_multi_view_asset(
                 canonical.mesh,
                 material,
                 report_ref,
-                appearance_mode="apply_material",
+                appearance_mode=export_appearance_mode,
             )
             export_provenance = _persist_provenance(
                 store,
@@ -907,7 +910,7 @@ def build_multi_view_asset(
                 operator="export",
                 backend="core",
                 backend_version="0.1.0",
-                parameters={"profile": "gltf2-v1", "appearance_mode": "apply_material"},
+                parameters={"profile": "gltf2-v1", "appearance_mode": export_appearance_mode},
                 seed=None,
                 source="derived",
             )
