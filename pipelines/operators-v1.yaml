@@ -127,6 +127,8 @@ operators:
       scene: {kind: scene_definition, carriers: [artifact_ref], schema_name: SceneDefinition, schema_version: "1.0"}
       instances: {kind: asset_instance, cardinality: one_or_more, carriers: [artifact_ref], schema_name: AssetInstance, schema_version: "1.0"}
       glb: {kind: gltf_asset, carriers: [artifact_ref], requires_frame: true, requires_unit: true}
+      scene_provenance: {kind: provenance_record, carriers: [artifact_ref]}
+      glb_provenance: {kind: provenance_record, carriers: [artifact_ref]}
 
   - name: instance_proposals
     version: 1

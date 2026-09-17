@@ -146,9 +146,10 @@ Phase 5 CameraRegistration/render-back QA 继续延期；当前不宣称质量�
 
 长期借鉴 FIRE3D，引入 Detection、Instance Segmentation、Object Pose、Canonicalization、Completion 和 SceneDefinition。
 
-当前开始 Phase 7 首版：显式提供 scene image/object masks，串行复用 Shape Backend 生成独立资产；
-再以精确 release 引用和人工 canonical→world 位姿创建独立 AssetInstance/SceneDefinition。
-已保留父子 BuildRun、实例 provenance、完整嵌套资产包与原子发布。自动 detection/segmentation、
+Phase 7 流程首版已闭环：显式 mask 或 SAM unknown 候选经人工选择后，串行复用 Shape Backend
+生成独立资产；再以精确 release 引用和人工 canonical→world 位姿创建独立
+AssetInstance/SceneDefinition。已保留父子 BuildRun、mask/selection/instance/scene provenance、
+完整嵌套资产包、可视 mask 选择、可视场景布局与原子发布。自动 detection/segmentation、
 位姿估计、几何约束 completion 与场景质量验收延期，不以人工输入冒充模型能力。
 使用见 [指南](../guides/scene-to-assets.md)。
 
@@ -160,6 +161,11 @@ Scene Observation
 ```
 
 ## 9. Phase 8：Real to Sim
+
+当前进入 Phase 8 首版。第一个窄切片为单资产、显式请求的 deterministic collision generation：
+从 canonical visual mesh 生成同 frame/unit 的 collision mesh，记录算法、参数和 provenance，写入
+GeometrySet/AssetRelease 并执行 collision QA。默认图像 Pipeline 保持不变；metric calibration、
+刚体参数、USD/IsaacUSD、runtime 同步和 articulation 后续再做。
 
 加入：
 

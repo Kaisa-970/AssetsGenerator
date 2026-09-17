@@ -82,3 +82,11 @@ provenance、父 BuildRun 和完整子场景包；父运行引用精确 scene ch
 SceneDefinition 为 `sha256:3f97fdb2a75ec2ad7183d19c5c670bd58b430cf606cc6928fb2fe795c5319d0e`。
 GLB 重新加载仍为 2 个节点、308,373 个面。该 smoke 使用自动化 reviewer 名称验证工作流，
 不构成人工质量批准。全量 462 项测试、Ruff 和 mypy 通过。
+
+## Phase 7 首版收口
+
+独立 completion audit 发现最终 SceneDefinition 缺少自己的 ExecutionOutput/provenance。修复后
+`assemble_scene@1` 显式输出 scene/glb provenance；`provenance/scene.json` 以 SceneDefinition
+为 output_artifact_id，并精确派生自 SceneRequest 和有序 AssetInstance。普通 `build-scene` 与
+可视布局路径均可直接回查完整组装事件。Phase 7 首版至此关闭；自动语义、自动 pose、尺度恢复、
+completion、碰撞/物理和质量验收仍按文档延期，不包含在本次完成声明中。

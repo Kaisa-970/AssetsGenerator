@@ -83,7 +83,16 @@ def test_scene_reuses_definition_and_maps_canonical_pose(tmp_path):
     assert {g.visual.kind for g in scene.geometry.values()} == {"vertex", "texture"}
     records = [json.loads(p.read_text()) for p in (tmp_path / "scene/provenance").glob("*.json")]
     assert len({r["provenance_id"] for r in records}) == len(records)
-    assert store.get_build_run(result["run_id"])["status"] == "succeeded"
+    run = store.get_build_run(result["run_id"])
+    assert run["status"] == "succeeded"
+    outputs = run["node_attempts"][0]["outputs"]
+    scene_provenance = store.read_structured(ArtifactRef(**outputs["scene_provenance"]))
+    assert scene_provenance["output_artifact_id"] == result["scene"]["artifact_id"]
+    assert scene_provenance["derived_from_artifact_ids"] == [
+        run["inputs"]["request"]["artifact_id"],
+        *[ref["artifact_id"] for ref in definition["instances"]],
+    ]
+    assert json.loads((tmp_path / "scene/provenance/scene.json").read_text()) == scene_provenance
 
 
 @pytest.mark.parametrize("error", ["duplicate", "unit", "frame", "reflection"])

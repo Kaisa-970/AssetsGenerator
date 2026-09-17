@@ -252,6 +252,20 @@ def build_scene(
                 },
             )
         )
+        scene_provenance = _persist_provenance(
+            store,
+            run_id=run.run_id,
+            node_id=attempt.node_id,
+            port_name="scene",
+            artifact=definition,
+            derived_from=[request, *instances],
+            operator="assemble_scene",
+            backend="core",
+            backend_version="1",
+            parameters={"instance_count": len(instances), "pose_source": "user"},
+            seed=None,
+            source="mixed",
+        )
         glb = store.persist_bytes(
             _glb(scene),
             kind="gltf_asset",
@@ -264,7 +278,7 @@ def build_scene(
                 "forward_axis": "+Z",
             },
         )
-        provenance = _persist_provenance(
+        glb_provenance = _persist_provenance(
             store,
             run_id=run.run_id,
             node_id=attempt.node_id,
@@ -286,10 +300,17 @@ def build_scene(
             {
                 "scene.json": definition,
                 "geometry/scene.glb": glb,
-                "provenance/export.json": provenance,
+                "provenance/scene.json": scene_provenance,
+                "provenance/export.json": glb_provenance,
             }
         )
-        attempt.outputs = {"scene": definition, "instances": list(instances), "glb": glb}
+        attempt.outputs = {
+            "scene": definition,
+            "instances": list(instances),
+            "glb": glb,
+            "scene_provenance": scene_provenance,
+            "glb_provenance": glb_provenance,
+        }
         validate_operator_outputs(spec, attempt.outputs, store)
         attempt.status = "succeeded"
         attempt.finished_at = utc_now()
