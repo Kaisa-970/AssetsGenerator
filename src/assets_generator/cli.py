@@ -115,6 +115,13 @@ def _parser() -> argparse.ArgumentParser:
     layout_review.add_argument("--store", type=Path, required=True)
     layout_review.add_argument("--output", type=Path, required=True)
     layout_review.add_argument("--port", type=int, default=8765)
+    collision = subparsers.add_parser(
+        "build-collision", help="Derive a deterministic collision proxy from an asset release"
+    )
+    collision.add_argument("--release", required=True, help="Artifact ID or reference JSON")
+    collision.add_argument("--store", type=Path, required=True)
+    collision.add_argument("--output", type=Path, required=True)
+    collision.add_argument("--method", choices=["convex-hull"], default="convex-hull")
     return parser
 
 
@@ -214,6 +221,17 @@ def main() -> int:
 
 
 def _execute(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
+    if args.command == "build-collision":
+        from .collision import build_collision_asset
+
+        collision_result = build_collision_asset(
+            release=_reference(args.release),
+            store_path=args.store,
+            output_path=args.output,
+            method=args.method,
+        )
+        print(json.dumps(to_primitive(collision_result), indent=2))
+        return 0
     if args.command == "propose-instances":
         from .backends.sam_instances import SAMInstanceProposer
         from .instance_proposals import propose_instances

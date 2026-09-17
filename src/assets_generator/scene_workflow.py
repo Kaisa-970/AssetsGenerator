@@ -39,7 +39,7 @@ def _release_files(store: LocalArtifactStore, release: ArtifactRef) -> dict[str,
             or "\\" in name
             or "\x00" in name
             or path.as_posix() != name
-            or path.parts[0] in {"asset.json", "release.json"}
+            or path.parts[0] in {"asset.json", "release.json", "run.json"}
         ):
             raise ContractError(f"unsafe scene asset release path: {name}")
         ref = ArtifactRef(**value)

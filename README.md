@@ -68,6 +68,11 @@ Phase 6 已接入 DA3-Base geometry frontend 和 Open3D TSDF reconstruction Back
 
 Phase 7 首版已提供 SAM 未知类别 mask 候选、loopback 可视选择、逐对象 Shape Backend 生成、显式人工位姿和 SceneDefinition/场景 GLB 发布。真实双对象链路已使用 TripoSR 完成验收；该流程不宣称语义检测、自动位姿、尺度恢复或物理可用，见 [Scene to Assets 指南](docs/guides/scene-to-assets.md) 和 [Phase 7 报告](docs/reports/phase7-scene-v1.md)。
 
+Phase 8 首个切片提供显式的 CPU convex-hull collision generation。它从 canonical visual
+mesh 派生同 frame/unit 的 `collision_mesh`，发布新的不可变 AssetDefinition/AssetRelease，
+并记录 collision QA 和 provenance；不执行 metric calibration 或刚体参数估计。使用见
+[Collision Generation 指南](docs/guides/collision-generation.md)。
+
 安装开发环境并检查固定 Pipeline：
 
 ```bash

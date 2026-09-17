@@ -15,6 +15,7 @@ ARTIFACT_KINDS = frozenset(
         "normal_map",
         "metallic_roughness_map",
         "triangle_mesh",
+        "collision_mesh",
         "gltf_asset",
         "point_cloud",
         "gaussian_splat",
