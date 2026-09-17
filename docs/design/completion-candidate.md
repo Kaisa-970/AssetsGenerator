@@ -77,10 +77,36 @@ align_completion_candidate；源/目标 frame 和输出目录由服务端绑定�
 `alignment_review` / `AlignmentReview@1.0` 为新增不可变 Artifact kind，记录 candidate、
 alignment、transform、decision（accepted/rejected）、reviewer、reviewed_at、note，
 scope=manual_alignment_only、reviewer_identity=self_reported、fusion=not_performed。
-决定必须引用当前服务会话已保存且 BuildRun 成功的对齐结果。记录追加到独立 reviews/，
+决定必须引用当前服务会话已保存或恢复且 BuildRun 成功的对齐结果。记录追加到独立 reviews/，
 不变更候选包或对齐包，也不把人工决定混同模型 QA、融合 provenance 或自动质量评分。
-不提供自动仲裁、权威状态选择或跨会话恢复编辑。
+不提供自动仲裁；显式选定与跨会话恢复见下节。
 
 服务仅监听 127.0.0.1，固定资源路由，不暴露 Store 或任意文件路径；写操作检查 Host、
 同源 Origin、随机会话 token 和请求体上限。前端依赖 CDN Three.js 0.169.0，加载失败显示
 错误信息。该服务不是远程多用户平台，不接入 GPU 模型或新增 DAG。
+
+## 恢复、选定与区域组合 v1
+
+服务现在从同一 Store 的不可变 Artifact 历史恢复当前 candidate 的成功对齐结果及检查记录。
+恢复使用持久化矩阵；编辑参数后原选择失效。`alignment_selection` / `AlignmentSelection@1.0`
+记录精确 alignment/transform、采用的 accepted review、全部已知 review identity、选定人和时间。
+存在 rejected 意见时必须填写显式冲突解决说明；不按时间自动覆盖意见。后续新增检查意见会
+使旧 selection 失效，需再次选定。检查人与选定人仍是自行声明的标识。
+
+`manual_region_composition@1` 的契约见 OperatorSpec。区域参数分别声明 reconstructed/generated
+的 all、none、inside、outside 模式；inside/outside 使用目标 GLB 坐标中的轴对齐方框。
+选择策略为 `target-glb-face-centroid-inclusive-box-v1`：烘焙 scene node 变换后，三角面中心
+位于闭区间方框即算 inside，outside 为其补集。不会切割跨边界三角形，也不焊接或补洞。
+`region_selection` / `RegionSelection@1.0` 持久化输入 selection、alignment、transform、规则及
+每组件的原始 GLB identity、source_node、source_face_indices。面编号对应当前 Trimesh GLB
+加载后的每 node geometry 面数组，规则和输入 identity 一同保存，不表示通用跨加载器 region-map。
+
+每个非空选中 node 作为独立组件导出，保留纹理、UV、顶点颜色及材质。全空选择拒绝。
+`component_composition` / `ComponentComposition@1.0` 为组合包 manifest，引用新 GLB、区域记录、
+selection 和 provenance；保存最小 BuildRun 及发布状态。provenance 通过选区证据追溯各组件，
+不把整个输出错误标为 reconstructed。输出原子发布到新的 composition-*/，不改原资产。
+
+此步是独立组件组合交付包，不是通过质量验收的 AssetRelease；不签发假 QA，不宣称物理可用。
+`visual.glb` 可直接查看；组合包包含 composition.json、regions.json、selection.json、
+provenance.json、run.json。后续若接统一 AssetRelease，还需明确对应 QA 与 assembly 契约。
+浏览器提供所选区域原材质预览。当前使用数值方框，不提供画笔、套索或自动语义分区。

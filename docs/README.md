@@ -30,6 +30,8 @@
 
 ## 评测报告 · reports
 
+- [2026-09-17：人工区域组合流程验证](reports/region-composition-smoke-v1.md)
+
 - [2026-09-17：人工候选对齐入口验证](reports/manual-alignment-smoke-v1.md)
 
 - [2026-09-17：显式候选对齐验证](reports/candidate-alignment-smoke-v1.md)

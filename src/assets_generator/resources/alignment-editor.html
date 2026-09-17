@@ -4,12 +4,14 @@
 body{margin:0;font:15px system-ui;background:#101923;color:#e8edf2}main{display:grid;grid-template-columns:320px 1fr;height:100vh}aside{padding:22px;overflow:auto;background:#192735}h1{font-size:22px}p{line-height:1.6;color:#bdcbd8}fieldset{border:1px solid #476075;margin:16px 0}label{display:block;margin:10px 0}#controls label{display:flex;align-items:center;justify-content:space-between;gap:8px}input[type=number]{width:100px}input,textarea,button{padding:7px;border-radius:4px;border:1px solid #637889}button{cursor:pointer;background:#dceaf6;margin:5px 0}button:disabled{opacity:.45;cursor:default}textarea{width:90%}#viewport{min-width:0;position:relative}canvas{display:block}#status{white-space:pre-wrap;overflow-wrap:anywhere}#hint{position:absolute;bottom:16px;left:18px;background:#101923bb;padding:9px;pointer-events:none}@media(max-width:720px){main{grid-template-columns:1fr;height:auto}#viewport{height:65vh}}
 </style>
 <main><aside><h1>人工候选对齐</h1><p>青色为重建，橙色为生成。只调整生成模型；保存与人工确认不会融合几何。</p>
-<form id="controls"><fieldset><legend>旋转（度）</legend><label>X <input id="rx" type="number" value="0" step="1" required></label><label>Y <input id="ry" type="number" value="0" step="1" required></label><label>Z <input id="rz" type="number" value="0" step="1" required></label></fieldset>
-<fieldset><legend id="translation-label">平移（目标坐标单位）</legend><label>X <input id="tx" type="number" value="0" step="0.01" required></label><label>Y <input id="ty" type="number" value="0" step="0.01" required></label><label>Z <input id="tz" type="number" value="0" step="0.01" required></label><label>统一缩放 <input id="scale" type="number" value="1" step="any" min="0.000001" required></label></fieldset></form>
+<form id="controls"><fieldset><legend>旋转（度）</legend><label>X <input id="rx" type="number" value="0" step="any" required></label><label>Y <input id="ry" type="number" value="0" step="any" required></label><label>Z <input id="rz" type="number" value="0" step="any" required></label></fieldset>
+<fieldset><legend id="translation-label">平移（目标坐标单位）</legend><label>X <input id="tx" type="number" value="0" step="any" required></label><label>Y <input id="ty" type="number" value="0" step="any" required></label><label>Z <input id="tz" type="number" value="0" step="any" required></label><label>统一缩放 <input id="scale" type="number" value="1" step="any" min="0.000001" required></label></fieldset></form>
 <p>绕固定 X → Y → Z 轴旋转，再平移；+Y 向上。缩放与旋转中心为原点。</p>
 <label><input id="show-target" type="checkbox" checked> 显示重建</label><label><input id="show-source" type="checkbox" checked> 显示生成</label>
 <button id="reset" disabled>重置变换</button> <button id="fit" disabled>模型居中</button><br><button id="save" disabled>保存当前对齐</button>
 <fieldset><legend>检查已保存结果</legend><label>检查人 <input id="reviewer" maxlength="200" placeholder="填写姓名或标识"></label><label>备注<textarea id="note" maxlength="4000"></textarea></label><button id="accept" disabled>确认对齐</button> <button id="reject" disabled>拒绝对齐</button></fieldset>
+<fieldset><legend>恢复与选定</legend><button id="history">刷新历史</button><select id="alignments"></select><button id="restore">恢复选中结果</button><pre id="history-text" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre><label>采用的确认记录<select id="accepted-review"></select></label><label>冲突解决说明<textarea id="resolution"></textarea></label><button id="select-alignment">选定用于组合</button></fieldset>
+<fieldset id="regions"><legend>人工区域选择（目标坐标方框）</legend><div id="region-fields"></div><p>根据三角面中心判断框内/框外，不切割跨边界三角形。</p><button id="preview-regions">预览所选区域</button><button id="publish-regions">组合发布</button><button id="return-layers">返回对齐图层</button></fieldset>
 <p id="status" role="status">正在加载查看器…</p></aside><section id="viewport"><div id="hint">拖动旋转 · 滚轮缩放 · 右键拖动平移</div></section></main>
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"}}</script>
 <script type="module">
@@ -31,11 +33,11 @@ const targetGroup=new THREE.Group(), sourceGroup=new THREE.Group();
 targetGroup.add(target.scene);sourceGroup.add(source.scene);scene.add(targetGroup,sourceGroup);
 for(const [group,color] of [[targetGroup,0x00bee6],[sourceGroup,0xff9128]])group.traverse(obj=>{if(obj.isMesh)obj.material=new THREE.MeshBasicMaterial({color,side:THREE.DoubleSide})});
 sourceGroup.matrixAutoUpdate=false;
-let saved=null,busy=false;
+let saved=null,busy=false,selection=null,previewGroup=null;
 const keys=['rx','ry','rz','tx','ty','tz','scale'];
 function reviewButtons(){for(const id of ['accept','reject'])$(id).disabled=busy||!saved}
 function apply(){
- saved=null;reviewButtons();
+ clearPreview();saved=null;selection=null;reviewButtons();
  if(!$('controls').checkValidity()){ $('save').disabled=true;status.textContent='请填写有限数值，缩放必须大于零。';return false; }
  const v=Object.fromEntries(keys.map(k=>[k,Number($(k).value)]));
  if(!Object.values(v).every(Number.isFinite)||v.scale<=0){$('save').disabled=true;return false;}
@@ -57,7 +59,7 @@ $('controls').addEventListener('submit',e=>e.preventDefault());$('controls').add
 $('show-target').onchange=()=>targetGroup.visible=$('show-target').checked;
 $('show-source').onchange=()=>sourceGroup.visible=$('show-source').checked;
 $('reset').onclick=()=>{for(const k of keys)$(k).value=k==='scale'?'1':'0';apply()};$('fit').onclick=fit;
-function lock(on){busy=on;for(const k of keys)$(k).disabled=on;for(const id of ['save','reset'])$(id).disabled=on;reviewButtons()}
+function lock(on){busy=on;for(const el of document.querySelectorAll('#regions input,#regions select,#alignments,#resolution,#accepted-review'))el.disabled=on;for(const k of keys)$(k).disabled=on;for(const id of ['save','reset'])$(id).disabled=on;reviewButtons()}
 async function post(path,body){const response=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json','X-Review-Token':config.token},body:JSON.stringify(body)});const result=await response.json();if(!response.ok)throw Error(result.error||'操作失败');return result}
 $('save').onclick=async()=>{
  if(!apply())return;lock(true);status.textContent='正在保存对齐与运行记录…';
@@ -71,6 +73,47 @@ for(const [id,decision] of [['accept','accepted'],['reject','rejected']])$(id).o
  try{const result=await post('/review',{alignment_id:saved.alignment.artifact_id,decision,reviewer:$('reviewer').value,note:$('note').value});status.textContent=(decision==='accepted'?'已记录人工确认':'已记录人工拒绝')+'（仅对齐，未融合）。\n'+result.review.artifact_id;}
  catch(e){status.textContent='记录失败：'+e.message}finally{lock(false)}
 };
+let historyData={alignments:[],reviews:[]};
+async function refreshHistory(){
+ historyData=await fetch('/history').then(r=>r.json());
+ $('alignments').replaceChildren(...historyData.alignments.map(item=>new Option(item.alignment.artifact_id,item.alignment.artifact_id)));
+ showReviews();
+}
+function showReviews(){
+ const id=$('alignments').value;
+ const reviews=historyData.reviews.filter(r=>r.record.alignment.artifact_id===id);
+ $('accepted-review').replaceChildren(...reviews.filter(r=>r.record.decision==='accepted').map(r=>new Option(r.record.reviewer+' · '+r.record.reviewed_at,r.review.artifact_id)));
+ $('history-text').textContent=reviews.map(r=>r.record.decision+' · '+r.record.reviewer+' · '+r.record.note).join('\n')||'尚无检查记录';
+}
+$('alignments').onchange=showReviews;
+async function action(fn){if(busy)return;lock(true);try{await fn()}catch(e){status.textContent=e.message}finally{lock(false)}}
+$('history').onclick=()=>action(refreshHistory);
+$('restore').onclick=()=>action(async()=>{
+ const item=await post('/restore',{alignment_id:$('alignments').value});
+ clearPreview();
+ sourceGroup.matrix.set(...item.matrix.flat());sourceGroup.updateMatrixWorld(true);
+ const p=new THREE.Vector3(),q=new THREE.Quaternion(),s=new THREE.Vector3();sourceGroup.matrix.decompose(p,q,s);
+ const e=new THREE.Euler().setFromQuaternion(q,'ZYX');
+ for(const [k,v] of Object.entries({rx:e.x*180/Math.PI,ry:e.y*180/Math.PI,rz:e.z*180/Math.PI,tx:p.x,ty:p.y,tz:p.z,scale:s.x}))$(k).value=String(v);
+ saved=item;selection=null;status.textContent='已恢复原始变换，可检查或选定。';fit();
+});
+$('select-alignment').onclick=()=>action(async()=>{
+ if(!saved||saved.alignment.artifact_id!==$('alignments').value)throw Error('请先恢复对应对齐结果');
+ const result=await post('/select',{alignment_id:saved.alignment.artifact_id,accepted_review_id:$('accepted-review').value,resolution_note:$('resolution').value,reviewer:$('reviewer').value});
+ selection=result.selection;status.textContent='已选定，可选择区域并预览。';
+});
+for(const [name,label] of [['reconstructed','重建'],['generated','生成']]){
+ const div=document.createElement('div');div.innerHTML='<label>'+label+' <select id="'+name+'-mode"><option value="all">全部</option><option value="none">不保留</option><option value="inside">框内</option><option value="outside">框外</option></select></label>';
+ for(const bound of ['minimum','maximum'])for(const axis of ['x','y','z'])div.innerHTML+='<label>'+ (bound==='minimum'?'最小':'最大')+' '+axis+' <input type="number" step="any" id="'+name+'-'+bound+'-'+axis+'" value="'+(bound==='minimum'?'-0.5':'0.5')+'"></label>';
+ $('region-fields').append(div);
+}
+function regionRequest(){if(!selection)throw Error('请先选定已确认的对齐结果');const regions={};for(const name of ['reconstructed','generated']){regions[name]={mode:$(name+'-mode').value};for(const bound of ['minimum','maximum'])regions[name][bound]=['x','y','z'].map(a=>Number($(name+'-'+bound+'-'+a).value));}return {selection_id:selection.artifact_id,regions};}
+function clearPreview(){if(previewGroup){scene.remove(previewGroup);previewGroup.traverse(o=>{if(o.isMesh){o.geometry.dispose();for(const m of (Array.isArray(o.material)?o.material:[o.material]))m.dispose()}});previewGroup=null;}targetGroup.visible=$('show-target').checked;sourceGroup.visible=$('show-source').checked;}
+$('return-layers').onclick=clearPreview;
+$('preview-regions').onclick=()=>action(async()=>{const result=await post('/preview',regionRequest());const gltf=await loader.loadAsync('/preview.glb');clearPreview();previewGroup=gltf.scene;scene.add(previewGroup);targetGroup.visible=false;sourceGroup.visible=false;status.textContent='区域预览：'+result.components+' 个组件，'+result.faces+' 个面（原材质，未融合）。';});
+$('publish-regions').onclick=()=>action(async()=>{const result=await post('/compose',regionRequest());status.textContent='组合已发布（独立组件，未焊接）\n'+result.output_directory;});
+$('regions').addEventListener('input',()=>{clearPreview();status.textContent='区域已修改，请重新预览后发布。'});
+await refreshHistory();
 $('reset').disabled=false;$('fit').disabled=false;apply();fit();
 document.body.dataset.ready='true';
 } catch(e){status.textContent='查看器加载失败：'+e.message+'。请检查网络（Three.js 通过 CDN 加载）并刷新。'}

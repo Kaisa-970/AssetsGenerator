@@ -423,3 +423,7 @@ provenance 引用；`spatial_transform` / `SpatialTransform@1.0` 可作为独立
 
 `alignment_review` / `AlignmentReview@1.0` 是独立的人工作业决定 Artifact，引用精确
 candidate/alignment/transform，追加保留确认和拒绝记录，不修改原对齐包。
+
+`alignment_selection`、`region_selection`、`component_composition` 分别记录采用的检查决定、
+精确区域与原始面编号、未融合的组件组合包。三者为不可变关联/证据 Artifact，
+详细字段与边界见 [候选契约](completion-candidate.md#恢复选定与区域组合-v1)。

@@ -103,3 +103,13 @@ operators:
     outputs:
       aligned: {kind: gltf_asset, carriers: [artifact_ref], requires_frame: true, requires_unit: true}
       transform: {kind: spatial_transform, carriers: [artifact_ref], schema_name: SpatialTransform, schema_version: "1.0"}
+
+  - name: manual_region_composition
+    version: 1
+    inputs:
+      selection: {kind: alignment_selection, carriers: [artifact_ref], schema_name: AlignmentSelection, schema_version: "1.0"}
+    outputs:
+      mesh: {kind: gltf_asset, carriers: [artifact_ref], requires_frame: true, requires_unit: true}
+      regions: {kind: region_selection, carriers: [artifact_ref], schema_name: RegionSelection, schema_version: "1.0"}
+      manifest: {kind: component_composition, carriers: [artifact_ref], schema_name: ComponentComposition, schema_version: "1.0"}
+      provenance: {kind: provenance_record, carriers: [artifact_ref]}
