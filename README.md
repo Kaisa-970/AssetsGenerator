@@ -2,7 +2,7 @@
 
 通用 Real-to-Sim 资产生成管线的设计与后续实现仓库。
 
-当前实现覆盖完整单图到结构化 3D 资产流程：
+当前实现覆盖完整单图到结构化 3D 资产流程，以及 Phase 6 的模型中立多视图 Core vertical slice：
 
 ```text
 Single RGB
@@ -15,6 +15,15 @@ Single RGB
     -> Provenance and Geometry QA
 ```
 
+```text
+Multi RGB / RGBD manifest
+    -> Persisted ObservationBundle
+    -> Geometry Frontend Backend contract
+    -> Reconstruction Backend contract
+    -> Canonical GLB + component provenance
+    -> AssetDefinition / AssetRelease
+```
+
 设计入口：
 
 - [文档分类索引](docs/README.md)
@@ -22,6 +31,7 @@ Single RGB
 - [Asset IR](docs/design/asset-ir.md)
 - [Coordinate System](docs/design/coordinate-system.md)
 - [Pipeline Contract](docs/design/pipeline-contract.md)
+- [Multi-view and Hybrid Contract](docs/design/multi-view-hybrid.md)
 - [TripoSR Backend Contract](docs/design/triposr-backend.md)
 - [TripoSR Environment and Preflight](docs/guides/triposr-environment.md)
 - [Artifact Store](docs/design/artifact-store.md)
@@ -31,7 +41,7 @@ Single RGB
 
 ## 当前实现
 
-仓库已包含 Phase 2 单图流程和 Phase 4 的 Backend 可替换骨架：
+仓库已包含 Phase 2 单图流程、已验证关闭的 Phase 4 Backend 可替换性，以及 Phase 6 的模型中立基础：
 
 - Blob、Artifact、StructuredValue、AssetDefinition、AssetRelease、Provenance 和 QualityReport schema
 - 本地内容寻址 Artifact Store，支持 staging、digest 校验和原子提交
@@ -45,10 +55,16 @@ Single RGB
 - GLB 可加载性、非空有限 Mesh、空间契约和 digest Geometry QA
 - 本地独立进程 TRELLIS.2 Backend adapter
 - Backend registry、不可变 `ResolvedPlan`、Pipeline 默认绑定和 CLI Backend 覆盖
-- BuildRun 记录实际使用的节点 Backend 绑定
+- BuildRun 记录解析契约摘要、实际节点 Backend 名称和 Registry 声明版本
 - 原子 AssetRelease 目录发布和 manifest identity 防篡改校验
+- 严格的 ObservationBundle / CameraRecord / ComponentProvenance IR
+- 原子多图/RGBD manifest 导入与稳定 observation identity
+- `geometry_frontend@1`、`reconstruction@1` 和集合 cardinality 契约
+- Fake Backend 驱动的多视图端到端 Core workflow，覆盖 canonicalization、QA、provenance 和 release
 
-当前实现包含 `trellis2` 和 `triposr` 两个 Shape Backend。TripoSR 已完成独立环境预检、真实 GPU smoke、native frame 验证及飞机/自行车回归运行；自动 QA 与运行证据见 Phase 4 报告。Router 资源策略和人工视觉比较结论尚未完成。
+当前实现包含 `trellis2` 和 `triposr` 两个 Shape Backend。TripoSR 已完成独立环境预检、真实 GPU smoke、native frame 验证及飞机/自行车串行回归，Phase 4 已关闭；自动 QA 与运行证据见 [Phase 4 TripoSR 验证报告](docs/reports/phase4-triposr-validation-v1.md)。Phase 5 已显式延期。
+
+Phase 6 当前只证明 Pipeline Core 能严格编排多视图契约。Fake Backend 仅用于测试，首个真实 geometry frontend、reconstruction 表示与 Backend、completion、数据集和阈值尚未选定，因此不得将当前 Phase 6 状态解释为真实多视图模型可用。`import-observations` 已提供 CLI；多视图构建目前通过 `assets_generator.multi_view_workflow.build_multi_view_asset()` 编排，CLI 构建入口等待真实 Backend 注册后再开放。
 
 安装开发环境并检查固定 Pipeline：
 
@@ -56,7 +72,20 @@ Single RGB
 python3 -m venv .venv
 .venv/bin/pip install -e '.[dev]'
 .venv/bin/assets-generator compile-pipeline
+.venv/bin/assets-generator compile-pipeline \
+  --pipeline pipelines/multi_view_asset_v1.yaml \
+  --operators pipelines/operators-v1.yaml
 ```
+
+导入已经抽取并在 manifest 中显式关联的多图或 RGBD 观测：
+
+```bash
+.venv/bin/assets-generator import-observations \
+  --manifest /path/to/observations.json \
+  --store artifact-store
+```
+
+manifest 的每个 view 必须提供稳定 `view_id` 和 RGB image；mask、depth、camera 为可选字段，具体 schema 与校验规则见 [Multi-view and Hybrid Contract](docs/design/multi-view-hybrid.md)。Video 当前只接受调用方预先抽取的帧。
 
 使用本机 TRELLIS.2 环境执行 Phase 2：
 

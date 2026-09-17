@@ -17,12 +17,16 @@ from assets_generator.models import (
     SCHEMA_VERSION,
     ArtifactRef,
     BackendNativeFrame,
+    ComponentProvenance,
+    PBRMaterial,
     ProvenanceRecord,
+    SemanticInfo,
 )
 from assets_generator.operators import (
     BiRefNetSegmentationBackend,
     Trellis2Backend,
     TripoSRBackend,
+    assemble_asset,
     canonicalize_glb,
     validate_binary_mask,
     validate_geometry,
@@ -35,6 +39,64 @@ def _box_glb() -> bytes:
     result = scene.export(file_type="glb")
     assert isinstance(result, bytes)
     return result
+
+
+def test_assemble_asset_preserves_component_provenance(tmp_path) -> None:
+    store = LocalArtifactStore(tmp_path / "store")
+    mesh = store.persist_bytes(
+        _box_glb(),
+        kind="triangle_mesh",
+        schema_name="glTF",
+        schema_version="2.0",
+        identity_metadata={"frame_id": "asset_canonical", "unit": "relative_unit"},
+    )
+    quality = store.persist_bytes(
+        b"{}", kind="quality_report", schema_name="QualityReport", schema_version="1.0"
+    )
+    component = ComponentProvenance("visible", mesh, "reconstructed", ["provenance_1"])
+
+    asset = assemble_asset(
+        mesh,
+        PBRMaterial([1.0, 1.0, 1.0, 1.0]),
+        object(),
+        "observation_1",
+        quality,
+        components=[component],
+    )
+
+    assert asset.component_provenance == [component]
+
+
+@pytest.mark.parametrize(
+    "semantics",
+    [
+        SemanticInfo(1, "user"),  # type: ignore[arg-type]
+        SemanticInfo("chair", 1),  # type: ignore[arg-type]
+        SemanticInfo("chair", "unverified"),
+    ],
+)
+def test_assemble_asset_rejects_invalid_semantics(tmp_path, semantics) -> None:
+    store = LocalArtifactStore(tmp_path / "store")
+    mesh = store.persist_bytes(
+        _box_glb(),
+        kind="triangle_mesh",
+        schema_name="glTF",
+        schema_version="2.0",
+        identity_metadata={"frame_id": "asset_canonical", "unit": "relative_unit"},
+    )
+    quality = store.persist_bytes(
+        b"{}", kind="quality_report", schema_name="QualityReport", schema_version="1.0"
+    )
+
+    with pytest.raises(ValueError, match="SemanticInfo"):
+        assemble_asset(
+            mesh,
+            PBRMaterial([1.0, 1.0, 1.0, 1.0]),
+            object(),
+            "observation_1",
+            quality,
+            semantics=semantics,
+        )
 
 
 def test_canonicalization_creates_new_artifact_and_loadable_glb(tmp_path) -> None:

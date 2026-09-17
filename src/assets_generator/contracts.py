@@ -4,10 +4,13 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 from .artifact_store import LocalArtifactStore
-from .models import ARTIFACT_KINDS, STRUCTURED_KINDS, PortValue, StructuredValue
+from .models import ARTIFACT_KINDS, STRUCTURED_KINDS, ArtifactRef, PortValue, StructuredValue
 
-Cardinality = Literal["one", "zero_or_one", "many"]
+Cardinality = Literal["one", "zero_or_one", "one_or_more", "zero_or_more", "many"]
 Carrier = Literal["artifact_ref", "structured"]
+
+_CARDINALITIES = frozenset({"one", "zero_or_one", "one_or_more", "zero_or_more", "many"})
+_CARRIERS = frozenset({"artifact_ref", "structured"})
 
 
 class ContractError(ValueError):
@@ -26,6 +29,13 @@ class PortSpec:
     persist: bool = False
 
     def __post_init__(self) -> None:
+        if self.cardinality not in _CARDINALITIES:
+            raise ContractError(f"unknown port cardinality: {self.cardinality}")
+        unknown_carriers = set(self.carriers) - _CARRIERS
+        if unknown_carriers:
+            raise ContractError(f"unknown port carriers: {sorted(unknown_carriers)}")
+        if not self.carriers:
+            raise ContractError("port requires at least one carrier")
         known = ARTIFACT_KINDS | STRUCTURED_KINDS
         unknown = set(self.kinds) - known
         if unknown:
@@ -52,6 +62,10 @@ class ValueDescriptor:
 def describe_value(value: PortValue, store: LocalArtifactStore) -> ValueDescriptor:
     if isinstance(value, StructuredValue):
         return ValueDescriptor("structured", value.kind, value.schema_name, value.schema_version)
+    if not isinstance(value, ArtifactRef):
+        raise ContractError(f"port value has unsupported carrier type: {type(value).__name__}")
+    if not store.verify_digest(value):
+        raise ContractError(f"artifact has invalid digest: {value.artifact_id}")
     manifest = store.get_manifest(value.artifact_id)
     identity = manifest.identity
     return ValueDescriptor(
@@ -71,14 +85,23 @@ def validate_port_value(
     value: PortValue | list[PortValue] | None,
     store: LocalArtifactStore,
 ) -> None:
-    values = [] if value is None else value if isinstance(value, list) else [value]
-    if spec.cardinality == "one" and len(values) != 1:
-        raise ContractError(f"{operator}.{port_name} requires exactly one value")
-    if spec.cardinality == "zero_or_one" and len(values) > 1:
-        raise ContractError(f"{operator}.{port_name} accepts at most one value")
+    prefix = f"{operator}.{port_name}"
+    plural = spec.cardinality in {"one_or_more", "zero_or_more", "many"}
+    if plural:
+        if not isinstance(value, list):
+            raise ContractError(f"{prefix} requires a list value")
+        else:
+            values = value
+        if spec.cardinality == "one_or_more" and not values:
+            raise ContractError(f"{prefix} requires at least one value")
+    else:
+        if isinstance(value, list):
+            raise ContractError(f"{prefix} rejects a list value")
+        if spec.cardinality == "one" and value is None:
+            raise ContractError(f"{prefix} requires exactly one value")
+        values = [] if value is None else [value]
     for item in values:
         descriptor = describe_value(item, store)
-        prefix = f"{operator}.{port_name}"
         if descriptor.carrier not in spec.carriers:
             raise ContractError(f"{prefix} rejects carrier {descriptor.carrier}")
         if descriptor.kind not in spec.kinds:
@@ -91,6 +114,29 @@ def validate_port_value(
             raise ContractError(f"{prefix} requires frame_id")
         if spec.requires_unit and not descriptor.identity_metadata.get("unit"):
             raise ContractError(f"{prefix} requires unit")
+
+
+def cardinality_compatible(source: Cardinality, target: Cardinality, *, optional: bool) -> bool:
+    source_plural = source in {"one_or_more", "zero_or_more", "many"}
+    target_plural = target in {"one_or_more", "zero_or_more", "many"}
+    if source_plural != target_plural:
+        return False
+    ranges = {
+        "one": (1, 1),
+        "zero_or_one": (0, 1),
+        "one_or_more": (1, None),
+        "zero_or_more": (0, None),
+        "many": (0, None),
+    }
+    source_min, source_max = ranges[source]
+    target_min, target_max = ranges[target]
+    if optional:
+        source_min = 0
+    if source_min < target_min:
+        return False
+    if target_max is not None and (source_max is None or source_max > target_max):
+        return False
+    return True
 
 
 def validate_operator_inputs(

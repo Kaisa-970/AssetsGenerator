@@ -17,6 +17,7 @@ from .artifact_store import ArtifactStoreError, LocalArtifactStore
 from .backends.environment_identity import backend_environment_identity
 from .backends.model_identity import snapshot_digest, snapshot_state
 from .backends.source_identity import backend_source_identity
+from .contracts import ContractError
 from .errors import ErrorCode, PipelineError
 from .models import (
     SCHEMA_VERSION,
@@ -25,13 +26,16 @@ from .models import (
     AssetDefinition,
     AssetRelease,
     BackendNativeFrame,
+    ComponentProvenance,
     GeometrySet,
+    ObservationView,
     PBRMaterial,
     QualityCheck,
     QualityReport,
     SemanticInfo,
     StructuredValue,
 )
+from .observations import make_observation_bundle, observation_bundle_value
 from .serialization import cache_key, sha256_bytes, to_primitive
 from .spatial import CanonicalizationResult, canonicalize_vertices
 from .worker import LocalProcessWorker, ProcessJobRequest
@@ -53,6 +57,25 @@ class ShapeOutput:
     mesh: ArtifactRef
     material: StructuredValue
     native_frame: StructuredValue
+    backend_metadata: dict[str, Any]
+    cache_hit: bool = False
+
+
+@dataclass(frozen=True)
+class GeometryFrontendOutput:
+    cameras: list[StructuredValue]
+    depths: list[ArtifactRef]
+    points: ArtifactRef
+    backend_metadata: dict[str, Any]
+    cache_hit: bool = False
+
+
+@dataclass(frozen=True)
+class ReconstructionOutput:
+    mesh: ArtifactRef
+    material: StructuredValue
+    native_frame: StructuredValue
+    components: list[StructuredValue]
     backend_metadata: dict[str, Any]
     cache_hit: bool = False
 
@@ -127,23 +150,11 @@ def prepare_observation(
         schema_version="1.0",
         identity_metadata={"media_type": "image/png", "channel_layout": "RGBA"},
     )
-    observation_id = f"observation_{uuid.uuid4().hex}"
-    bundle = StructuredValue(
-        "observation_bundle",
-        "ObservationBundle",
-        SCHEMA_VERSION,
-        {
-            "observation_id": observation_id,
-            "views": [
-                {
-                    "view_id": "view_000",
-                    "image": to_primitive(image_ref),
-                    "mask": to_primitive(mask_ref),
-                    "depth": None,
-                    "camera": None,
-                }
-            ],
-        },
+    bundle = observation_bundle_value(
+        make_observation_bundle(
+            [ObservationView("view_000", image_ref, mask=mask_ref)],
+            store,
+        )
     )
     warp = StructuredValue(
         "image_warp",
@@ -890,7 +901,7 @@ def validate_geometry(
             None,
             "geometry-v1",
             "skipped",
-            "camera registration is not implemented in Phase 1",
+            "camera registration is not implemented for this pipeline",
         )
     )
     statuses = {check.status for check in checks}
@@ -906,9 +917,12 @@ def assemble_asset(
     spatial: Any,
     observation_id: str,
     quality_report: ArtifactRef,
+    components: list[ComponentProvenance] | None = None,
     semantics: SemanticInfo | None = None,
     name: str | None = None,
 ) -> AssetDefinition:
+    resolved_semantics = semantics or SemanticInfo(None, "unknown")
+    validate_semantic_info(resolved_semantics)
     asset_id = f"asset_{uuid.uuid4().hex}"
     return AssetDefinition(
         asset_id,
@@ -917,11 +931,49 @@ def assemble_asset(
         GeometrySet([mesh]),
         AppearanceSet([material]),
         spatial,
-        semantics or SemanticInfo(None, "unknown"),
+        resolved_semantics,
         None,
         [observation_id],
         [quality_report.artifact_id],
+        components or [],
     )
+
+
+def validate_semantic_info(semantics: SemanticInfo) -> None:
+    if semantics.semantic_class is not None and not isinstance(semantics.semantic_class, str):
+        raise ContractError("SemanticInfo semantic_class must be a string or null")
+    if not isinstance(semantics.source, str) or semantics.source not in {
+        "user",
+        "detector",
+        "vlm",
+        "backend",
+        "unknown",
+    }:
+        raise ContractError("SemanticInfo source is invalid")
+
+
+def remap_component_provenance(
+    components: list[ComponentProvenance],
+    *,
+    source_mesh: ArtifactRef,
+    canonical_mesh: ArtifactRef,
+) -> list[ComponentProvenance]:
+    remapped = []
+    for component in components:
+        if component.artifact != source_mesh:
+            raise OperatorExecutionError(
+                f"component {component.component_id} does not reference the reconstruction mesh"
+            )
+        remapped.append(
+            ComponentProvenance(
+                component.component_id,
+                canonical_mesh,
+                component.source,
+                list(component.provenance_ids),
+                component.region_map,
+            )
+        )
+    return remapped
 
 
 def material_from_glb(store: LocalArtifactStore, mesh: ArtifactRef) -> PBRMaterial:
@@ -939,9 +991,39 @@ def export_release(
     store: LocalArtifactStore,
     asset_ref: ArtifactRef,
     canonical_mesh: ArtifactRef,
+    material: PBRMaterial,
     quality_ref: ArtifactRef,
 ) -> tuple[ArtifactRef, AssetRelease]:
     scene = _load_scene(store.blob_path(canonical_mesh).read_bytes())
+    texture_fields = {
+        "baseColorTexture": material.base_color_texture,
+        "normalTexture": material.normal_texture,
+        "metallicRoughnessTexture": material.metallic_roughness_texture,
+        "emissiveTexture": material.emissive_texture,
+    }
+    textures: dict[str, Image.Image] = {}
+    for field_name, reference in texture_fields.items():
+        if reference is None:
+            continue
+        try:
+            with Image.open(store.blob_path(reference)) as image:
+                image.load()
+                textures[field_name] = image.copy()
+        except (OSError, ValueError) as error:
+            raise OperatorExecutionError(
+                f"PBRMaterial {field_name} is not a decodable image: {error}"
+            ) from error
+    color = np.clip(np.asarray(material.base_color_factor, dtype=np.float64), 0.0, 1.0)
+    trimesh_material = trimesh.visual.material.PBRMaterial(
+        baseColorFactor=np.rint(color * 255.0).astype(np.uint8),
+        alphaMode=material.alpha_mode,
+        **textures,
+    )
+    for geometry in scene.geometry.values():
+        uv = getattr(geometry.visual, "uv", None)
+        if textures and (uv is None or len(uv) != len(geometry.vertices)):
+            raise ContractError("textured PBRMaterial requires per-vertex UV coordinates")
+        geometry.visual = trimesh.visual.texture.TextureVisuals(uv=uv, material=trimesh_material)
     canonical_to_gltf = np.array(
         [[0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0], [1.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 1.0]],
         dtype=np.float64,

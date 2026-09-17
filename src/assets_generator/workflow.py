@@ -44,6 +44,7 @@ from .operators import (
 from .pipeline import compile_pipeline, load_default_operator_specs, load_default_pipeline
 from .runtime import Phase1Runtime, utc_now
 from .serialization import canonical_json_bytes, sha256_bytes, to_primitive
+from .spatial import SpatialContractError, validate_mesh_native_frame
 
 
 @dataclass(frozen=True)
@@ -75,6 +76,7 @@ def _persist_provenance(
     seed: int | None,
     source: str,
     model_digest: str | None = None,
+    container_digest: str | None = None,
 ) -> ArtifactRef:
     output_id = _output_id(run_id, node_id, port_name)
     record = ProvenanceRecord(
@@ -87,7 +89,7 @@ def _persist_provenance(
         backend=backend,
         backend_version=backend_version,
         model_digest=model_digest,
-        container_digest=None,
+        container_digest=container_digest,
         parameters=parameters,
         seed=seed,
         run_id=run_id,
@@ -239,6 +241,8 @@ def build_image_asset(
         utc_now(),
         None,
         {node_id: binding.name for node_id, binding in resolved_plan.backends.items()},
+        resolved_plan.contract_digest,
+        {node_id: binding.backend_version for node_id, binding in resolved_plan.backends.items()},
     )
     provenance: list[ArtifactRef] = []
     try:
@@ -351,12 +355,21 @@ def build_image_asset(
                 "native_frame": value.native_frame,
             }
 
+        def validate_shape_result(value: ShapeOutput) -> None:
+            try:
+                frame = BackendNativeFrame(**value.native_frame.value)
+                metadata = store.get_manifest(value.mesh.artifact_id).identity.identity_metadata
+                validate_mesh_native_frame(metadata, frame)
+            except (TypeError, SpatialContractError) as error:
+                raise ContractError(f"invalid shape Backend spatial output: {error}") from error
+
         generated = runtime.run_node(
             "generate_shape",
             {"image": prepared.rgba},
             execute_generate,
             backend=shape_binding.name,
             execution_mode=lambda value: "cache_hit" if value.cache_hit else "executed",
+            validate_result=validate_shape_result,
         )
         provenance.append(
             _persist_provenance(
@@ -408,11 +421,12 @@ def build_image_asset(
                 "canonical_frame": value.frame,
                 "transform": value.transform,
                 "spatial_info": value.spatial_info,
+                "components": [],
             }
 
         canonical = runtime.run_node(
             "canonicalize",
-            {"mesh": generated.mesh, "native_frame": generated.native_frame},
+            {"mesh": generated.mesh, "native_frame": generated.native_frame, "components": []},
             execute_canonicalize,
         )
         provenance.append(
@@ -496,6 +510,7 @@ def build_image_asset(
                 "spatial": canonical.spatial_info,
                 "quality": report_ref,
                 "observations": observation_ref,
+                "components": [],
             },
             execute_assemble,
         )
@@ -519,7 +534,7 @@ def build_image_asset(
         def execute_export() -> tuple[
             tuple[ArtifactRef, AssetRelease, ArtifactRef, ArtifactRef], dict[str, Any]
         ]:
-            glb, _ = export_release(store, asset_ref, canonical.mesh, report_ref)
+            glb, _ = export_release(store, asset_ref, canonical.mesh, material, report_ref)
             export_provenance = _persist_provenance(
                 store,
                 run_id=run_id,
@@ -558,15 +573,13 @@ def build_image_asset(
             {
                 "asset": asset_ref,
                 "mesh": canonical.mesh,
+                "material": generated.material,
                 "quality": report_ref,
                 "profile": export_profile,
             },
             execute_export,
         )
         provenance.append(export_provenance)
-        run.status = "succeeded"
-        run.finished_at = utc_now()
-        run_ref = _persist_build_run(store, run)
         from .models import NodeAttempt
 
         release_attempt = NodeAttempt(
@@ -581,6 +594,11 @@ def build_image_asset(
             None,
         )
         runtime.attempts.append(release_attempt)
+        release_attempt.status = "succeeded"
+        release_attempt.finished_at = utc_now()
+        run.status = "succeeded"
+        run.finished_at = release_attempt.finished_at
+        run_ref = _persist_build_run(store, run)
         try:
             _materialize_release(store, output_path, release_ref, release, run_ref)
         except Exception:
@@ -591,9 +609,6 @@ def build_image_asset(
             run.finished_at = utc_now()
             _persist_build_run(store, run)
             raise
-        release_attempt.status = "succeeded"
-        release_attempt.finished_at = utc_now()
-        _persist_build_run(store, run)
         return BuildResult(run_id, asset_ref, release_ref, glb_ref, report_ref, output_path)
     except Exception:
         if run.status == "failed":

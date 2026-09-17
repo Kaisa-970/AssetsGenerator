@@ -61,6 +61,38 @@ class FailingBackend:
         raise RuntimeError("backend exploded")
 
 
+class InvalidUnitBackend(ContractBackend):
+    def generate(self, store, rgba, *, seed=42, pipeline_type="512") -> ShapeOutput:
+        value = super().generate(store, rgba, seed=seed, pipeline_type=pipeline_type)
+        return ShapeOutput(
+            value.mesh,
+            value.material,
+            StructuredValue(
+                "backend_native_frame",
+                "BackendNativeFrame",
+                SCHEMA_VERSION,
+                {**value.native_frame.value, "unit": "millimeter"},
+            ),
+            value.backend_metadata,
+        )
+
+
+class MismatchedSpatialBackend(ContractBackend):
+    def generate(self, store, rgba, *, seed=42, pipeline_type="512") -> ShapeOutput:
+        value = super().generate(store, rgba, seed=seed, pipeline_type=pipeline_type)
+        return ShapeOutput(
+            value.mesh,
+            value.material,
+            StructuredValue(
+                "backend_native_frame",
+                "BackendNativeFrame",
+                SCHEMA_VERSION,
+                {**value.native_frame.value, "frame_id": "different_native"},
+            ),
+            value.backend_metadata,
+        )
+
+
 class WrongKindBackend(ContractBackend):
     def generate(self, store, rgba, *, seed=42, pipeline_type="512") -> ShapeOutput:
         value = super().generate(store, rgba, seed=seed, pipeline_type=pipeline_type)
@@ -72,6 +104,23 @@ class WrongKindBackend(ContractBackend):
             identity_metadata={"frame_id": "contract_native", "unit": "relative_unit"},
         )
         return ShapeOutput(wrong, value.material, value.native_frame, value.backend_metadata)
+
+
+class ArtifactNativeFrameBackend(ContractBackend):
+    def generate(self, store, rgba, *, seed=42, pipeline_type="512") -> ShapeOutput:
+        value = super().generate(store, rgba, seed=seed, pipeline_type=pipeline_type)
+        return ShapeOutput(value.mesh, value.material, value.mesh, value.backend_metadata)
+
+
+class DanglingMeshBackend(ContractBackend):
+    def generate(self, store, rgba, *, seed=42, pipeline_type="512") -> ShapeOutput:
+        value = super().generate(store, rgba, seed=seed, pipeline_type=pipeline_type)
+        return ShapeOutput(
+            ArtifactRef("sha256:" + "f" * 64),
+            value.material,
+            value.native_frame,
+            value.backend_metadata,
+        )
 
 
 class ContractSegmentationBackend:
@@ -138,6 +187,9 @@ def test_phase1_workflow_materializes_release(tmp_path) -> None:
         <= attempt.keys()
         for attempt in run["node_attempts"]
     )
+    store = LocalArtifactStore(tmp_path / "store")
+    assert run == store.get_build_run(result.run_id)
+    assert run["node_attempts"][-1]["node_id"] == "materialize_release"
 
 
 def test_workflow_uses_backend_name_from_resolved_plan(tmp_path) -> None:
@@ -176,6 +228,8 @@ def test_workflow_uses_backend_name_from_resolved_plan(tmp_path) -> None:
     )
     assert shape_attempt["backend"] == "contract_shape"
     assert run["resolved_backends"] == {"generate_shape": "contract_shape"}
+    assert run["resolved_plan_contract_digest"] == plan.contract_digest
+    assert run["resolved_backend_versions"] == {"generate_shape": "test"}
     provenance = [
         json.loads(path.read_text(encoding="utf-8"))
         for path in sorted((output / "provenance").glob("*.json"))
@@ -258,6 +312,81 @@ def test_backend_failure_persists_failed_build_run(tmp_path) -> None:
     assert run["node_attempts"][-1]["node_id"] == "generate_shape"
     assert run["node_attempts"][-1]["status"] == "failed"
     assert run["node_attempts"][-1]["error_code"] == "internal_error"
+    assert run["resolved_plan_contract_digest"]
+    assert run["resolved_backend_versions"] == {"generate_shape": "configured"}
+
+
+def test_workflow_rejects_unknown_native_unit_at_backend_node(tmp_path) -> None:
+    image_path = tmp_path / "image.png"
+    mask_path = tmp_path / "mask.png"
+    Image.new("RGB", (8, 8), (200, 100, 50)).save(image_path)
+    Image.new("L", (8, 8), 255).save(mask_path)
+    store_path = tmp_path / "store"
+
+    with pytest.raises(ContractError, match="invalid native frame unit"):
+        build_image_asset(
+            image_path=image_path,
+            mask_path=mask_path,
+            store_path=store_path,
+            output_path=tmp_path / "release",
+            backend=InvalidUnitBackend(),
+        )
+
+    run_index = next((store_path / "runs").glob("*.json"))
+    attempt = LocalArtifactStore(store_path).get_build_run(run_index.stem)["node_attempts"][-1]
+    assert attempt["node_id"] == "generate_shape"
+    assert attempt["error_code"] == "contract_error"
+
+
+def test_workflow_rejects_mesh_native_frame_mismatch_at_backend_node(tmp_path) -> None:
+    image_path = tmp_path / "image.png"
+    mask_path = tmp_path / "mask.png"
+    Image.new("RGB", (8, 8), (200, 100, 50)).save(image_path)
+    Image.new("L", (8, 8), 255).save(mask_path)
+    store_path = tmp_path / "store"
+
+    with pytest.raises(ContractError, match="mesh frame_id does not match"):
+        build_image_asset(
+            image_path=image_path,
+            mask_path=mask_path,
+            store_path=store_path,
+            output_path=tmp_path / "release",
+            backend=MismatchedSpatialBackend(),
+        )
+
+    run_index = next((store_path / "runs").glob("*.json"))
+    attempt = LocalArtifactStore(store_path).get_build_run(run_index.stem)["node_attempts"][-1]
+    assert attempt["node_id"] == "generate_shape"
+    assert attempt["error_code"] == "contract_error"
+
+
+@pytest.mark.parametrize(
+    ("backend", "message"),
+    [
+        (ArtifactNativeFrameBackend(), "native_frame rejects carrier artifact_ref"),
+        (DanglingMeshBackend(), "artifact has invalid digest"),
+    ],
+)
+def test_workflow_records_shape_output_contract_failures(tmp_path, backend, message) -> None:
+    image_path = tmp_path / "image.png"
+    mask_path = tmp_path / "mask.png"
+    Image.new("RGB", (8, 8), (200, 100, 50)).save(image_path)
+    Image.new("L", (8, 8), 255).save(mask_path)
+    store_path = tmp_path / "store"
+
+    with pytest.raises(ContractError, match=message):
+        build_image_asset(
+            image_path=image_path,
+            mask_path=mask_path,
+            store_path=store_path,
+            output_path=tmp_path / "release",
+            backend=backend,
+        )
+
+    run_index = next((store_path / "runs").glob("*.json"))
+    attempt = LocalArtifactStore(store_path).get_build_run(run_index.stem)["node_attempts"][-1]
+    assert attempt["node_id"] == "generate_shape"
+    assert attempt["error_code"] == "contract_error"
 
 
 def test_inline_backend_uses_explicit_audit_name(tmp_path) -> None:

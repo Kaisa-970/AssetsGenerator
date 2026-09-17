@@ -317,3 +317,19 @@ class BuildRun:
     started_at: str
     finished_at: str | None
     resolved_backends: dict[str, str] = field(default_factory=dict)
+    resolved_plan_contract_digest: str | None = None
+    resolved_backend_versions: dict[str, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if any(not key or not value for key, value in self.resolved_backends.items()):
+            raise ValueError("resolved backend names must use non-empty node IDs and names")
+        if self.resolved_plan_contract_digest is None:
+            if self.resolved_backend_versions:
+                raise ValueError("resolved backend versions require a plan contract digest")
+            return
+        if not self.resolved_plan_contract_digest:
+            raise ValueError("resolved plan contract digest must not be empty")
+        if set(self.resolved_backend_versions) != set(self.resolved_backends):
+            raise ValueError("resolved backend names and versions must use the same node IDs")
+        if any(not value for value in self.resolved_backend_versions.values()):
+            raise ValueError("resolved backend versions must not be empty")

@@ -7,8 +7,8 @@ from typing import Protocol, cast
 
 from .artifact_store import LocalArtifactStore
 from .contracts import ContractError, OperatorSpec
-from .models import ArtifactRef
-from .operators import ShapeOutput
+from .models import ArtifactRef, StructuredValue
+from .operators import GeometryFrontendOutput, ReconstructionOutput, ShapeOutput
 from .pipeline import PipelineDefinition
 from .serialization import canonical_json_bytes, sha256_bytes, to_primitive
 
@@ -22,6 +22,23 @@ class ShapeBackend(Protocol):
         seed: int = 42,
         pipeline_type: str = "512",
     ) -> ShapeOutput: ...
+
+
+class GeometryFrontendBackend(Protocol):
+    def estimate(
+        self, store: LocalArtifactStore, observations: ArtifactRef
+    ) -> GeometryFrontendOutput: ...
+
+
+class ReconstructionBackend(Protocol):
+    def reconstruct(
+        self,
+        store: LocalArtifactStore,
+        observations: ArtifactRef,
+        cameras: list[StructuredValue],
+        depths: list[ArtifactRef],
+        points: ArtifactRef,
+    ) -> ReconstructionOutput: ...
 
 
 @dataclass(frozen=True)
@@ -75,6 +92,16 @@ class ResolvedBackend:
             raise ContractError(f"node {self.node_id} is not a shape generation node")
         return cast(ShapeBackend, self.implementation)
 
+    def geometry_frontend_backend(self) -> GeometryFrontendBackend:
+        if self.operator != "geometry_frontend@1":
+            raise ContractError(f"node {self.node_id} is not a geometry frontend node")
+        return cast(GeometryFrontendBackend, self.implementation)
+
+    def reconstruction_backend(self) -> ReconstructionBackend:
+        if self.operator != "reconstruction@1":
+            raise ContractError(f"node {self.node_id} is not a reconstruction node")
+        return cast(ReconstructionBackend, self.implementation)
+
 
 @dataclass(frozen=True)
 class ResolvedPlan:
@@ -84,7 +111,13 @@ class ResolvedPlan:
     backends: Mapping[str, ResolvedBackend]
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "backends", MappingProxyType(dict(self.backends)))
+        backends = dict(self.backends)
+        for node_id, binding in backends.items():
+            if not node_id or node_id != binding.node_id:
+                raise ContractError("resolved backend mapping key must match binding node_id")
+            if not binding.operator or not binding.name or not binding.backend_version:
+                raise ContractError("resolved backend binding fields must not be empty")
+        object.__setattr__(self, "backends", MappingProxyType(backends))
 
     def backend_for(self, node_id: str, operator: str) -> ResolvedBackend:
         try:
@@ -109,14 +142,20 @@ def resolve_plan(
     unknown_nodes = set(overrides) - set(pipeline.nodes)
     if unknown_nodes:
         raise ContractError(f"backend overrides reference unknown nodes: {sorted(unknown_nodes)}")
+    unsupported_overrides = {
+        node_id for node_id in overrides if pipeline.nodes[node_id].get("backend") is None
+    }
+    if unsupported_overrides:
+        raise ContractError(
+            "backend overrides require nodes with declared backends: "
+            f"{sorted(unsupported_overrides)}"
+        )
     bindings: dict[str, ResolvedBackend] = {}
     for node_id, node in pipeline.nodes.items():
         backend_name = overrides.get(node_id, node.get("backend"))
         if backend_name is None:
             continue
         operator = str(node["operator"])
-        if node_id != "generate_shape" or operator != "shape_generation@1":
-            raise ContractError(f"backend binding is not supported for node: {node_id}")
         registration = registry.resolve(str(backend_name), operator)
         bindings[node_id] = ResolvedBackend(
             node_id,

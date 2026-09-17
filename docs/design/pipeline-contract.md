@@ -39,6 +39,8 @@ frame
 semantic_info
 quality_report
 export_profile
+segmentation_result
+component_provenance
 ```
 
 `spatial_transform` 是带 source/target frame 的 4x4 空间变换。`image_warp` 描述 crop、resize、padding 和像素坐标映射，二者不能混用。
@@ -107,6 +109,8 @@ schema version 匹配
 条件节点与可选引用可解析
 ```
 
+运行时每个 `ArtifactRef` 端口在读取 manifest 契约前必须通过 Blob digest 校验；损坏或缺失的内容不能进入 Operator，也不能作为 Backend 输出被接受。
+
 ## 3. Backend 与 Registry
 
 Backend 是 HOW，只实现某个 OperatorSpec。Registry 不重复 Operator 的基本端口定义。
@@ -142,7 +146,7 @@ determinism
 availability and health information
 ```
 
-Pipeline 节点可通过 `backend` 声明默认实现。运行请求可覆盖该名称；Core 使用 Registry 将名称解析为实现，生成不可变的 `ResolvedPlan` 后再开始执行。`ResolvedPlan` 绑定 pipeline name/version、实际 Pipeline 与引用 OperatorSpec 的内容摘要、node、Backend name/version 和进程内实现。BuildRun 持久化 node 到 Backend name 的最终绑定，模型内容身份仍由该节点的 provenance 记录。Registry 不复制 OperatorSpec 的端口定义。
+Pipeline 节点可通过 `backend` 声明默认实现。运行请求可覆盖该名称；Core 使用 Registry 将名称解析为实现，生成不可变的 `ResolvedPlan` 后再开始执行。`ResolvedPlan` 绑定 pipeline name/version、实际 Pipeline 与引用 OperatorSpec 的内容摘要、node、Backend name/Registry 声明版本和进程内实现。BuildRun 持久化契约摘要以及 node 到 Backend name/Registry 声明版本的最终绑定，模型内容身份仍由该节点的 provenance 记录。Registry 不复制 OperatorSpec 的端口定义。
 
 Backend 适配器负责把模型原生输入输出转换成 OperatorSpec，包括输出 `BackendNativeFrame`。不能让无坐标语义的裸 pose 或 mesh 进入 Pipeline。
 
@@ -305,9 +309,11 @@ Primary Segmentation Backend。`PrepareObservationOperator` 负责验证 image/m
 
 `AssembleAssetOperator` 只组装 AssetDefinition，不执行格式导出。若没有 semantic 输入，它写入 `semantic_class = null, source = unknown`，不调用额外识别模型。geometry、material、spatial、observation 和 quality 引用各自已有 provenance；组装操作本身另有一条 provenance 记录。
 
-ExportOperator 只读取已组装的 AssetDefinition，产生带 `gltf_export` frame 的 GLB Artifact，以及引用 AssetDefinition、GLB、纹理和报告的 AssetRelease manifest。
+ExportOperator 读取已组装的 AssetDefinition、canonical mesh 和 PBRMaterial，将材质因子及可选纹理应用到 GLB，产生带 `gltf_export` frame 的 GLB Artifact，以及引用 AssetDefinition、GLB、纹理和报告的 AssetRelease manifest。纹理必须可解码；存在纹理时 mesh 必须提供逐顶点 UV。
 
-`when` 在规划阶段解析，`?` 表示可选输入。可选输入缺失时，Operator 根据自己的检查适用性处理，不能把缺失自动当成运行失败。
+`when` 在规划阶段解析，`?` 表示引用可能缺失，只能绑定最小基数为 0 的端口；`one` 和 `one_or_more` 在编译期拒绝可选引用。可选输入缺失时，Operator 根据自己的检查适用性处理，不能把缺失自动当成运行失败。
+
+Phase 6 的集合端口使用 `one_or_more` 或 `zero_or_more`，运行时值必须是 list。Pipeline 编译器不执行标量与集合之间的隐式包装或展开。多视图 Backend 契约和 Fake Backend 执行基线见 [多视图与 Hybrid 契约](multi-view-hybrid.md)。
 
 例如 collision 分支关闭时：
 
@@ -348,6 +354,8 @@ class BuildRun:
     started_at: str
     finished_at: str | None
     resolved_backends: dict[str, str] = {}  # BuildRun 1.0 向后兼容可选字段
+    resolved_plan_contract_digest: str | None = None
+    resolved_backend_versions: dict[str, str] = {}
 
 @dataclass
 class NodeAttempt:
@@ -362,6 +370,8 @@ class NodeAttempt:
     error_code: str | None
     outputs: dict[str, ArtifactRef | StructuredValue]
 ```
+
+`resolved_plan_contract_digest` 固定本次运行所校验的 Pipeline 与 OperatorSpec 契约，`resolved_backend_versions` 按节点记录 Registry 声明的 binding 版本。它们与 `resolved_backends` 一起构成 `ResolvedPlan` 可持久化部分的审计身份；Backend 返回的模型 revision、dirty 状态、权重 digest 和运行参数仍记录在 ProvenanceRecord 中。为兼容既有 BuildRun，缺失这些字段表示旧记录未捕获相应身份，不能据此推断当前契约或实现版本。
 
 该 schema 只用于复盘一次 Pipeline 实际发生的事情，不承担通用调度系统职责。
 

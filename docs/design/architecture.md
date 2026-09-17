@@ -197,16 +197,20 @@ AssetRelease 可从 asset.json 重新物化
 
 Render-back 在 Phase 1 允许 `applicable=false, status=skipped`。Collision 未请求时，其检查同样必须 skipped，不能导致 Validation 失败。
 
-## 7. 当前实施顺序
+## 7. 当前阶段与实施顺序
 
 ```text
-1. 用一个真实 Shape Backend 跑通 V1 vertical slice
-2. 固化 BenchmarkDataset 和第一个 Backend 基线
-3. 引入 Registry 和最小 ResolvedPlan，去除 workflow 的固定 Backend 绑定
-4. 接入第二个 Shape Backend，并加入 Router 和比较报告
-5. 扩展 render-back、多图、Scene-to-Asset 和 Real-to-Sim
+1. 单图 V1 vertical slice 与首个真实 Shape Backend：已完成
+2. Phase 3 BenchmarkDataset 与基线：已完成
+3. Phase 4 Registry、ResolvedPlan、第二个 Shape Backend 与比较运行：已关闭
+4. Phase 5 CameraRegistration 与 render-back gate：显式延期
+5. Phase 6 多图与 Hybrid 模型中立 Core：当前已建立执行基线
+6. 真实多视图 Backend、completion 和 benchmark：等待模型与数据集选择
+7. Scene-to-Asset 与 Real-to-Sim：后续阶段
 ```
 
-当前最重要的验收目标是：
+Phase 6 当前验收重点是：
 
-> 给定一张 RGB 和一个 Mask，通过一个真实 Shape Backend，稳定生成具有 canonical coordinate、明确 provenance、可重新加载并通过基础 QA 的 AssetDefinition 和 GLB AssetRelease。
+> 给定显式关联的多图或 RGBD ObservationBundle，通过同一套 OperatorSpec、ResolvedPlan、Artifact、空间与 provenance 契约完成 geometry frontend 和 reconstruction 编排，生成可重新加载的 canonical GLB、AssetDefinition、AssetRelease 和 BuildRun。
+
+该验收只证明模型中立 Core 可执行；真实多视图模型可用性必须由固定 revision、独立环境、GPU 运行和同一 benchmark 另行证明。详细边界见 [多视图与 Hybrid 契约](multi-view-hybrid.md) 和 [Roadmap](../planning/roadmap.md)。

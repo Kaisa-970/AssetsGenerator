@@ -164,7 +164,7 @@ class ProvenanceRecord:
     node_id: str
     attempt: int
 
-    source: str
+    source: str  # provided | estimated
     confidence: Confidence | None
     score: float | None
     score_method: str | None
@@ -244,7 +244,7 @@ class CameraRecord:
     score_method: str | None
 ```
 
-Phase 1 不要求提供 CameraRecord。Backend 的 camera hint 若存在，也必须满足此 schema；未知外参时 `T_world_camera = None`。
+Phase 1 不要求提供 CameraRecord。导入的相机使用 `source=provided`，geometry frontend 输出使用 `source=estimated`；Observation 中未知外参时可令 `T_world_camera = None`，但进入 Phase 6 reconstruction 的估计相机必须提供到共同 world frame 的外参。Core 将实际传入 reconstruction 的有序相机列表持久化为 `CameraCollection` Artifact，使内外参和顺序进入 Artifact 级 provenance。`registered` 保留给 Phase 5 CameraRegistration 契约，Phase 5 延期期间不得使用。
 
 ## 5. AssetDefinition
 
@@ -263,12 +263,16 @@ class AssetDefinition:
 
     source_observation_ids: list[str]
     quality_report_ids: list[str]
+    component_provenance: list[ComponentProvenance]
 ```
 
 `AssetSpatialInfo` 的最小字段在 [coordinate-system.md](coordinate-system.md) 中定义。
 
-Phase 2 的 `GLTF2Profile` 将 canonical GLB 的材质与纹理作为交付权威；AssetDefinition
-中的材质字段记录当前可提取的基础颜色语义。完整纹理 Artifact 引用将在后续版本补齐。
+Phase 6 的 `component_provenance` 为向后兼容的可选列表，记录 reconstructed、generated 或 mixed 组件及可选 region map；详细约束见 [多视图与 Hybrid 契约](multi-view-hybrid.md)。
+
+`PBRMaterial` 可以引用 base-color、normal、metallic-roughness 和 emissive texture Artifact。
+Core 必须验证这些引用的 digest 与 kind，AssetRelease 必须物化所有被最终 AssetDefinition
+引用的纹理。canonical GLB 仍是 `GLTF2Profile` 的几何与材质交付文件。
 
 ```python
 @dataclass
@@ -310,7 +314,7 @@ quality_evidence
 zip_bundle
 ```
 
-`PBRMaterial` 是结构化材质值，可以只包含颜色因子，也可以引用纹理 Artifact。V1 只要求资产可正确渲染，不强制完整 BaseColor、Normal、Roughness、Metallic 通道。
+`PBRMaterial` 是结构化材质值，可以只包含颜色因子，也可以引用纹理 Artifact。ExportOperator 必须把该值实际应用到交付 GLB；引用纹理时纹理必须可解码，mesh 必须提供逐顶点 UV。V1 不强制完整 BaseColor、Normal、Roughness、Metallic 通道。
 
 `SemanticInfo` 允许未知值：
 

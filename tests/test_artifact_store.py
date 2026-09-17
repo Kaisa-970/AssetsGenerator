@@ -57,7 +57,7 @@ def test_structured_value_round_trip(tmp_path) -> None:
     assert manifest.identity.schema_name == "QualityReport"
 
 
-def test_build_run_v1_accepts_legacy_payload_without_resolved_backends() -> None:
+def test_build_run_v1_accepts_legacy_payload_without_plan_identity() -> None:
     legacy = {
         "run_id": "run_legacy",
         "pipeline_name": "image_asset_v2",
@@ -67,11 +67,40 @@ def test_build_run_v1_accepts_legacy_payload_without_resolved_backends() -> None
         "node_attempts": [],
         "started_at": "start",
         "finished_at": "finish",
+        "resolved_backends": {"generate_shape": "trellis2"},
     }
 
     run = BuildRun(**legacy)
 
-    assert run.resolved_backends == {}
+    assert run.resolved_backends == {"generate_shape": "trellis2"}
+    assert run.resolved_plan_contract_digest is None
+    assert run.resolved_backend_versions == {}
+
+
+@pytest.mark.parametrize(
+    ("contract_digest", "versions", "message"),
+    [
+        ("", {"generate_shape": "1.0"}, "digest must not be empty"),
+        (None, {"generate_shape": "1.0"}, "versions require"),
+        ("sha256:plan", {}, "same node IDs"),
+        ("sha256:plan", {"generate_shape": ""}, "versions must not be empty"),
+    ],
+)
+def test_build_run_rejects_inconsistent_plan_identity(contract_digest, versions, message) -> None:
+    with pytest.raises(ValueError, match=message):
+        BuildRun(
+            run_id="run_invalid",
+            pipeline_name="image_asset_v2",
+            pipeline_version="2",
+            status="running",
+            inputs={},
+            node_attempts=[],
+            started_at="start",
+            finished_at=None,
+            resolved_backends={"generate_shape": "trellis2"},
+            resolved_plan_contract_digest=contract_digest,
+            resolved_backend_versions=versions,
+        )
 
 
 def test_manifest_annotations_do_not_change_artifact_identity(tmp_path) -> None:

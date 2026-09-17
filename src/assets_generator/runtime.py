@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
 from typing import TypeVar
 
@@ -12,7 +12,8 @@ from .contracts import (
     validate_port_value,
 )
 from .errors import classify_error
-from .models import NodeAttempt, PortValue
+from .models import ArtifactRef, NodeAttempt, PortValue
+from .observations import observation_bundle_from_artifact
 from .pipeline import PipelineDefinition
 
 T = TypeVar("T")
@@ -34,18 +35,21 @@ class Phase1Runtime:
         self.specs = specs
         self.attempts: list[NodeAttempt] = []
 
-    def validate_pipeline_inputs(self, inputs: dict[str, PortValue]) -> None:
+    def validate_pipeline_inputs(self, inputs: Mapping[str, PortValue | list[PortValue]]) -> None:
         unknown = set(inputs) - set(self.pipeline.inputs)
         if unknown:
             raise ValueError(f"pipeline received unknown inputs: {sorted(unknown)}")
         for name, spec in self.pipeline.inputs.items():
+            value = inputs.get(name)
             validate_port_value(
                 operator=self.pipeline.name,
                 port_name=name,
                 spec=spec,
-                value=inputs.get(name),
+                value=value,
                 store=self.store,
             )
+            if isinstance(value, ArtifactRef) and "observation_bundle" in spec.kinds:
+                observation_bundle_from_artifact(value, self.store)
 
     def run_node(
         self,
@@ -55,6 +59,7 @@ class Phase1Runtime:
         *,
         backend: str | None = None,
         execution_mode: str | Callable[[T], str] = "executed",
+        validate_result: Callable[[T], None] | None = None,
     ) -> T:
         node = self.pipeline.nodes[node_id]
         operator_key = str(node["operator"])
@@ -75,6 +80,8 @@ class Phase1Runtime:
             validate_operator_inputs(spec, inputs, self.store)
             result, outputs = execute()
             validate_operator_outputs(spec, outputs, self.store)
+            if validate_result is not None:
+                validate_result(result)
             if callable(execution_mode):
                 attempt.execution_mode = execution_mode(result)
             attempt.outputs = outputs

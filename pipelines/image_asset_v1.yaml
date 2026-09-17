@@ -45,5 +45,6 @@ nodes:
     inputs:
       asset: assemble_asset.outputs.asset
       mesh: canonicalize.outputs.mesh
+      material: generate_shape.outputs.material
       quality: validate.outputs.report
       profile: pipeline.inputs.export_profile

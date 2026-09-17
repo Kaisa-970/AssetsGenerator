@@ -107,7 +107,7 @@ Phase 3 的目标是建立可复核的单 Backend 工程基线，不是对模型
 
 接入第二个 Shape Backend，并加入 Model Registry、Router 和 ResolvedPlan。两个 Backend 必须满足相同 OperatorSpec，并在同一 benchmark 上生成可比较报告。
 
-状态：已于 2026-09-16 收口。当前实现完成 Backend Registry、不可变 `ResolvedPlan`、配置驱动绑定、TRELLIS.2 与 TripoSR 两个真实 Shape Backend，以及相同飞机/自行车输入上的串行 GPU 回归。Phase 4 的 Router 范围限于显式 Backend 选择和绑定解析；自动资源调度不属于本阶段关闭条件。自动工程指标和可交互输出已经记录，人工视觉评价仍作为后续评审活动，不构成 Backend 可运行性的阻塞项。
+状态：已于 2026-09-16 收口。当前实现完成 Backend Registry、不可变 `ResolvedPlan`、配置驱动绑定、TRELLIS.2 与 TripoSR 两个真实 Shape Backend，以及相同飞机/自行车输入上的串行 GPU 回归。`image_asset_v2.yaml` 使用 `backend: trellis2` 声明默认绑定，CLI `--shape-backend` 可覆盖；多视图 YAML 分别声明两类 Backend。Phase 4 的 Router 范围限于显式 Backend 选择和绑定解析；自动资源调度不属于本阶段关闭条件。自动工程指标和可交互输出已经记录，人工视觉评价仍作为后续评审活动，不构成 Backend 可运行性的阻塞项。
 
 ## 6. Phase 5：扩展 QA
 
@@ -128,6 +128,8 @@ Multi RGB / RGBD / Video
 ```
 
 同一资产可以包含 reconstructed 和 generated 区域，不能用单个 mode 概括来源。
+
+模型中立执行基线已经闭环，专项约束见 [多视图与 Hybrid 契约](../design/multi-view-hybrid.md)，验证记录见 [Phase 6 多视图 Core 基线报告](../reports/phase6-core-baseline-v1.md)：严格 Observation IR、原子且文件名无关的 manifest 导入、集合 cardinality、通用 Backend 绑定、Backend 执行 metadata provenance，以及 Fake Backend 驱动的多视图端到端 workflow。该基线验证 Core 契约、canonicalization、component provenance、QA、BuildRun 和 release，不代表真实多视图模型可用。真实 geometry frontend、reconstruction 与 completion Backend 等待后续选型。
 
 ## 8. Phase 7：Scene to Assets
 

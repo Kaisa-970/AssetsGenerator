@@ -14,9 +14,31 @@ operators:
       image: {kind: rgb_image, carriers: [artifact_ref]}
       mask: {kind: binary_mask, carriers: [artifact_ref]}
     outputs:
-      bundle: {kind: observation_bundle, carriers: [structured], persist: true}
+      bundle: {kind: observation_bundle, carriers: [structured], schema_name: ObservationBundle, schema_version: "1.0", persist: true}
       rgba: {kind: rgba_image, carriers: [artifact_ref]}
       image_warp: {kind: image_warp, carriers: [structured]}
+
+  - name: geometry_frontend
+    version: 1
+    inputs:
+      observations: {kind: observation_bundle, carriers: [artifact_ref], schema_name: ObservationBundle, schema_version: "1.0"}
+    outputs:
+      cameras: {kind: camera_record, cardinality: one_or_more, carriers: [structured], schema_name: CameraRecord, schema_version: "1.0"}
+      depths: {kind: depth_map, cardinality: zero_or_more, carriers: [artifact_ref], requires_frame: true, requires_unit: true}
+      points: {kind: point_cloud, carriers: [artifact_ref], requires_frame: true, requires_unit: true}
+
+  - name: reconstruction
+    version: 1
+    inputs:
+      observations: {kind: observation_bundle, carriers: [artifact_ref], schema_name: ObservationBundle, schema_version: "1.0"}
+      cameras: {kind: camera_record, cardinality: one_or_more, carriers: [structured], schema_name: CameraRecord, schema_version: "1.0"}
+      depths: {kind: depth_map, cardinality: zero_or_more, carriers: [artifact_ref], requires_frame: true, requires_unit: true}
+      points: {kind: point_cloud, carriers: [artifact_ref], requires_frame: true, requires_unit: true}
+    outputs:
+      mesh: {kind: triangle_mesh, carriers: [artifact_ref], requires_frame: true, requires_unit: true}
+      material: {kind: pbr_material, carriers: [structured], schema_name: PBRMaterial, schema_version: "1.0"}
+      native_frame: {kind: backend_native_frame, carriers: [structured], schema_name: BackendNativeFrame, schema_version: "1.0"}
+      components: {kind: component_provenance, cardinality: one_or_more, carriers: [structured], schema_name: ComponentProvenance, schema_version: "1.0"}
 
   - name: shape_generation
     version: 1
@@ -24,7 +46,7 @@ operators:
       image: {kind: rgba_image, carriers: [artifact_ref]}
     outputs:
       mesh: {kind: triangle_mesh, carriers: [artifact_ref], requires_frame: true, requires_unit: true}
-      material: {kind: pbr_material, carriers: [structured]}
+      material: {kind: pbr_material, carriers: [structured], schema_name: PBRMaterial, schema_version: "1.0"}
       native_frame: {kind: backend_native_frame, carriers: [structured]}
 
   - name: canonicalize
@@ -32,11 +54,13 @@ operators:
     inputs:
       mesh: {kind: triangle_mesh, carriers: [artifact_ref], requires_frame: true, requires_unit: true}
       native_frame: {kind: backend_native_frame, carriers: [structured]}
+      components: {kind: component_provenance, cardinality: zero_or_more, carriers: [structured], schema_name: ComponentProvenance, schema_version: "1.0"}
     outputs:
       mesh: {kind: triangle_mesh, carriers: [artifact_ref], requires_frame: true, requires_unit: true}
       canonical_frame: {kind: frame, carriers: [structured]}
       transform: {kind: spatial_transform, carriers: [structured]}
       spatial_info: {kind: asset_spatial_info, carriers: [structured]}
+      components: {kind: component_provenance, cardinality: zero_or_more, carriers: [structured], schema_name: ComponentProvenance, schema_version: "1.0"}
 
   - name: validation
     version: 1
@@ -53,7 +77,8 @@ operators:
       material: {kind: pbr_material, carriers: [structured]}
       spatial: {kind: asset_spatial_info, carriers: [structured]}
       quality: {kind: quality_report, carriers: [artifact_ref]}
-      observations: {kind: observation_bundle, carriers: [artifact_ref]}
+      observations: {kind: observation_bundle, carriers: [artifact_ref], schema_name: ObservationBundle, schema_version: "1.0"}
+      components: {kind: component_provenance, cardinality: zero_or_more, carriers: [structured]}
       semantics: {kind: semantic_info, cardinality: zero_or_one, carriers: [structured]}
     outputs:
       asset: {kind: asset_definition, carriers: [structured], persist: true}
@@ -63,6 +88,7 @@ operators:
     inputs:
       asset: {kind: asset_definition, carriers: [artifact_ref]}
       mesh: {kind: triangle_mesh, carriers: [artifact_ref], requires_frame: true, requires_unit: true}
+      material: {kind: pbr_material, carriers: [structured], schema_name: PBRMaterial, schema_version: "1.0"}
       quality: {kind: quality_report, carriers: [artifact_ref]}
       profile: {kind: export_profile, carriers: [structured]}
     outputs:

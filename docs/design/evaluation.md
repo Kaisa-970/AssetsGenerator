@@ -57,13 +57,13 @@ Backend camera hint（若有）
 CameraRegistration 结果
 ```
 
-Phase 1 不要求实现 camera registration，所有 render-back 检查可以输出：
+尚未接入 CameraRegistration 的 Pipeline，所有 render-back 检查必须输出：
 
 ```json
 {
   "applicable": false,
   "status": "skipped",
-  "reason": "camera registration is not implemented in Phase 1"
+  "reason": "camera registration is not implemented for this pipeline"
 }
 ```
 
@@ -78,6 +78,8 @@ failure behavior: skipped or warn
 ```
 
 只有 gate 通过才计算 Silhouette IoU、LPIPS、SSIM、Depth consistency 等像素级指标。未经校准的注册输出使用 `score`，不能称为 confidence。
+
+Phase 5 当前显式延期。Phase 6 多视图 Core 中的估计 camera 不等同于通过 registration gate；在 Phase 5 恢复并完成相应契约前，render-back 仍保持 `applicable=false, status=skipped`。
 
 ## 4. Offline Benchmark
 

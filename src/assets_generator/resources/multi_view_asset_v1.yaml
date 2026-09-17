@@ -1,0 +1,55 @@
+pipeline: multi_view_asset_v1
+version: 1
+inputs:
+  observations: {kind: observation_bundle, carriers: [artifact_ref], schema_name: ObservationBundle, schema_version: "1.0"}
+  semantics: {kind: semantic_info, cardinality: zero_or_one, carriers: [structured]}
+  export_profile: {kind: export_profile, carriers: [structured]}
+
+nodes:
+  estimate_geometry:
+    operator: geometry_frontend@1
+    backend: geometry_frontend
+    inputs:
+      observations: pipeline.inputs.observations
+
+  reconstruct:
+    operator: reconstruction@1
+    backend: reconstruction
+    inputs:
+      observations: pipeline.inputs.observations
+      cameras: estimate_geometry.outputs.cameras
+      depths: estimate_geometry.outputs.depths
+      points: estimate_geometry.outputs.points
+
+  canonicalize:
+    operator: canonicalize@1
+    inputs:
+      mesh: reconstruct.outputs.mesh
+      native_frame: reconstruct.outputs.native_frame
+      components: reconstruct.outputs.components
+
+  validate:
+    operator: validation@1
+    inputs:
+      mesh: canonicalize.outputs.mesh
+      material: reconstruct.outputs.material
+
+  assemble_asset:
+    operator: assemble_asset@1
+    inputs:
+      mesh: canonicalize.outputs.mesh
+      material: reconstruct.outputs.material
+      spatial: canonicalize.outputs.spatial_info
+      quality: validate.outputs.report
+      observations: pipeline.inputs.observations
+      components: canonicalize.outputs.components
+      semantics: pipeline.inputs.semantics?
+
+  export:
+    operator: export@1
+    inputs:
+      asset: assemble_asset.outputs.asset
+      mesh: canonicalize.outputs.mesh
+      material: reconstruct.outputs.material
+      quality: validate.outputs.report
+      profile: pipeline.inputs.export_profile

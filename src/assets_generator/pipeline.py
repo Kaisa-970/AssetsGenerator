@@ -7,7 +7,13 @@ from typing import Any
 
 import yaml
 
-from .contracts import ContractError, OperatorSpec, PortSpec, effective_output_spec
+from .contracts import (
+    ContractError,
+    OperatorSpec,
+    PortSpec,
+    cardinality_compatible,
+    effective_output_spec,
+)
 
 
 @dataclass(frozen=True)
@@ -80,6 +86,12 @@ def load_default_pipeline() -> PipelineDefinition:
     return _pipeline_from_raw(raw)
 
 
+def load_multi_view_pipeline() -> PipelineDefinition:
+    resource = files("assets_generator.resources").joinpath("multi_view_asset_v1.yaml")
+    raw = yaml.safe_load(resource.read_text(encoding="utf-8"))
+    return _pipeline_from_raw(raw)
+
+
 def compile_pipeline(pipeline: PipelineDefinition, specs: dict[str, OperatorSpec]) -> None:
     deps: dict[str, set[str]] = {node_id: set() for node_id in pipeline.nodes}
     for node_id, node in pipeline.nodes.items():
@@ -121,7 +133,7 @@ def compile_pipeline(pipeline: PipelineDefinition, specs: dict[str, OperatorSpec
         for port_name, port in operator.inputs.items():
             reference = bindings.get(port_name)
             if reference is None:
-                if port.cardinality == "one":
+                if port.cardinality in {"one", "one_or_more"}:
                     raise ContractError(f"{node_id}.{port_name} is not bound")
                 continue
             optional = str(reference).endswith("?")
@@ -129,6 +141,10 @@ def compile_pipeline(pipeline: PipelineDefinition, specs: dict[str, OperatorSpec
             if key not in available:
                 raise ContractError(f"{node_id}.{port_name} references unavailable {key}")
             source_spec = available[key]
+            if not cardinality_compatible(
+                source_spec.cardinality, port.cardinality, optional=optional
+            ):
+                raise ContractError(f"{node_id}.{port_name} cardinality mismatch")
             if not set(source_spec.kinds) <= set(port.kinds):
                 raise ContractError(f"{node_id}.{port_name} kind mismatch")
             if not set(source_spec.carriers) <= set(port.carriers):
@@ -140,7 +156,5 @@ def compile_pipeline(pipeline: PipelineDefinition, specs: dict[str, OperatorSpec
                 and source_spec.schema_version != port.schema_version
             ):
                 raise ContractError(f"{node_id}.{port_name} schema version mismatch")
-            if optional and port.cardinality == "one":
-                raise ContractError(f"{node_id}.{port_name} cannot use an optional reference")
         for output_name, output in operator.outputs.items():
             available[f"{node_id}.outputs.{output_name}"] = effective_output_spec(output)
