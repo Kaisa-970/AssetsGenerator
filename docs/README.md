@@ -24,6 +24,8 @@
 
 ## 评测报告 · reports
 
+- [2026-09-17：DA3-Base 多帧资源验证](reports/da3-frame-scaling-v1.md)
+
 - [2026-09-17：DA3-Base 前端 GPU smoke](reports/da3-frontend-smoke-v1.md)
 
 - [2026-09-16：Phase 3 VOC / TRELLIS.2 初版观察报告](reports/phase3-baseline-v1.md)
