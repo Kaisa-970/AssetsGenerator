@@ -131,6 +131,17 @@ Multi RGB / RGBD / Video
 
 模型中立执行基线已经闭环，专项约束见 [多视图与 Hybrid 契约](../design/multi-view-hybrid.md)，验证记录见 [Phase 6 多视图 Core 基线报告](../reports/phase6-core-baseline-v1.md)：严格 Observation IR、原子且文件名无关的 manifest 导入、集合 cardinality、通用 Backend 绑定、Backend 执行 metadata provenance，以及 Fake Backend 驱动的多视图端到端 workflow。该基线验证 Core 契约、canonicalization、component provenance、QA、BuildRun 和 release，不代表真实多视图模型可用。首个真实 geometry frontend 已选 DA3-Base，接入约束见 [DA3 契约](../design/da3-backend.md)；DA3 已通过双帧真实 GPU smoke 和 4/8/16 帧串行资源验证，见 [多帧报告](../reports/da3-frame-scaling-v1.md)。这些验证不代表物体几何质量达标；reconstruction 首版选择 [Open3D TSDF](../design/open3d-backend.md)，将 RGB/深度/相机融合为带顶点颜色的网格，已完成 [DA3→Open3D 真实发布 smoke](../reports/open3d-tsdf-smoke-v1.md)；几何约束 completion Backend 等待后续选型；已完成 [独立生成候选准备](../design/completion-candidate.md) 与 [TRELLIS.2 真实关联发布验证](../reports/completion-candidate-smoke-v1.md)，另已实现显式矩阵候选对齐与独立图层叠加预览，见 [对齐验证](../reports/candidate-alignment-smoke-v1.md)；另提供人工变换调整、图层切换、保存和确认/拒绝入口；已扩展跨会话恢复、显式选定、人工方框区域选择及独立组件组合发布；尚无自动配准、拓扑融合或质量验收。
 
+### Phase 6 首版流程里程碑
+
+首版范围：多视图观测 → DA3 → Open3D 重建 → 独立生成候选 → 人工对齐/检查 →
+显式选定 → 人工方框区域组合 → 标准 AssetDefinition/AssetRelease 与基础 QA。
+此流程已完成，验证见 [标准发布报告](../reports/composition-release-smoke-v1.md)。
+此处关闭的是流程首版里程碑，不是原规划完整 Phase 6。
+
+明确延期：几何约束 completion、自动配准、拓扑融合/水密化、代表性物体质量阈值与验收、
+视频抽帧策略、RGBD invalid-value/metric-scale policy、通用跨表示 region-map。
+Phase 5 CameraRegistration/render-back QA 继续延期；当前不宣称质量或物理可用。
+
 ## 8. Phase 7：Scene to Assets
 
 借鉴 FIRE3D，引入 Detection、Instance Segmentation、Object Pose、Canonicalization、Completion 和 SceneDefinition。

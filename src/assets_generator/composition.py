@@ -13,6 +13,7 @@ import trimesh
 from .alignment import _glb, _mesh
 from .artifact_store import LocalArtifactStore
 from .completion import _checked
+from .composition_release import standard_composition_release
 from .contracts import ContractError, validate_operator_inputs, validate_operator_outputs
 from .models import ArtifactRef, BuildRun, NodeAttempt, StructuredValue
 from .operators import _load_scene
@@ -201,6 +202,18 @@ def publish_composition(
             seed=None,
             source="mixed",
         )
+        asset_ref, release_ref, quality_ref, release_files = standard_composition_release(
+            store,
+            scene=scene,
+            components=components,
+            selection=selection,
+            selected=selected,
+            alignment=alignment,
+            regions=region_ref,
+            mesh=mesh,
+            provenance=provenance,
+            run_id=run.run_id,
+        )
         manifest = store.persist_structured(
             StructuredValue(
                 "component_composition",
@@ -208,6 +221,9 @@ def publish_composition(
                 "1.0",
                 {
                     "run_id": run.run_id,
+                    "asset_definition": to_primitive(asset_ref),
+                    "release": to_primitive(release_ref),
+                    "quality_report": to_primitive(quality_ref),
                     "selection": to_primitive(selection),
                     "regions": to_primitive(region_ref),
                     "glb": to_primitive(mesh),
@@ -220,6 +236,15 @@ def publish_composition(
         )
         attempt.outputs = {
             "mesh": mesh,
+            "asset": asset_ref,
+            "release": release_ref,
+            "quality": quality_ref,
+            "exported": release_files["geometry/visual.glb"],
+            "components": [
+                ref
+                for name, ref in release_files.items()
+                if name.startswith("geometry/components/")
+            ],
             "regions": region_ref,
             "manifest": manifest,
             "provenance": provenance,
@@ -246,12 +271,16 @@ def publish_composition(
         with tempfile.TemporaryDirectory(prefix=f".{output.name}-", dir=output.parent) as temp:
             stage = Path(temp)
             for name, ref in {
+                **release_files,
+                "asset.json": asset_ref,
+                "release.json": release_ref,
                 "visual.glb": mesh,
                 "composition.json": manifest,
                 "regions.json": region_ref,
                 "provenance.json": provenance,
                 "selection.json": selection,
             }.items():
+                (stage / name).parent.mkdir(parents=True, exist_ok=True)
                 (stage / name).write_bytes(store.blob_path(ref).read_bytes())
             (stage / "composition-ref.json").write_bytes(
                 canonical_json_bytes(to_primitive(manifest))
@@ -263,7 +292,11 @@ def publish_composition(
             run_ref = _persist_build_run(store, run)
             (stage / "run.json").write_bytes(store.blob_path(run_ref).read_bytes())
             stage.rename(output)
-        return {"composition": to_primitive(manifest), "output_directory": str(output)}
+        return {
+            "composition": to_primitive(manifest),
+            "release": to_primitive(release_ref),
+            "output_directory": str(output),
+        }
     except Exception:
         attempt.status = "failed"
         attempt.error_code = (

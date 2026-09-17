@@ -109,6 +109,11 @@ operators:
     inputs:
       selection: {kind: alignment_selection, carriers: [artifact_ref], schema_name: AlignmentSelection, schema_version: "1.0"}
     outputs:
+      asset: {kind: asset_definition, carriers: [artifact_ref]}
+      release: {kind: asset_release, carriers: [artifact_ref]}
+      quality: {kind: quality_report, carriers: [artifact_ref]}
+      exported: {kind: gltf_asset, carriers: [artifact_ref], requires_frame: true, requires_unit: true}
+      components: {kind: triangle_mesh, cardinality: one_or_more, carriers: [artifact_ref], requires_frame: true, requires_unit: true}
       mesh: {kind: gltf_asset, carriers: [artifact_ref], requires_frame: true, requires_unit: true}
       regions: {kind: region_selection, carriers: [artifact_ref], schema_name: RegionSelection, schema_version: "1.0"}
       manifest: {kind: component_composition, carriers: [artifact_ref], schema_name: ComponentComposition, schema_version: "1.0"}

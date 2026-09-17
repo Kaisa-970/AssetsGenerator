@@ -57,7 +57,13 @@ class BuildResult:
     output_directory: Path
 
 
-def _output_id(run_id: str, node_id: str, port_name: str) -> str:
+def _output_id(run_id: str, node_id: str, port_name: str, element_id: str | None = None) -> str:
+    if element_id is not None:
+        if not element_id:
+            raise ValueError("output element_id must be non-empty")
+        return sha256_bytes(
+            canonical_json_bytes(["output-element-v1", run_id, node_id, 1, port_name, element_id])
+        )
     return sha256_bytes(f"{run_id}:{node_id}:1:{port_name}".encode())
 
 
@@ -77,8 +83,9 @@ def _persist_provenance(
     source: str,
     model_digest: str | None = None,
     container_digest: str | None = None,
+    element_id: str | None = None,
 ) -> ArtifactRef:
-    output_id = _output_id(run_id, node_id, port_name)
+    output_id = _output_id(run_id, node_id, port_name, element_id)
     record = ProvenanceRecord(
         provenance_id=sha256_bytes(f"provenance:{output_id}".encode()),
         output_id=output_id,

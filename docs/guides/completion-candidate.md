@@ -95,5 +95,10 @@ result = align_completion_candidate(
 必要时“返回对齐图层”继续检查；满意后点击“组合发布”。原模型不变，新目录含 visual.glb、
 composition.json、regions.json、selection.json、provenance.json 和 run.json。
 
-这是一份可追溯的独立组件组合包，不是拓扑融合或已通过 QA 的 AssetRelease；可能存在接缝、
+组合发布现已生成标准 asset.json/release.json、geometry/visual.glb 与基础 QA；可能存在接缝、
 重叠和空洞。请勿将人工确认或组合发布理解为水密、碰撞或仿真质量认证。
+
+
+标准交付优先读取 release.json 中的 files。geometry/visual.glb 为统一导出入口，
+geometry/components/ 保存内部坐标的独立组件；请勿将内部组件当作 +Y up 的最终导出。
+qa/quality-report.json 的 warn 明确表示物理/接缝/水密质量尚未验证。

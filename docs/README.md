@@ -30,6 +30,8 @@
 
 ## 评测报告 · reports
 
+- [2026-09-17：标准组合发布与 Phase 6 首版流程里程碑](reports/composition-release-smoke-v1.md)
+
 - [2026-09-17：人工区域组合流程验证](reports/region-composition-smoke-v1.md)
 
 - [2026-09-17：人工候选对齐入口验证](reports/manual-alignment-smoke-v1.md)

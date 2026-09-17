@@ -54,6 +54,16 @@ def fixture(tmp_path, unit="relative_unit"):
                         "export_profile": "gltf2-v1",
                         "files": {"geometry/visual.glb": {"artifact_id": mesh.artifact_id}},
                         "fixture_label": label,
+                        "asset_definition": {
+                            "artifact_id": store.persist_structured(
+                                StructuredValue(
+                                    "asset_definition",
+                                    "AssetDefinition",
+                                    "1.0",
+                                    {"source_observation_ids": ["fixture-observation"]},
+                                )
+                            ).artifact_id
+                        },
                     },
                 )
             )

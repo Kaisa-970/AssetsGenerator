@@ -106,7 +106,31 @@ scope=manual_alignment_only、reviewer_identity=self_reported、fusion=not_perfo
 selection 和 provenance；保存最小 BuildRun 及发布状态。provenance 通过选区证据追溯各组件，
 不把整个输出错误标为 reconstructed。输出原子发布到新的 composition-*/，不改原资产。
 
-此步是独立组件组合交付包，不是通过质量验收的 AssetRelease；不签发假 QA，不宣称物理可用。
+组合现已接入标准 AssetDefinition/AssetRelease 与 composition-basic-v1 基础 QA；不宣称物理可用。
 `visual.glb` 可直接查看；组合包包含 composition.json、regions.json、selection.json、
-provenance.json、run.json。后续若接统一 AssetRelease，还需明确对应 QA 与 assembly 契约。
+provenance.json、run.json。标准发布契约见下节。
 浏览器提供所选区域原材质预览。当前使用数值方框，不提供画笔、套索或自动语义分区。
+
+
+## 标准组合发布与基础 QA
+
+组合发布同时输出 asset.json、release.json、geometry/visual.glb 和 qa/quality-report.json。
+旧 visual.glb/composition.json 等入口保留。AssetDefinition 的 visual_meshes 为独立 canonical
+组件，每个 ComponentProvenance 指向自身几何及对应来源记录；source_observation_ids 从
+重建资产继承，物理信息为空。材质摘要不取代 GLB 内嵌外观，导出使用 preserve_mesh。
+
+坐标转换严格使用 gltf2-v1 的逆轴置换（+Y up/+Z forward → +Z up/+X forward），不执行
+重新居中、朝向估计或尺度归一化；导出再使用既有 ExportOperator 正向转换。目标 frame
+绑定 region identity，保留目标单位；相对尺度仍 relative，米制单位也不据此宣称完成尺度验证。
+每个组件 provenance 引用其实际原 GLB、区域记录和人工选定，记录轴转换矩阵及 Trimesh 版本。
+
+composition-basic-v1 检查序列化后几何非空且顶点有限、材质纹理可解码/UV 有效、证据 digest、
+以及对齐 frame/unit 与目标 release 一致。基础失败阻止发布并记录失败 BuildRun。
+QA 总状态为 warn：未融合组件的接缝、重叠、水密和物理质量未验证；不继承旧资产的 QA。
+Release.files 包括 canonical 组件、区域记录、选定、对齐、变换、检查记录和 provenance。
+基础 QA 是工程完整性检查，不代表真实物体质量或仿真验收。
+
+多值 components 端口的输出身份使用稳定 component_id 作为 element_id，参与 output_id
+及 provenance_id 计算（output-element-v1 规范 JSON 元组）；标量端口身份保持兼容。
+记录 parameters.output_element_id 保存对应组件标识。ComponentProvenance.provenance_ids
+因此可唯一回查各组件的输出 Artifact，而不会因共享端口发生覆盖。
