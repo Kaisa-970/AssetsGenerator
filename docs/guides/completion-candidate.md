@@ -55,3 +55,30 @@ result = align_completion_candidate(
 如需交互检查，可自行在输出目录启动 `python3 -m http.server 8765 --bind 127.0.0.1`，
 浏览器打开 `http://127.0.0.1:8765/`；检查后 Ctrl+C 关闭。
 青色/橙色叠加只表示变换结果，不表示融合或已通过配准验收。
+
+## 人工调整与确认入口
+
+```bash
+.venv/bin/python -m assets_generator.alignment_review \
+  --store '<ARTIFACT_STORE>' \
+  --candidate-ref '<CANDIDATE_OUTPUT>/candidate-ref.json' \
+  --output '<MANUAL_ALIGNMENT_OUTPUT>' \
+  --port 8765
+```
+
+打开终端显示的 `http://127.0.0.1:8765/`。页面同时显示青色重建与橙色生成，
+可分别隐藏图层、绕固定 X→Y→Z 轴旋转、平移、统一缩放，也可重置变换或将模型居中。
+旋转以度为单位，平移使用重建 GLB 单位，+Y 向上。旋转/缩放围绕生成模型原点；
+未提供自动配准或拖拽控制柄。查看器依赖联网加载固定版本 Three.js。
+
+点击“保存当前对齐”会调用既有对齐接口，在输出根目录创建新的 `alignment-<id>/`，
+包含原资产、变换后的 GLB、provenance、BuildRun 和预览。保存后填写检查人和备注，
+再确认或拒绝。修改任何变换参数会使页面上的当前保存选择失效，须重新保存后再检查。
+
+决定作为独立 `AlignmentReview` Artifact 持久化，在输出根目录的 `reviews/` 保存 JSON，
+关联精确的候选、对齐结果与变换；原发布包保持不变，其原始 pending 字段不会被改写。
+检查人是自行填写的标识，不是认证身份；确认只表示人工对齐判断，不证明补全或融合。
+同一对齐可追加多个决定，彼此独立保留，不自动选择某条作为权威结论。
+当前只支持检查本次服务会话中新保存的结果，重启后可重新保存一份候选。
+
+服务只监听本机，Ctrl+C 关闭；通过 SSH 使用时可将相同端口转发到本地后打开上述地址。

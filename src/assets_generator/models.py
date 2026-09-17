@@ -24,6 +24,7 @@ ARTIFACT_KINDS = frozenset(
         "camera_collection",
         "completion_candidate",
         "candidate_alignment",
+        "alignment_review",
         "spatial_transform",
         "asset_definition",
         "asset_release",

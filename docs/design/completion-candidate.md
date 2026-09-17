@@ -65,3 +65,22 @@ release_failed。成功目录包含最终 run.json，发布异常时 Store 索�
 状态始终为 `aligned_candidate_only`、`explicit_transform_applied`、`fusion=not_performed`、
 `review_status=pending`。不继承原 release 的 QA 结论，不创建冒充融合结果的 AssetRelease。
 发布失败可能保留 Store 中无引用的不可变 Artifact，但不会留下半成品输出目录。
+
+## 人工对齐与检查 v1
+
+`alignment_review` 模块提供单候选、本机 HTTP 服务。前端 Three.js 同场景加载两份原 GLB，
+仅在生成图层父节点应用 `T * Rz * Ry * Rx * S`，导出同一列向量矩阵交给既有
+align_completion_candidate；源/目标 frame 和输出目录由服务端绑定，浏览器不得指定。
+图层诊断颜色不会进入保存的 aligned.glb。参数变化清除当前保存选择；保存期间锁定参数，
+避免异步保存后把新参数的检查意见挂到旧变换上。
+
+`alignment_review` / `AlignmentReview@1.0` 为新增不可变 Artifact kind，记录 candidate、
+alignment、transform、decision（accepted/rejected）、reviewer、reviewed_at、note，
+scope=manual_alignment_only、reviewer_identity=self_reported、fusion=not_performed。
+决定必须引用当前服务会话已保存且 BuildRun 成功的对齐结果。记录追加到独立 reviews/，
+不变更候选包或对齐包，也不把人工决定混同模型 QA、融合 provenance 或自动质量评分。
+不提供自动仲裁、权威状态选择或跨会话恢复编辑。
+
+服务仅监听 127.0.0.1，固定资源路由，不暴露 Store 或任意文件路径；写操作检查 Host、
+同源 Origin、随机会话 token 和请求体上限。前端依赖 CDN Three.js 0.169.0，加载失败显示
+错误信息。该服务不是远程多用户平台，不接入 GPU 模型或新增 DAG。

@@ -420,3 +420,6 @@ GLTF2 export
 `candidate_alignment` / `CandidateAlignment@1.0` 保存显式对齐候选的输入、变换、输出及
 provenance 引用；`spatial_transform` / `SpatialTransform@1.0` 可作为独立 Artifact 证据。
 二者均不代表融合 AssetRelease。详见[显式候选对齐](completion-candidate.md#显式候选对齐-v1)。
+
+`alignment_review` / `AlignmentReview@1.0` 是独立的人工作业决定 Artifact，引用精确
+candidate/alignment/transform，追加保留确认和拒绝记录，不修改原对齐包。

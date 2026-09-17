@@ -1,0 +1,77 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>人工候选对齐</title>
+<style>
+body{margin:0;font:15px system-ui;background:#101923;color:#e8edf2}main{display:grid;grid-template-columns:320px 1fr;height:100vh}aside{padding:22px;overflow:auto;background:#192735}h1{font-size:22px}p{line-height:1.6;color:#bdcbd8}fieldset{border:1px solid #476075;margin:16px 0}label{display:block;margin:10px 0}#controls label{display:flex;align-items:center;justify-content:space-between;gap:8px}input[type=number]{width:100px}input,textarea,button{padding:7px;border-radius:4px;border:1px solid #637889}button{cursor:pointer;background:#dceaf6;margin:5px 0}button:disabled{opacity:.45;cursor:default}textarea{width:90%}#viewport{min-width:0;position:relative}canvas{display:block}#status{white-space:pre-wrap;overflow-wrap:anywhere}#hint{position:absolute;bottom:16px;left:18px;background:#101923bb;padding:9px;pointer-events:none}@media(max-width:720px){main{grid-template-columns:1fr;height:auto}#viewport{height:65vh}}
+</style>
+<main><aside><h1>人工候选对齐</h1><p>青色为重建，橙色为生成。只调整生成模型；保存与人工确认不会融合几何。</p>
+<form id="controls"><fieldset><legend>旋转（度）</legend><label>X <input id="rx" type="number" value="0" step="1" required></label><label>Y <input id="ry" type="number" value="0" step="1" required></label><label>Z <input id="rz" type="number" value="0" step="1" required></label></fieldset>
+<fieldset><legend id="translation-label">平移（目标坐标单位）</legend><label>X <input id="tx" type="number" value="0" step="0.01" required></label><label>Y <input id="ty" type="number" value="0" step="0.01" required></label><label>Z <input id="tz" type="number" value="0" step="0.01" required></label><label>统一缩放 <input id="scale" type="number" value="1" step="any" min="0.000001" required></label></fieldset></form>
+<p>绕固定 X → Y → Z 轴旋转，再平移；+Y 向上。缩放与旋转中心为原点。</p>
+<label><input id="show-target" type="checkbox" checked> 显示重建</label><label><input id="show-source" type="checkbox" checked> 显示生成</label>
+<button id="reset" disabled>重置变换</button> <button id="fit" disabled>模型居中</button><br><button id="save" disabled>保存当前对齐</button>
+<fieldset><legend>检查已保存结果</legend><label>检查人 <input id="reviewer" maxlength="200" placeholder="填写姓名或标识"></label><label>备注<textarea id="note" maxlength="4000"></textarea></label><button id="accept" disabled>确认对齐</button> <button id="reject" disabled>拒绝对齐</button></fieldset>
+<p id="status" role="status">正在加载查看器…</p></aside><section id="viewport"><div id="hint">拖动旋转 · 滚轮缩放 · 右键拖动平移</div></section></main>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"}}</script>
+<script type="module">
+const $=id=>document.getElementById(id), status=$('status');
+try {
+const THREE=await import('three');
+const {OrbitControls}=await import('three/addons/controls/OrbitControls.js');
+const {GLTFLoader}=await import('three/addons/loaders/GLTFLoader.js');
+const config=await fetch('/session').then(r=>{if(!r.ok)throw Error('无法读取候选');return r.json()});
+$('translation-label').textContent='平移（'+config.target_unit+'）';
+const viewport=$('viewport'), renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));viewport.append(renderer.domElement);
+const scene=new THREE.Scene();scene.background=new THREE.Color('#101923');
+const camera=new THREE.PerspectiveCamera(45,1,.001,10000), orbit=new OrbitControls(camera,renderer.domElement);
+scene.add(new THREE.HemisphereLight(0xffffff,0x71808f,3));
+const loader=new GLTFLoader();
+const [target,source]=await Promise.all([loader.loadAsync('/models/reconstructed.glb'),loader.loadAsync('/models/generated.glb')]);
+const targetGroup=new THREE.Group(), sourceGroup=new THREE.Group();
+targetGroup.add(target.scene);sourceGroup.add(source.scene);scene.add(targetGroup,sourceGroup);
+for(const [group,color] of [[targetGroup,0x00bee6],[sourceGroup,0xff9128]])group.traverse(obj=>{if(obj.isMesh)obj.material=new THREE.MeshBasicMaterial({color,side:THREE.DoubleSide})});
+sourceGroup.matrixAutoUpdate=false;
+let saved=null,busy=false;
+const keys=['rx','ry','rz','tx','ty','tz','scale'];
+function reviewButtons(){for(const id of ['accept','reject'])$(id).disabled=busy||!saved}
+function apply(){
+ saved=null;reviewButtons();
+ if(!$('controls').checkValidity()){ $('save').disabled=true;status.textContent='请填写有限数值，缩放必须大于零。';return false; }
+ const v=Object.fromEntries(keys.map(k=>[k,Number($(k).value)]));
+ if(!Object.values(v).every(Number.isFinite)||v.scale<=0){$('save').disabled=true;return false;}
+ // Column vectors: T * Rz * Ry * Rx * S, matching fixed X then Y then Z.
+ const q=new THREE.Quaternion().setFromEuler(new THREE.Euler(v.rx*Math.PI/180,v.ry*Math.PI/180,v.rz*Math.PI/180,'ZYX'));
+ sourceGroup.matrix.compose(new THREE.Vector3(v.tx,v.ty,v.tz),q,new THREE.Vector3(v.scale,v.scale,v.scale));
+ sourceGroup.updateMatrixWorld(true);$('save').disabled=busy;
+ status.textContent='变换尚未保存。保存后可确认或拒绝。';return true;
+}
+function fit(){
+ const box=new THREE.Box3().setFromObject(targetGroup).union(new THREE.Box3().setFromObject(sourceGroup));
+ const center=box.getCenter(new THREE.Vector3()), radius=Math.max(box.getSize(new THREE.Vector3()).length(),.01);
+ orbit.target.copy(center);camera.position.copy(center).add(new THREE.Vector3(radius*.7,radius*.5,radius));
+ camera.near=radius/10000;camera.far=radius*100;camera.updateProjectionMatrix();orbit.update();
+}
+new ResizeObserver(()=>{const w=viewport.clientWidth,h=viewport.clientHeight;renderer.setSize(w,h);camera.aspect=w/h;camera.updateProjectionMatrix()}).observe(viewport);
+renderer.setAnimationLoop(()=>{orbit.update();renderer.render(scene,camera)});
+$('controls').addEventListener('submit',e=>e.preventDefault());$('controls').addEventListener('input',apply);
+$('show-target').onchange=()=>targetGroup.visible=$('show-target').checked;
+$('show-source').onchange=()=>sourceGroup.visible=$('show-source').checked;
+$('reset').onclick=()=>{for(const k of keys)$(k).value=k==='scale'?'1':'0';apply()};$('fit').onclick=fit;
+function lock(on){busy=on;for(const k of keys)$(k).disabled=on;for(const id of ['save','reset'])$(id).disabled=on;reviewButtons()}
+async function post(path,body){const response=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json','X-Review-Token':config.token},body:JSON.stringify(body)});const result=await response.json();if(!response.ok)throw Error(result.error||'操作失败');return result}
+$('save').onclick=async()=>{
+ if(!apply())return;lock(true);status.textContent='正在保存对齐与运行记录…';
+ try{const e=sourceGroup.matrix.elements;const matrix=Array.from({length:4},(_,r)=>Array.from({length:4},(_,c)=>e[c*4+r]));saved=await post('/save',{matrix});status.textContent='已保存，待检查。\n'+saved.output_directory;}
+ catch(e){saved=null;status.textContent='保存失败：'+e.message}finally{lock(false)}
+};
+for(const [id,decision] of [['accept','accepted'],['reject','rejected']])$(id).onclick=async()=>{
+ if(!saved||busy)return;
+ if(!$('reviewer').value.trim()){status.textContent='请填写检查人。';return;}
+ lock(true);
+ try{const result=await post('/review',{alignment_id:saved.alignment.artifact_id,decision,reviewer:$('reviewer').value,note:$('note').value});status.textContent=(decision==='accepted'?'已记录人工确认':'已记录人工拒绝')+'（仅对齐，未融合）。\n'+result.review.artifact_id;}
+ catch(e){status.textContent='记录失败：'+e.message}finally{lock(false)}
+};
+$('reset').disabled=false;$('fit').disabled=false;apply();fit();
+document.body.dataset.ready='true';
+} catch(e){status.textContent='查看器加载失败：'+e.message+'。请检查网络（Three.js 通过 CDN 加载）并刷新。'}
+</script></html>
