@@ -77,6 +77,10 @@ Phase 8 还提供显式两点距离的 metric scale calibration。调用方提�
 及真实米制距离，Core 对 visual/collision geometry 统一缩放并发布新的 meter-unit 资产；不从
 图像或类别先验猜测尺度。使用见 [Metric Scale Calibration 指南](docs/guides/metric-scale-calibration.md)。
 
+Phase 8 现已提供用户显式 dynamic rigid-body properties。输入必须是 meter-unit、带单一 collision
+mesh 且尚无 physics 的资产；Core 验证质量、质心、惯性张量和接触参数的绑定与数学自洽，但不
+估计或声称这些值物理准确。使用见 [Explicit Rigid Body Properties 指南](docs/guides/rigid-body-properties.md)。
+
 安装开发环境并检查固定 Pipeline：
 
 ```bash

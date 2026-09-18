@@ -296,6 +296,11 @@ class PBRMaterial:
     alpha_mode: str
 ```
 
+Phase 8 `PhysicsInfo@1.0` currently represents only a user-supplied dynamic rigid body. It stores
+SI mass, canonical-frame center of mass, a canonical-axis inertia tensor about that center of mass,
+contact coefficients, the exact collision mesh, and the `RigidBodyProperties` evidence Artifact.
+Validation and deferred fields are defined in [Explicit Rigid Body Properties v1](rigid-body-properties.md).
+
 V1 Artifact kind 使用封闭枚举：
 
 ```text

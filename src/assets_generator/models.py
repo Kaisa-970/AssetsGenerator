@@ -45,6 +45,7 @@ ARTIFACT_KINDS = frozenset(
         "scene_definition",
         "scene_layout_review",
         "metric_scale_measurement",
+        "rigid_body_properties",
     }
 )
 
@@ -271,6 +272,24 @@ class AppearanceSet:
 
 
 @dataclass(frozen=True)
+class PhysicsInfo:
+    schema_version: Literal["1.0"]
+    body_type: Literal["dynamic"]
+    mass_kg: float
+    center_of_mass_m: list[float]
+    inertia_kg_m2: list[list[float]]
+    static_friction: float
+    dynamic_friction: float
+    restitution: float
+    collision_mesh: ArtifactRef
+    frame_id: str
+    unit: Literal["meter"]
+    source: Literal["user"]
+    provided_by: str
+    evidence: ArtifactRef
+
+
+@dataclass(frozen=True)
 class QualityCheck:
     check_id: str
     applicable: bool
@@ -297,7 +316,7 @@ class AssetDefinition:
     appearance: AppearanceSet
     spatial: AssetSpatialInfo
     semantics: SemanticInfo
-    physics: dict[str, Any] | None
+    physics: PhysicsInfo | None
     source_observation_ids: list[str]
     quality_report_ids: list[str]
     component_provenance: list[ComponentProvenance] = field(default_factory=list)

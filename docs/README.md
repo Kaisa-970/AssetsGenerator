@@ -6,6 +6,7 @@
 - [SAM v1 实例候选契约](design/sam-instance-proposals.md)
 - [Phase 8 Collision Generation v1](design/collision-generation.md)
 - [Phase 8 Metric Scale Calibration v1](design/metric-scale-calibration.md)
+- [Phase 8 Explicit Rigid Body Properties v1](design/rigid-body-properties.md)
 
 - [Completion 生成候选契约](design/completion-candidate.md)
 
@@ -29,6 +30,7 @@
 - [Phase 7 场景到资产使用指南](guides/scene-to-assets.md)
 - [Phase 8 Collision Generation 使用指南](guides/collision-generation.md)
 - [Phase 8 Metric Scale Calibration 使用指南](guides/metric-scale-calibration.md)
+- [Phase 8 Explicit Rigid Body Properties 使用指南](guides/rigid-body-properties.md)
 
 - [Phase 6 统一 CLI 完整流程](guides/phase6-cli.md)
 
@@ -43,6 +45,7 @@
 
 - [2026-09-17：Phase 8 Collision v1 CPU smoke](reports/phase8-collision-smoke-v1.md)
 - [2026-09-17：Phase 8 Metric Scale v1 CPU smoke](reports/phase8-metric-scale-smoke-v1.md)
+- [2026-09-17：Phase 8 Explicit Rigid Body v1 CPU smoke](reports/phase8-rigid-body-smoke-v1.md)
 
 - [2026-09-17：Phase 6 CLI 与 Phase 7 显式场景首版](reports/phase7-scene-v1.md)
 

@@ -129,6 +129,13 @@ def _parser() -> argparse.ArgumentParser:
     calibration.add_argument("--measurement", type=Path, required=True)
     calibration.add_argument("--store", type=Path, required=True)
     calibration.add_argument("--output", type=Path, required=True)
+    rigid_body = subparsers.add_parser(
+        "apply-rigid-body", help="Apply explicit SI rigid-body properties to a metric asset"
+    )
+    rigid_body.add_argument("--release", required=True, help="Artifact ID or reference JSON")
+    rigid_body.add_argument("--properties", type=Path, required=True)
+    rigid_body.add_argument("--store", type=Path, required=True)
+    rigid_body.add_argument("--output", type=Path, required=True)
     return parser
 
 
@@ -228,6 +235,17 @@ def main() -> int:
 
 
 def _execute(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
+    if args.command == "apply-rigid-body":
+        from .rigid_body import apply_rigid_body
+
+        rigid_body_result = apply_rigid_body(
+            release=_reference(args.release),
+            properties_path=args.properties,
+            store_path=args.store,
+            output_path=args.output,
+        )
+        print(json.dumps(to_primitive(rigid_body_result), indent=2))
+        return 0
     if args.command == "calibrate-scale":
         from .metric_scale import calibrate_metric_scale
 

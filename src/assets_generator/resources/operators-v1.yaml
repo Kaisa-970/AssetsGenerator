@@ -150,6 +150,32 @@ operators:
     outputs:
       release: {kind: asset_release, carriers: [artifact_ref]}
 
+  - name: rigid_body_properties_import
+    version: 1
+    inputs: {}
+    outputs:
+      properties: {kind: rigid_body_properties, carriers: [artifact_ref], schema_name: RigidBodyProperties, schema_version: "1.0"}
+
+  - name: rigid_body_assignment
+    version: 1
+    inputs:
+      source_asset: {kind: asset_definition, carriers: [artifact_ref]}
+      properties: {kind: rigid_body_properties, carriers: [artifact_ref], schema_name: RigidBodyProperties, schema_version: "1.0"}
+      collision: {kind: collision_mesh, carriers: [artifact_ref], requires_frame: true, requires_unit: true}
+    outputs:
+      asset: {kind: asset_definition, carriers: [artifact_ref]}
+      report: {kind: quality_report, carriers: [artifact_ref]}
+
+  - name: rigid_body_release
+    version: 1
+    inputs:
+      source_release: {kind: asset_release, carriers: [artifact_ref]}
+      asset: {kind: asset_definition, carriers: [artifact_ref]}
+      properties: {kind: rigid_body_properties, carriers: [artifact_ref], schema_name: RigidBodyProperties, schema_version: "1.0"}
+      report: {kind: quality_report, carriers: [artifact_ref]}
+    outputs:
+      release: {kind: asset_release, carriers: [artifact_ref]}
+
   - name: assemble_asset
     version: 1
     inputs:

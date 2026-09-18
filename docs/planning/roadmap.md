@@ -162,15 +162,13 @@ Scene Observation
 
 ## 9. Phase 8：Real to Sim
 
-Phase 8 首版已完成两个窄切片：单资产、显式请求的 deterministic collision generation；以及
-绑定精确 AssetDefinition、canonical visual Artifact 和 frame 的两点距离 metric calibration。
-前者生成同 frame/unit 的 convex collision proxy 并执行 collision QA；后者同步缩放 visual、
-collision、AABB 和 component provenance，发布 meter-unit 资产。两者均保留独立 BuildRun、逐输出
+Phase 8 首版已完成三个窄切片：deterministic collision generation；绑定精确 AssetDefinition、
+canonical visual Artifact 和 frame 的两点距离 metric calibration；以及绑定 meter-unit 资产和单一
+collision Artifact 的用户显式 dynamic rigid-body properties。三者均保留独立 BuildRun、逐输出
 provenance、原子发布和真实 CPU smoke，默认图像 Pipeline 保持不变。
 
-下一切片只接受用户明确提供的刚体参数，并要求输入资产已经是 meter 且具有 collision mesh。
-不自动估计 mass、friction、inertia 或 center of mass。USD/IsaacUSD、runtime 同步和 articulation
-后续再做。
+系统不自动估计 mass、friction、inertia 或 center of mass。下一切片评估 USD/IsaacUSD 交付边界；
+runtime 同步和 articulation 后续再做。
 
 加入：
 
