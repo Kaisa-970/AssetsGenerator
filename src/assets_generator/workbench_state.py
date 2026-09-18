@@ -434,7 +434,10 @@ def transition(current: BuildRun, event: Event) -> Transition:
             effect("register_child")
         elif isinstance(payload, ChildSucceeded):
             _require(
-                stage.status in {"running", "interrupted"}
+                (
+                    stage.status in {"running", "interrupted"}
+                    or (stage.status == "failed" and payload.restored)
+                )
                 and attempt.child_registration is not None
                 and payload.child_run_id == attempt.child_run_id
                 and payload.input_digest == attempt.input_digest

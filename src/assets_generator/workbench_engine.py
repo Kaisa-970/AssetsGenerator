@@ -746,6 +746,8 @@ class WorkbenchEngine:
                         if receipt.command_kind != "retry":
                             raise ContractError("idempotency key request conflict")
                         return run
+            if expected_revision != run.workbench.state_revision:
+                raise ContractError("stale revision")
             stage = next(
                 (
                     run.workbench.stage_states[s.stage_id]
@@ -756,6 +758,26 @@ class WorkbenchEngine:
             )
             if stage is None:
                 raise ContractError("no retryable stage")
+            worker = stage.current().worker_execution
+            if worker is not None and worker.launch_phase != "prepared":
+                terminal = (
+                    worker.launch_phase == "exit_observed"
+                    and worker.last_probe is not None
+                    and worker.last_probe.result == "exited"
+                )
+                if not terminal:
+                    observation = self.probe.observe(worker.identity())
+                    run = self._event(
+                        run_id,
+                        stage.stage_id,
+                        RecoveryObserved(observation),
+                        revision=expected_revision,
+                    )
+                    assert run.workbench is not None
+                    expected_revision = run.workbench.state_revision
+                    stage = run.workbench.stage_states[stage.stage_id]
+                    if observation.result != "exited":
+                        raise ContractError("retry blocked by active or unverified process")
             inputs = self._resolved(
                 run, next(s for s in plan.stages if s.stage_id == stage.stage_id), plan
             )

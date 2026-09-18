@@ -385,3 +385,125 @@ def test_durable_worker_exit_is_not_invalidated_by_later_pid_reuse(tmp_path):
         engine.drain()
         assert repo.load(new.run_id).status == "waiting_for_input"
 
+
+@pytest.mark.parametrize("observation", ["alive", "unknown", "exited"])
+def test_retry_refreshes_process_evidence_after_revision_check(tmp_path, observation):
+    from assets_generator.workbench_models import ProcessObservation, WorkerExecution
+    from assets_generator.workbench_state import RecoveryObserved
+
+    store, image, profile = fixture_engine(tmp_path)
+
+    class Probe:
+        calls = 0
+
+        def observe(self, identity):
+            self.calls += 1
+            return ProcessObservation("fresh", observation)
+
+    probe = Probe()
+    with WorkbenchRepository(store, tmp_path / "workbench") as repo:
+        engine = WorkbenchEngine(repo, {"fake": profile}, probe=probe)
+        run = engine.create(image, "fake", {}, "create")
+        # Emulate a durable authorized runner that was active at service recovery.
+        attempt = run.workbench.stage_states["propose"].current()
+        attempt.worker_execution = WorkerExecution(
+            "job",
+            attempt.child_run_id,
+            "launch",
+            "release_authorized",
+            "host",
+            "boot",
+            123,
+            456,
+            123,
+        )
+        repo.commit(run)
+        run = engine._event(
+            run.run_id, "propose", RecoveryObserved(ProcessObservation("old", "alive"))
+        )
+        revision = run.workbench.state_revision
+        with pytest.raises(ValueError, match="stale revision"):
+            engine.retry(run.run_id, revision - 1, "retry")
+        assert probe.calls == 0
+        if observation == "exited":
+            updated = engine.retry(run.run_id, revision, "retry")
+            assert updated.workbench.stage_states["propose"].active_attempt == 2
+            assert updated.workbench.state_revision == revision + 2
+            assert engine.retry(run.run_id, revision, "retry") == updated
+        else:
+            with pytest.raises(ValueError, match="retry blocked"):
+                engine.retry(run.run_id, revision, "retry")
+            updated = repo.load(run.run_id)
+            assert updated.workbench.stage_states["propose"].active_attempt == 1
+        assert probe.calls == 1
+        saved_worker = updated.workbench.stage_states["propose"].attempts[0].worker_execution
+        assert saved_worker.last_probe.result == observation
+
+
+def test_failed_parent_recovers_verified_successful_child(tmp_path, monkeypatch):
+    from assets_generator.workbench_state import ChildSucceeded
+
+    store, image, profile = fixture_engine(tmp_path)
+    with WorkbenchRepository(store, tmp_path / "workbench") as repo:
+        engine = WorkbenchEngine(repo, {"fake": profile})
+        run = engine.create(image, "fake", {}, "create")
+        original = engine._complete
+
+        def fail(*args, **kwargs):
+            raise RuntimeError("response processing failed after child publication")
+
+        monkeypatch.setattr(engine, "_complete", fail)
+        engine.drain()
+        failed = repo.load(run.run_id)
+        assert failed.status == "failed"
+        attempt = failed.workbench.stage_states["propose"].current()
+        child = repo.load(attempt.child_run_id)
+        assert child.status == "succeeded"
+        outputs = child.node_attempts[0].outputs
+        with pytest.raises(ValueError, match="success requires"):
+            engine._event(
+                run.run_id,
+                "propose",
+                ChildSucceeded(child.run_id, attempt.input_digest, outputs, True),
+            )
+        monkeypatch.setattr(engine, "_complete", original)
+        recovered = engine.recover(run.run_id)
+        assert recovered.workbench.stage_states["propose"].current().execution_mode == "restored"
+        assert recovered.workbench.stage_states["propose"].current().child_run_id == child.run_id
+        assert recovered.workbench.stage_states["propose"].current().error_code is None
+        assert recovered.workbench.stage_states["propose"].current().error_detail is None
+        engine.drain()
+        assert repo.load(run.run_id).status == "waiting_for_input"
+
+
+def test_retry_preserves_durable_exit_without_reprobing_reused_pid(tmp_path):
+    from assets_generator.workbench_models import ProcessObservation, WorkerExecution
+    from assets_generator.workbench_state import ExecutionFailed
+
+    store, image, profile = fixture_engine(tmp_path)
+
+    class Probe:
+        def observe(self, identity):
+            raise AssertionError("durable exit must not be reprobed")
+
+    with WorkbenchRepository(store, tmp_path / "workbench") as repo:
+        engine = WorkbenchEngine(repo, {"fake": profile}, probe=Probe())
+        run = engine.create(image, "fake", {}, "create")
+        attempt = run.workbench.stage_states["propose"].current()
+        attempt.worker_execution = WorkerExecution(
+            "job",
+            attempt.child_run_id,
+            "launch",
+            "exit_observed",
+            "host",
+            "boot",
+            123,
+            456,
+            123,
+            exit_code=1,
+            last_probe=ProcessObservation("then", "exited"),
+        )
+        repo.commit(run)
+        failed = engine._event(run.run_id, "propose", ExecutionFailed("backend_failed"))
+        result = engine.retry(run.run_id, failed.workbench.state_revision, "retry")
+        assert result.workbench.stage_states["propose"].active_attempt == 2
