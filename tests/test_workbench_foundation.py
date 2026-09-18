@@ -465,3 +465,134 @@ def test_stage_order_survives_sorted_json_roundtrip() -> None:
     assert state.workbench.stage_states["a_second"].status == "running"
     with pytest.raises(ValueError, match="stage_order"):
         WorkbenchState(REF, {"z_first": StageState("z_first"), "a_second": StageState("a_second")})
+
+
+def test_concurrent_creation_is_idempotent_and_writer_stays_healthy(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    store, reference = make_store(tmp_path)
+    with WorkbenchRepository(store, tmp_path / "workbench") as repo:
+        start = Barrier(2)
+
+        def reserve(index):
+            start.wait()
+            return repo.reserve_creation(CreationReceipt("same", "digest", f"parent{index}"))
+
+        with ThreadPoolExecutor(2) as pool:
+            results = list(pool.map(reserve, [1, 2]))
+        assert results[0] == results[1]
+        state = run(plan=reference)
+        state.run_id = results[0].run_id
+        repo.commit(state)
+        assert repo.load(state.run_id) == state
+
+
+def test_parent_ownership_blocks_legacy_and_other_workbench_writers(tmp_path):
+    store, reference = make_store(tmp_path)
+    with WorkbenchRepository(store, tmp_path / "workbench") as repo:
+        repo.reserve_creation(CreationReceipt("key", "digest", "parent"))
+        state = run(plan=reference)
+        with pytest.raises(ArtifactStoreError, match="reserved"):
+            store.record_build_run("parent", StructuredValue("build_run", "BuildRun", "1.0", {}))
+        repo.commit(state)
+        with pytest.raises(ArtifactStoreError, match="reserved"):
+            store.record_build_run("parent", StructuredValue("build_run", "BuildRun", "1.0", {}))
+        with WorkbenchRepository(store, tmp_path / "other") as other:
+            with pytest.raises(ValueError, match="another workbench"):
+                other.commit(state)
+        assert repo.load("parent") == state
+    with WorkbenchRepository(store, tmp_path / "workbench") as reopened:
+        reopened.commit(state)
+
+
+@pytest.mark.parametrize(
+    "schema,field",
+    [
+        ("ProvenanceRecord", "derived_from_artifact_ids"),
+        ("ProvenanceRecord", "output_artifact_id"),
+        ("AssetDefinition", "quality_report_ids"),
+    ],
+)
+def test_durable_commit_checks_schema_string_artifact_references(tmp_path, schema, field):
+    store, reference = make_store(tmp_path)
+    missing = "sha256:" + "f" * 64
+    evidence = store.persist_structured(
+        StructuredValue(
+            "provenance_record" if schema == "ProvenanceRecord" else "asset_definition",
+            schema,
+            "1.0",
+            {field: missing if field == "output_artifact_id" else [missing]},
+        )
+    )
+    state = run(plan=reference)
+    state.inputs["evidence"] = evidence
+    with WorkbenchRepository(store, tmp_path / "workbench") as repo:
+        with pytest.raises(ValueError, match="missing/corrupt"):
+            repo.commit(state)
+    assert not (store.root / "runs" / "parent.json").exists()
+
+
+def test_string_dependencies_sync_before_index_but_nonartifact_ids_are_ignored(tmp_path):
+    store, reference = make_store(tmp_path)
+    dependency = store.persist_bytes(
+        b"dependency", kind="rgb_image", schema_name="image", schema_version="1"
+    )
+    evidence = store.persist_structured(
+        StructuredValue(
+            "provenance_record",
+            "ProvenanceRecord",
+            "1.0",
+            {
+                "derived_from_artifact_ids": [dependency.artifact_id],
+                "output_artifact_id": dependency.artifact_id,
+                "output_id": "sha256:" + "b" * 64,
+                "provenance_id": "sha256:" + "c" * 64,
+                "parameters": {"blob_digest": "sha256:" + "d" * 64},
+            },
+        )
+    )
+    state = run(plan=reference)
+    state.inputs["evidence"] = evidence
+    operations = []
+    with WorkbenchRepository(store, tmp_path / "workbench") as repo:
+        repo.io.failpoint = lambda op, path: operations.append((op, path))
+        repo.commit(state)
+    manifest_path = (
+        store.manifests_dir
+        / dependency.artifact_id.split(":")[1][:2]
+        / (dependency.artifact_id.split(":")[1] + ".json")
+    )
+    index_write = operations.index(("write", store.root / "runs" / "parent.json"))
+    assert operations.index(("file_fsync", store.blob_path(dependency))) < index_write
+    assert operations.index(("file_fsync", manifest_path)) < index_write
+
+
+def test_concurrent_child_registration_keeps_writer_healthy(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    store, reference = make_store(tmp_path)
+    inputs = replace(INPUT, named_actual_inputs={})
+    state = advance(run(plan=reference), PrepareStage(inputs, receipt(digest=inputs.digest())))
+    registration = ChildRegistration(
+        "child",
+        "parent",
+        "stage",
+        1,
+        inputs.digest(),
+        str(store.root / "run_owners" / "child.json"),
+    )
+    with WorkbenchRepository(store, tmp_path / "workbench") as repo:
+        repo.commit(state)
+        start = Barrier(2)
+
+        def register(_):
+            start.wait()
+            return repo.register_child(state, registration)
+
+        with ThreadPoolExecutor(2) as pool:
+            assert sorted(pool.map(register, [1, 2])) == [False, True]
+        child = BuildRun("child", "test", "1", "running", {}, [], "t", None, parent_run_id="parent")
+        repo.commit(child, owner=registration)
+        assert repo.load("child") == child

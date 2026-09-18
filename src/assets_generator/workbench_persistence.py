@@ -147,6 +147,10 @@ class WorkbenchRepository:
             raise
 
     def reserve_creation(self, receipt: CreationReceipt) -> CreationReceipt:
+        with self._command_lock:
+            return self._reserve_creation(receipt)
+
+    def _reserve_creation(self, receipt: CreationReceipt) -> CreationReceipt:
         """The mapping is durable before the first parent BuildRun is created."""
         self._ready()
         _identifier(receipt.run_id)
@@ -158,11 +162,17 @@ class WorkbenchRepository:
             existing = decode_record(CreationReceipt, read_json(path))
             if existing.request_digest != receipt.request_digest:
                 raise ValueError("creation idempotency key conflict")
+            self._ensure_parent_owner(existing.run_id)
             return existing
+        self._ensure_parent_owner(receipt.run_id)
         self._mutate(lambda: self.io.write(path, canonical_json_bytes(receipt), exclusive=True))
         return receipt
 
     def register_child(self, parent: BuildRun, registration: ChildRegistration) -> bool:
+        with self._command_lock:
+            return self._register_child(parent, registration)
+
+    def _register_child(self, parent: BuildRun, registration: ChildRegistration) -> bool:
         """Return False for an existing identical reservation; never reset an existing run.
 
         Caller must establish/query the child index before emitting ChildRegistered.
@@ -185,6 +195,8 @@ class WorkbenchRepository:
         path = self.store.root / "run_owners" / f"{registration.child_run_id}.json"
         if registration.registration_location != str(path):
             raise ValueError("registration location must match controlled ownership path")
+        if (self.store.root / "parent_run_owners" / f"{registration.child_run_id}.json").exists():
+            raise ValueError("child run ID belongs to a workbench parent")
         if path.exists():
             if decode_record(ChildRegistration, read_json(path)) != registration:
                 raise ValueError("child run is owned by another attempt")
@@ -217,17 +229,48 @@ class WorkbenchRepository:
         blob = self.store.blob_path(reference)
         if manifest.identity.identity_metadata.get("media_type") == "application/json":
             value = json.loads(blob.read_bytes())
-            for child in _references(value):
+            for child in _references(value, schema_name=manifest.identity.schema_name):
                 self._sync_reference(child, visited)
         self.io.sync_existing(blob)
         self.io.sync_existing(
             _digest_path(self.store.manifests_dir, reference.artifact_id).with_suffix(".json")
         )
 
+    def _ensure_parent_owner(self, run_id: str) -> None:
+        _identifier(run_id)
+        path = self.store.root / "parent_run_owners" / f"{run_id}.json"
+        expected = {
+            "schema_version": "1.0",
+            "run_id": run_id,
+            "workbench_directory": str(self.directory.resolve()),
+        }
+        if (self.store.root / "run_owners" / f"{run_id}.json").exists():
+            raise ValueError("parent run ID belongs to a child")
+        if path.exists():
+            if read_json(path) != expected:
+                raise ValueError("parent run belongs to another workbench")
+            self._mutate(lambda: self.io.sync_existing(path))
+            return
+        index = self.store.root / "runs" / f"{run_id}.json"
+        if index.exists():
+            raise ValueError("cannot claim an existing unowned parent run")
+        self._mutate(lambda: self.io.write(path, canonical_json_bytes(expected), exclusive=True))
+
     def commit(self, run: BuildRun, *, owner: ChildRegistration | None = None) -> ArtifactRef:
+        with self._command_lock:
+            return self._commit(run, owner=owner)
+
+    def _commit(self, run: BuildRun, *, owner: ChildRegistration | None = None) -> ArtifactRef:
         """Dependencies → snapshot blob → manifest → run index, all with file/dir fsync."""
         self._ready()
         _identifier(run.run_id)
+        parent_owner = self.store.root / "parent_run_owners" / f"{run.run_id}.json"
+        if run.workbench is not None and run.parent_run_id is None:
+            if owner is not None:
+                raise ValueError("parent run cannot have child ownership")
+            self._ensure_parent_owner(run.run_id)
+        elif parent_owner.exists():
+            raise ValueError("owned parent requires workbench state")
         ownership_path = self.store.root / "run_owners" / f"{run.run_id}.json"
         if ownership_path.exists():
             actual = decode_record(ChildRegistration, read_json(ownership_path))
@@ -322,11 +365,27 @@ class WorkbenchRepository:
         return result
 
 
-def _references(value: Any) -> list[ArtifactRef]:
+def _references(value: Any, *, schema_name: str | None = None) -> list[ArtifactRef]:
+    # These fields contain Artifact identities, not Blob/ExecutionOutput/provenance IDs.
+    fields = {
+        "ProvenanceRecord": {"output_artifact_id": False, "derived_from_artifact_ids": True},
+        "AssetDefinition": {"quality_report_ids": True},
+    }
+    extra: list[ArtifactRef] = []
+    if isinstance(value, dict):
+        for name, plural in fields.get(schema_name or "", {}).items():
+            if name not in value:
+                continue
+            ids = value[name]
+            if not plural:
+                ids = [ids]
+            if not isinstance(ids, list) or not all(isinstance(item, str) for item in ids):
+                raise ValueError(f"invalid artifact identity field: {name}")
+            extra.extend(ArtifactRef(item) for item in ids)
     if isinstance(value, dict):
         if set(value) == {"artifact_id"} and isinstance(value["artifact_id"], str):
             return [ArtifactRef(value["artifact_id"])]
-        return [ref for item in value.values() for ref in _references(item)]
+        return extra + [ref for item in value.values() for ref in _references(item)]
     if isinstance(value, list):
         return [ref for item in value for ref in _references(item)]
     return []
