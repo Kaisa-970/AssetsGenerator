@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Literal, TypeAlias
+from typing import TYPE_CHECKING, Any, Literal, TypeAlias
+
+if TYPE_CHECKING:
+    from .workbench_models import WorkbenchState
 
 SCHEMA_VERSION = "1.0"
 
@@ -36,6 +39,8 @@ ARTIFACT_KINDS = frozenset(
         "quality_report",
         "provenance_record",
         "build_run",
+        "workbench_plan",
+        "human_input_request",
         "instance_proposals",
         "instance_selection",
         "scene_request",
@@ -357,6 +362,9 @@ class BuildRun:
     resolved_backends: dict[str, str] = field(default_factory=dict)
     resolved_plan_contract_digest: str | None = None
     resolved_backend_versions: dict[str, str] = field(default_factory=dict)
+
+    workbench: WorkbenchState | None = None
+    parent_run_id: str | None = None
 
     def __post_init__(self) -> None:
         if any(not key or not value for key, value in self.resolved_backends.items()):

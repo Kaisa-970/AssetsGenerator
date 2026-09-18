@@ -208,6 +208,8 @@ class LocalArtifactStore:
         return found
 
     def record_build_run(self, run_id: str, value: StructuredValue) -> ArtifactRef:
+        if (self.root / "run_owners" / f"{run_id}.json").exists():
+            raise ArtifactStoreError("reserved workbench child requires the owned durable writer")
         reference = self.persist_structured(value)
         index_dir = self.root / "runs"
         index_dir.mkdir(parents=True, exist_ok=True)

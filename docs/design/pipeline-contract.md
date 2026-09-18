@@ -356,6 +356,8 @@ class BuildRun:
     resolved_backends: dict[str, str] = {}  # BuildRun 1.0 向后兼容可选字段
     resolved_plan_contract_digest: str | None = None
     resolved_backend_versions: dict[str, str] = {}
+    workbench: WorkbenchState | None = None
+    parent_run_id: str | None = None
 
 @dataclass
 class NodeAttempt:
@@ -372,6 +374,11 @@ class NodeAttempt:
 ```
 
 `resolved_plan_contract_digest` 固定本次运行所校验的 Pipeline 与 OperatorSpec 契约，`resolved_backend_versions` 按节点记录 Registry 声明的 binding 版本。它们与 `resolved_backends` 一起构成 `ResolvedPlan` 可持久化部分的审计身份；Backend 返回的模型 revision、dirty 状态、权重 digest 和运行参数仍记录在 ProvenanceRecord 中。为兼容既有 BuildRun，缺失这些字段表示旧记录未捕获相应身份，不能据此推断当前契约或实现版本。
+
+工作台首版增加可选、有类型的 `WorkbenchState@1.0` 扩展，保存计划引用、revision 和 stage attempt。
+StageAttempt 继承 NodeAttempt 并复用 outputs，stage 不复制成功输出；此扩展仅服务固定模板。
+旧记录缺少 workbench/parent_run_id 时按 null 读取；新写记录包含默认字段，不承诺旧快照字节一致。
+迁移函数、耐久写入和进程接口见 [节点工作台](node-workbench-v1.md)，已有 CLI 未自动接入恢复。
 
 该 schema 只用于复盘一次 Pipeline 实际发生的事情，不承担通用调度系统职责。
 
