@@ -11,7 +11,7 @@
 固定模板 `photo_object_asset@1`：
 
 ```text
-导入照片 → SAM mask 候选 → 人工选一个对象 → 单图生成与标准发布
+导入照片 → SAM mask 候选 → 人工选择/取反/清理 → 单图生成与标准发布
                                               └→ AssetDefinition / AssetRelease / QA
 ```
 
@@ -22,7 +22,7 @@
 首版支持：
 
 - 导入照片、选择已配置 Backend、设置允许的推理参数。
-- 候选叠加预览、明确选择一个 proposal、记录自报检查人。
+- 候选叠加预览、选择一个 proposal，可取反并保留最大连通区域，确认最终 mask、记录自报检查人。
 - 等待人工操作时关闭服务，重启后恢复相同任务。
 - 失败可定位到 stage/子运行；显式重试中断或失败的计算。
 - 查看发布资产、QA 和证据；从原配置创建新运行。
@@ -33,7 +33,9 @@
 
 ## 2. 当前代码事实与复用边界
 
-- `BuildRun` 已保存 running 状态及阶段性 NodeAttempt，不是仅有终结态的报告。
+- `BuildRun` 支持 running 和阶段性 NodeAttempt，但各 workflow 落盘时机不同。当前
+  `build_image_asset()` 的运行和节点更新主要在内存，持久化集中于发布或失败；
+  `Phase1Runtime.run_node()` 尚无逐节点保存。执行前登记、节点开始/结束落盘是新增工作。
 - `LocalArtifactStore.record_build_run()` 每次生成不可变快照，再原子更新 `runs/<run_id>.json`
   指向最新快照。索引可变、快照不可变；原子替换本身不提供并发互斥。
 - `ResolvedPlan` 已绑定单图 Pipeline、OperatorSpec 和 Backend；其中 implementation 是进程内
@@ -52,6 +54,24 @@
 补充工作台子运行登记上下文。`propose_instances()` 和 `select_instance_proposals()` 尚需
 增加可选 run_id/父运行上下文，旧 CLI 不传时仍自行创建运行。当前 LocalProcessWorker 的
 job/Popen 索引仅在内存中，不能用于服务重启后的进程判定；新增机制见第 7.1 节。
+
+### 2.1 mask 处理及生成输入的复用边界
+
+当前选择入口已有 invert / keep_largest，可产生处理后 mask、派生 proposals 和 provenance。
+工作台复用其算法，补齐规则版本、预览与确认绑定，不重新实现浏览器清理算法。
+
+复用或抽取 `extract_scene_objects()` 的选择与实际 mask 一致性校验。生成适配器必须解析
+InstanceSelection 实际引用的 proposals（处理后可能是派生 proposals），核对唯一选中项、
+原图及最终 mask，并验证处理链回到原候选。不能拿原 proposal 的 mask 绕过人工处理。
+
+调用单图子流程前保存输入绑定证据：selection、原/派生 proposals、原图、原 mask、最终 mask、
+处理参数及规则版本。生成 stage 的 resolved_inputs 包含该证据。服务端从引用物化只读私有
+输入，不接受浏览器另传 mask 路径。单图入口重新导入后，在首次推理前核对实际输入；若
+Artifact ID 因导入 schema/metadata 不同而变化，必须验证 Blob 内容、尺寸、通道及二值语义，
+记录旧/新引用和验证方法，不能仅比较路径。
+
+子 BuildRun 输入及生成 provenance 通过绑定证据回查人工决定和最终 mask。决定证明输入
+选择来源，不把 generated 几何改标为 user。仅有父子运行关联不足以证明实际输入正确。
 
 ## 3. 计划与执行事实分离
 
@@ -109,7 +129,7 @@ attempt 的恢复扩展还包括 `command_receipt`、`child_registration` 和 `w
 | 结构 | 必须保存的字段 |
 | --- | --- |
 | Run 扩展 | schema_version、plan_ref、state_revision、stage_states、parent_run_id（可选） |
-| StageState | stage_id、status、active_attempt、attempts、request_ref（可选） |
+| StageState | stage_id、status、active_attempt、attempts、request_ref（可选）、draft（可选） |
 | StageAttempt 扩展 | attempt、resolved_inputs、input_digest、child_run_id（可选）、outputs、execution_mode、started_at、finished_at、error_code、retry_blocked_reason |
 | CommandReceipt | idempotency_key、request_digest、command_kind、status（prepared/completed/failed）、child_run_id（可选）、output_location（可选）、result_refs |
 | ChildRegistration | child_run_id、parent_run_id、stage_id、attempt、input_digest、registration_location |
@@ -162,9 +182,10 @@ event 携带 event_id、expected_revision、目标 stage/attempt 及有类型载
 响应命令或放行模型；磁盘提交失败丢弃内存中的 next_state，不执行后续副作用。
 
 最小事件集合为 PrepareStage、ChildRegistered、LauncherIdentified、AuthorizeLaunch、
-HumanRequestReady、DecisionPrepared、ChildSucceeded、ExecutionFailed、RecoveryObserved、
+HumanRequestReady、MaskPreviewReady、DecisionPrepared、ChildSucceeded、ExecutionFailed、RecoveryObserved、
 RetryRequested。它们分别约束输入已解析、子登记可查询、身份已确认、放行获准、待办已生成、
-提交回执已建立、成功证据已核实、失败事实、恢复探测结果及显式重试。人工准备中断由
+提交回执已建立、成功证据已核实、失败事实、恢复探测结果及显式重试。MaskPreviewReady
+仅更新待办草稿及预览引用，不完成 stage 或产生人工决定。人工准备中断由
 RecoveryObserved 按第 7 节重建待办；恢复不能虚构 ChildSucceeded。
 
 迁移必须保持：attempt 单调增加、成功输出不可覆盖、待办绑定精确输入、每次最多一个活动
@@ -205,17 +226,29 @@ transition 保证 exactly-once。这里不引入事件日志数据库或通用�
 run_id / stage_id / attempt
 input_refs                  精确 proposals 和 image 引用
 review_evidence_digest      第 6 节定义的稳定证据摘要
-decision_contract           single-proposal-selection@1
-allowed_actions             select_one
+decision_contract           single-proposal-mask-edit@1
+allowed_actions             select_one, invert, keep_largest
 ```
 
 待办引用写入 BuildRun 后，接口才返回 waiting。刷新或重启从 Store 重新读取，不依赖浏览器
 内存或 localStorage。空候选运行可成功，但人工待办显示“无可选对象”，不能提交空选择；
 用户调整分割配置创建新运行。
 
-提交必须带 request_id、expected_revision、幂等键、proposal_id 和 reviewer。服务校验待办
+提交必须带 request_id、expected_revision、幂等键、proposal_id、reviewer、invert、keep_largest、
+规则版本及已预览的最终 mask 引用。服务校验待办
 仍有效、选项属于该候选、当前输入身份未变，调用既有选择边界生成 InstanceSelection、
 user-source provenance 和子 BuildRun，再绑定至父 stage。决定的 source 不由前端自由指定。
+
+处理契约固定为 `mask-edit-v1`：先可选取反（0/255 互换），再可选最大连通区域保留；
+采用 8 邻域，等面积取行优先首个区域。不启用的步骤为恒等操作，禁止交换处理顺序。
+处理后必须与原图同尺寸、非空且二值；重算 bbox/area，不能继承原 SAM 分数作为处理结果
+分数。原 mask 不变，处理结果和 user-source 派生证据持久化；不处理时使用原 mask 引用。
+
+预览由服务端调用与提交相同的确定性函数，返回最终 mask 引用及完整规则描述；预览不产生
+人工确认。待办的当前草稿（proposal、参数、规则、预览引用）经 revision 校验保存到
+StageState 的可选 draft 字段，重启恢复草稿叠加图，不改写不可变待办。修改参数使旧预览
+失效；提交时重算/验证与引用一致，成功后显示决定绑定的最终 mask。不能将勾选状态当作
+确认结果。规则、顺序及全部参数均进入决定证据、幂等请求摘要和人工步骤 input_digest。
 
 同一命令重发返回原结果；相同幂等键但不同请求体返回冲突。已经完成的待办不能被另一次
 提交覆盖。想改变选择须创建新运行，旧决定不可删除或改写。检查人仅是自报身份，不是认证。
@@ -261,6 +294,7 @@ input_digest = hash(canonical_json(
 | 相同精确输入待办恢复 | 保留原待办及决定，先校验完整性 |
 | 参数仅改 Shape Backend，候选证据未变 | 新运行可提议复用 mask 决定，需用户显式确认 |
 | mask、顺序、分数、模型身份或决策契约变化 | 不允许复用旧 mask 决定 |
+| invert、keep_largest、处理顺序或规则版本变化 | 不复用旧处理决定，须重新预览确认 |
 | 字节相同但空间/通道等 Artifact 语义不同 | Artifact ID 不同，视为证据变化 |
 | 重跑只改变 provenance，投影相同 | 可提出复用已有决定，不自动套用 |
 
@@ -270,6 +304,9 @@ input_digest = hash(canonical_json(
 首版只支持用户指定旧决定引用，不做全 Store 自动匹配推荐。计算缓存不由此规则放宽。
 同一运行的恢复保留已绑定的决定；新运行即使证据相同，也不能自动继承决定。这两档规则
 与配置是否影响 mask 的语义分开：证据相同只表示允许复用，不表示已获确认。
+
+候选证据摘要描述原候选集；处理决定还须匹配原 proposal、全部处理参数及最终 mask 身份。
+跨运行复用时验证处理结果一致，并让新选择指向新运行实际的原/派生 proposals。
 
 ## 7. 恢复、故障窗口与发布
 
@@ -288,6 +325,12 @@ input_digest = hash(canonical_json(
    先按 child_run_id 核对决定执行，不能退回一个允许重复提交的新待办。
 
 ### 7.1 Worker 执行证据与孤儿进程
+
+首版 launcher 仅托管 Backend 命令及其进程组，不承载完整计算 stage。导入结果、
+canonicalization、QA、组装和发布仍在工作台服务的 Core 中执行。服务崩溃后，孤儿 Backend
+即使计算完成，也不保证有人继续 Core 后处理；首版不接管未完成的后处理，不根据临时模型
+输出跳过推理。只有成功子运行和完整发布证据均存在才恢复成功，否则核实旧进程退出后
+显式新 attempt 重试，可能重新运行模型。完整 stage 独立执行进程不属于本切片。
 
 首版采用 Linux 本地进程语义。运行前持久化 `worker_execution`：job_id、child_run_id、
 stage/attempt、启动请求摘要和 launch 状态；启动握手再记录 host identity、boot_id、PID、
@@ -339,6 +382,7 @@ launcher、启动门控和上述持久化字段是本切片的前置实现，不
 | 身份或授权快照的 fsync 失败 | 禁止发放行，关闭控制通道；恢复不得依据未提交内存状态 |
 | 授权已耐久提交、发送前或发送后崩溃 | 不区分消息是否送达；核实 launcher/进程组与子结果，绝不自动重发 |
 | 已放行 Backend，父服务崩溃 | 由持久化进程身份核实活动状态，活动/未知均阻止重试 |
+| Backend 已结束、Core 后处理/发布未完成 | 模型退出码不代表子运行成功；旧进程退出后显式重试，可能重跑模型 |
 | 人工子运行成功、父记录未更新 | 从命令回执及子运行补齐，不能重复创建决定 |
 | 生成子运行成功、父记录未更新 | 校验并采用原输出，不重复推理 |
 | 子运行仅有 running 记录 | interrupted；显式重试使用新 attempt/child_run_id |
@@ -361,6 +405,7 @@ launcher、启动门控和上述持久化字段是本切片的前置实现，不
 | POST /runs | 以草稿生成不可变计划、创建运行，返回 run_id |
 | GET /runs/{id} | stage 状态、待办、子运行及输出引用 |
 | POST /runs/{id}/decision | 幂等提交人工选择或显式复用 |
+| POST /runs/{id}/mask-preview | revision 校验后保存编辑草稿，返回服务端处理 mask；不确认决定 |
 | POST /runs/{id}/retry | 基于 revision 重试失败/中断 stage |
 | GET /runs/{id}/outputs/{key} | 受控图片、mask、GLB 和发布包下载 |
 
@@ -388,7 +433,8 @@ launcher、启动门控和上述持久化字段是本切片的前置实现，不
    子登记及耐久提交顺序；定义可替换 ProcessProbe、启动通道与故障注入接口。退出条件为
    往返兼容、迁移不变量、过期/重复事件和各提交失败点测试通过，不依赖 GPU 或真实 PID。
 2. **三个适配器与固定执行循环**：为 SAM/选择增加可选 run_id，复用单图已有参数；接入父子
-   登记、恢复/重试和查询。以 Fake Backend/假进程探测跑通完整模板及人工等待，故障注入
+   登记、恢复/重试和查询，增加单图启动及节点边界落盘；接入处理预览与推理前输入绑定校验。
+   以 Fake Backend/假进程探测跑通完整模板及人工等待，故障注入
    覆盖子成功父未更新等窗口。此时不能宣称真实进程恢复已支持。
 3. **launcher 与真实进程身份（主要实现风险）**：实现门控、进程组约束、/proc 探测和孤儿
    核对。在可控 Linux 环境用无 GPU 的测试子进程验证父进程消失、控制通道断开及阻止重跑。
@@ -396,6 +442,10 @@ launcher、启动门控和上述持久化字段是本切片的前置实现，不
 4. **固定工作台**：统一预览、参数、人工选择、状态和下载，复用后端证据边界。
 5. **真实验收**：已有独立 SAM/Shape 环境串行运行一例，持久化报告后决定是否扩展多对象、
    场景布局或自由编排。不据此宣布所有 workflow 统一完成。
+
+页面不必等第 3 步全部验收后才开始：第 2 步即可用最小页面和 Fake Backend 贯通
+“上传 → 选择/取反/清理 → 生成 → 查看”；真实模型仍须等待进程托管验证通过。
+分别报告可用性和恢复验收，页面可用不表示恢复完成，后台恢复也不能替代实际页面验收。
 
 共享代码只抽取本切片直接需要的调用/发布/恢复辅助能力，不顺带引入通用 Scheduler、
 Plugin System、事件总线、远程 Worker、Schema Registry 或全仓库 release 大算子。
@@ -415,13 +465,20 @@ Plugin System、事件总线、远程 Worker、Schema Registry 或全仓库 rele
 | 子流程成功、父更新前故障 | 使用预分配 child_run_id 恢复，不再调用模型 |
 | 双击、请求超时重发、两客户端提交 | 只有一个有效决定/活动计算；旧 revision 返回冲突 |
 | 输入/输出损坏 | 缺失或 digest 不符明确失败，不能继续下游 |
+| mask 取反/清理及恢复 | 顺序、8 邻域、tie-break 正确；恢复显示实际草稿或确认 mask |
+| 选择与生成输入不一致 | 推理前拒绝替换 mask；正常输入保留导入映射和决定证据 |
+| 处理决定复用 | 参数/规则/最终结果变化拒绝复用，相同条件仍需跨运行确认 |
 | 候选重新生成 | 仅 provenance 变化可显式复用；mask/分数/模型变化拒绝复用 |
 | 修改 Shape 参数 | 新计划/运行；候选相同时可显式复用选择，不复用旧生成结果 |
 | 发布前后故障 | 无半成品最终目录；已有结果可返回；不覆盖他人目录 |
 | UI 刷新与错误恢复 | 人工待办/结果不丢失；未知 QA 不显示 pass |
 | 真实 SAM → 选择 → Shape → Release | 引用、父子运行、user/generated 来源与实际产物一致 |
 
-核心验收：在第三步人工选择时杀掉服务，重启后校验并恢复原证据，完成选择与标准发布，
+产品验收使用用户提供的机器人图片（在运行报告记录实际输入身份，不将图片提交 Git）：
+在同一页面完成上传、取反、最大连通区域清理、选择 TRELLIS.2、生成和查看，不复制路径或
+Artifact ID。报告分别记录操作链路是否通过及生成质量观察，不预设模型质量合格。
+
+恢复验收：在第三步人工选择时杀掉服务，重启后校验并恢复原证据，完成选择与标准发布，
 证明未重复执行已经完成的 SAM；再用故障注入覆盖提交/发布边界。首版只有一个人工节点，
 不为验收人为增加三个审查步骤。
 
