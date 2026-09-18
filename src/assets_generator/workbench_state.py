@@ -44,6 +44,17 @@ class ChildRegistered:
 
 
 @dataclass(frozen=True)
+class WorkerPrepared:
+    worker: WorkerExecution
+
+
+@dataclass(frozen=True)
+class WorkerExited:
+    observation: ProcessObservation
+    exit_code: int
+
+
+@dataclass(frozen=True)
 class LauncherIdentified:
     identity: ProcessIdentity
 
@@ -99,6 +110,8 @@ Payload: TypeAlias = (
     | RetryRequested
     | ChildRegistered
     | LauncherIdentified
+    | WorkerPrepared
+    | WorkerExited
     | AuthorizeLaunch
     | HumanRequestReady
     | MaskPreviewReady
@@ -323,6 +336,29 @@ def transition(current: BuildRun, event: Event) -> Transition:
             _require(attempt.child_registration is None, "child already registered")
             attempt.child_registration = reg
             effect("start_launcher" if attempt.worker_execution else "execute_adapter")
+        elif isinstance(payload, WorkerPrepared):
+            _require(
+                stage.status == "running"
+                and attempt.child_registration is not None
+                and attempt.worker_execution is None
+                and payload.worker.child_run_id == attempt.child_run_id
+                and payload.worker.launch_phase == "prepared",
+                "invalid worker reservation",
+            )
+            attempt.worker_execution = payload.worker
+        elif isinstance(payload, WorkerExited):
+            worker = attempt.worker_execution
+            _require(
+                stage.status == "running"
+                and worker is not None
+                and worker.launch_phase == "release_authorized"
+                and payload.observation.result == "exited",
+                "worker exit not verified",
+            )
+            assert worker is not None
+            worker.last_probe = payload.observation
+            worker.exit_code = payload.exit_code
+            worker.launch_phase = "exit_observed"
         elif isinstance(payload, LauncherIdentified):
             worker = attempt.worker_execution
             _require(
@@ -435,7 +471,8 @@ def transition(current: BuildRun, event: Event) -> Transition:
                     stage.status = "waiting_for_input"
             else:
                 if attempt.worker_execution:
-                    attempt.worker_execution.last_probe = payload.observation
+                    if payload.observation is not None:
+                        attempt.worker_execution.last_probe = payload.observation
                     if payload.observation and payload.observation.result == "exited":
                         attempt.worker_execution.launch_phase = "exit_observed"
                 attempt.retry_blocked_reason = _activity_block(attempt)

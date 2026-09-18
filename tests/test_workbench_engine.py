@@ -200,3 +200,45 @@ def test_completed_release_file_deletion_is_not_hidden_by_success(tmp_path):
         (output / "geometry/visual.glb").unlink()
         with pytest.raises(FileNotFoundError):
             WorkbenchEngine(repo, {"fake": profile}).recover(run.run_id)
+
+
+def test_release_manifests_and_published_run_must_match_store(tmp_path):
+    import json
+
+    import pytest
+
+    from assets_generator.contracts import ContractError
+
+    store, image, profile = fixture_engine(tmp_path)
+    with WorkbenchRepository(store, tmp_path / "workbench") as repo:
+        engine = WorkbenchEngine(repo, {"fake": profile})
+        run = engine.create(image, "fake", {}, "create")
+        engine.drain()
+        run = repo.load(run.run_id)
+        engine.preview(run.run_id, run.workbench.state_revision, "p0", False, False)
+        run = repo.load(run.run_id)
+        engine.decision(run.run_id, run.workbench.state_revision, "confirm", "reviewer")
+        engine.drain()
+        run = repo.load(run.run_id)
+        output = Path(
+            run.workbench.stage_states["generate"].current().command_receipt.output_location
+        )
+        for name in ("asset.json", "release.json"):
+            path = output / name
+            original = path.read_bytes()
+            path.unlink()
+            with pytest.raises(FileNotFoundError):
+                engine.recover(run.run_id)
+            path.write_bytes(b"{}")
+            with pytest.raises(ContractError, match="published file"):
+                engine.recover(run.run_id)
+            path.write_bytes(original)
+        path = output / "run.json"
+        original = path.read_bytes()
+        published = json.loads(original)
+        published["parent_run_id"] = "run_other_parent"
+        path.write_text(json.dumps(published))
+        with pytest.raises(ContractError, match="published run"):
+            engine.recover(run.run_id)
+        path.write_bytes(original)
+        assert engine.recover(run.run_id).status == "succeeded"

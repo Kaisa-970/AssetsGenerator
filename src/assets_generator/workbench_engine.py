@@ -6,7 +6,9 @@ import json
 import queue
 import threading
 import uuid
-from dataclasses import dataclass
+from collections.abc import Callable
+from copy import copy
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -71,6 +73,7 @@ class BackendProfile:
     shape_identity: dict[str, Any]
     # Until gated-worker integration is installed, only explicit CPU test profiles run.
     test_only: bool = True
+    identity_check: Callable[[], None] | None = None
 
 
 class WorkbenchEngine:
@@ -84,7 +87,9 @@ class WorkbenchEngine:
         self.repository = repository
         self.store = repository.store
         self.profiles = profiles
-        self.probe = probe
+        from .workbench_process import LinuxProcessProbe
+
+        self.probe = probe or LinuxProcessProbe()
         self._queue: queue.Queue[tuple[str, Effect]] = queue.Queue()
         self._serial = threading.Lock()
         self._commands = threading.RLock()
@@ -149,8 +154,6 @@ class WorkbenchEngine:
         with self._commands:
             _checked(self.store, image, "rgb_image")
             profile = self.profiles[shape_profile]
-            if not profile.test_only:
-                raise ContractError("real profiles require validated gated worker integration")
             if set(parameters) - {"seed", "pipeline_type"}:
                 raise ContractError("unsupported generation parameters")
             seed = parameters.get("seed", 42)
@@ -406,6 +409,9 @@ class WorkbenchEngine:
             self._event(run_id, stage.stage_id, ChildRegistered(registration))
         elif effect.kind == "execute_adapter":
             self._execute(run, plan, stage.stage_id)
+        elif effect.kind == "release_launcher":
+            # The active worker owns the channel and releases after durable authorization.
+            pass
         else:
             raise ContractError(f"unsupported engine effect {effect.kind}")
 
@@ -422,13 +428,37 @@ class WorkbenchEngine:
         image_path.write_bytes(self.store.blob_path(image).read_bytes())
         image_path.chmod(0o400)
         profile = self.profiles[plan.backend_bindings["profile"]]
+        from .workbench_worker import WorkbenchProcessWorker
+
+        gated_worker = WorkbenchProcessWorker(self, run.run_id, stage_id)
+        proposer = copy(profile.proposer)
+        if hasattr(proposer, "worker"):
+            proposer.worker = gated_worker
+        elif not profile.test_only:
+            raise ContractError("real proposer does not support gated worker injection")
+        shape_plan = profile.shape_plan
+        shape_binding = shape_plan.backends["generate_shape"]
+        implementation = copy(shape_binding.implementation)
+        if hasattr(implementation, "worker"):
+            implementation.worker = gated_worker
+        elif not profile.test_only:
+            raise ContractError("real shape backend does not support gated worker injection")
+        shape_plan = replace(
+            shape_plan,
+            backends={
+                **shape_plan.backends,
+                "generate_shape": replace(shape_binding, implementation=implementation),
+            },
+        )
+        if profile.identity_check is not None:
+            profile.identity_check()
         outputs: dict[str, Any]
         if stage_id == "propose":
             result = propose_instances(
                 image_path=image_path,
                 store_path=self.store.root,
                 output_path=output,
-                backend=profile.proposer,
+                backend=proposer,
                 run_id=attempt.child_run_id,
                 child_context=context,
             )
@@ -473,7 +503,7 @@ class WorkbenchEngine:
                 mask_path=mask_path,
                 store_path=self.store.root,
                 output_path=output,
-                resolved_plan=profile.shape_plan,
+                resolved_plan=shape_plan,
                 seed=parameters["seed"],
                 pipeline_type=parameters["pipeline_type"],
                 run_id=attempt.child_run_id,
@@ -486,6 +516,8 @@ class WorkbenchEngine:
                 "glb": built.glb,
                 "qa": built.quality_report,
             }
+        if profile.identity_check is not None:
+            profile.identity_check()
         self._complete(run.run_id, stage_id, outputs)
 
     def _validate_completed(self, run_id: str, stage_id: str, outputs: dict[str, Any]) -> None:
@@ -498,12 +530,35 @@ class WorkbenchEngine:
         if child.status != "succeeded" or not output.is_dir():
             raise ContractError("child success/publication evidence incomplete")
         published = json.loads((output / "run.json").read_text())
-        if published["run_id"] != child.run_id or published["status"] != "succeeded":
+        if published != to_primitive(child) or child.parent_run_id != run_id:
             raise ContractError("published run does not match child")
         for value in outputs.values():
             if not isinstance(value, ArtifactRef) or not self.store.verify_digest(value):
                 raise ContractError("child output missing or corrupt")
         plan = self._plan(run)
+        profile = self.profiles[plan.backend_bindings["profile"]]
+        if profile.identity_check is not None:
+            profile.identity_check()
+        if not profile.test_only:
+            if stage_id == "propose":
+                metadata = self.store.read_structured(outputs["proposals"])["backend_metadata"]
+                for key in ("checkpoint_digest", "runner_digest"):
+                    if metadata.get(key) != profile.proposal_identity[key]:
+                        raise ContractError("SAM reported identity does not match plan")
+            elif stage_id == "generate":
+                release_data = self.store.read_structured(outputs["release"])
+                records = [
+                    self.store.read_structured(ArtifactRef(**ref))
+                    for name, ref in release_data["files"].items()
+                    if name.startswith("provenance/")
+                ]
+                generated_records = [r for r in records if r.get("operator") == "shape_generation"]
+                if (
+                    len(generated_records) != 1
+                    or generated_records[0].get("model_digest")
+                    != profile.shape_identity["model"]["snapshot_digest"]
+                ):
+                    raise ContractError("shape backend reported model identity does not match plan")
         if stage_id == "propose":
             files = {
                 "proposals.json": outputs["proposals"],
@@ -519,6 +574,9 @@ class WorkbenchEngine:
         else:
             release = self.store.read_structured(outputs["release"])
             files = {name: ArtifactRef(**ref) for name, ref in release["files"].items()}
+            if ArtifactRef(**release["asset_definition"]) != outputs["asset"]:
+                raise ContractError("release asset does not match child output")
+            files.update({"release.json": outputs["release"], "asset.json": outputs["asset"]})
         for name, ref in files.items():
             relative = Path(name)
             if relative.is_absolute() or ".." in relative.parts:
@@ -703,7 +761,8 @@ class WorkbenchEngine:
             if stage.status in {"running", "waiting_for_input", "failed", "interrupted"}:
                 observation = None
                 if attempt.worker_execution and self.probe:
-                    observation = self.probe.observe(attempt.worker_execution.identity())
+                    if attempt.worker_execution.launch_phase != "prepared":
+                        observation = self.probe.observe(attempt.worker_execution.identity())
                 # Recovery never guesses success from loose artifact files.
                 if attempt.child_run_id:
                     try:
