@@ -81,6 +81,10 @@ Phase 8 现已提供用户显式 dynamic rigid-body properties。输入必须是
 mesh 且尚无 physics 的资产；Core 验证质量、质心、惯性张量和接触参数的绑定与数学自洽，但不
 估计或声称这些值物理准确。使用见 [Explicit Rigid Body Properties 指南](docs/guides/rigid-body-properties.md)。
 
+标准 USD 导出接受上述 metric rigid-body release，保留 AssetDefinition 与来源证据，
+新增 USD、包内纹理和 SDK 回读 QA。见 [USD 使用指南](docs/guides/usd-export.md)。
+当前仅验证标准 OpenUSD，不宣称 Isaac Sim 导入或仿真通过。
+
 安装开发环境并检查固定 Pipeline：
 
 ```bash

@@ -17,6 +17,7 @@ ARTIFACT_KINDS = frozenset(
         "triangle_mesh",
         "collision_mesh",
         "gltf_asset",
+        "usd_asset",
         "point_cloud",
         "gaussian_splat",
         "quality_evidence",

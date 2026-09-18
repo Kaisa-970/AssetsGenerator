@@ -1,13 +1,13 @@
-# USD export boundary (proposed)
+# Standard USD rigid export v1
 
-Status: design proposal, 2026-09-18. No USD exporter or Isaac runtime validation is implemented.
+Status: initial implementation, 2026-09-18. Standard SDK roundtrip is supported; Isaac runtime validation remains pending.
 
-The next Phase 8 slice should export one metric rigid asset using the standard OpenUSD SDK and
+This Phase 8 slice exports one metric rigid asset using the standard OpenUSD SDK and
 UsdPhysics schemas. Preserve the source AssetDefinition and create a new AssetRelease. An SDK
 roundtrip proves that authored data can be parsed; it does not prove Isaac Sim compatibility or
 physical accuracy.
 
-## Proposed representation
+## Representation
 
 - Author stage metadata `upAxis=Z`, `metersPerUnit=1`, `kilogramsPerUnit=1`, and a default root Xform.
   Use canonical geometry directly; do not apply the GLB export axis permutation again.
@@ -27,20 +27,19 @@ physical accuracy.
 
 ## Execution and acceptance
 
-Make OpenUSD an optional dependency or isolated export environment; it must not pull model or CUDA
-dependencies into Core. Record SDK/environment identity and export profile version in provenance.
-The current Core environment and existing conda environments were checked on 2026-09-18 and contain
-no `pxr` module; no SDK installation or USD execution is claimed by this proposal.
+OpenUSD is the optional `usd` extra (`usd-core==26.5`), imported only by the exporter. It adds no model
+or CUDA dependency. Provenance records the Python executable, SDK installed-content digest, writer
+digest, and `openusd-rigid-v1` profile. The SDK was installed in the existing Core environment.
 
 Validate source physics evidence, geometry digests, frames and meter units before export. Emit
-BuildRun attempts for export, USD roundtrip QA, release derivation and atomic no-replace publication.
+BuildRun attempts for export with USD roundtrip QA, release derivation and atomic no-replace publication.
 The source AssetDefinition remains the semantic authority; USD is an export artifact. Preserve all
 source release evidence and add direct provenance for USD, QA and the derived release.
 
-Required tests include off-diagonal and repeated-eigenvalue inertia, spatial roundtrips, texture and
+Tests cover off-diagonal and repeated-eigenvalue inertia, spatial roundtrips, texture and
 vertex-color preservation, collision/visual separation, package-local references, corrupt evidence,
-relative-scale rejection and publication failure. Run a CPU roundtrip on an existing real generated
-asset after SDK setup. Keep Isaac-specific profile naming and runtime readiness pending actual
+relative-scale rejection and publication failure. A CPU roundtrip uses an existing real generated
+asset. Keep Isaac-specific profile naming and runtime readiness pending actual
 Isaac import and simulation tests; articulation and scene physics synchronization remain deferred.
 
 ## References inspected
@@ -51,3 +50,19 @@ Isaac import and simulation tests; articulation and scene physics synchronizatio
   static/dynamic friction and restitution.
 - [UsdPhysics MeshCollisionAPI](https://openusd.org/release/api/class_usd_physics_mesh_collision_a_p_i.html):
   explicit approximation tokens including convexHull.
+
+## Current supported appearance
+
+Opaque per-geometry PBR base-color factors/textures, UVs, metallic/roughness factors, double-sided
+settings, and opaque vertex/face colors are supported. Normal, occlusion, emissive and metallic-
+roughness textures, transparent materials, glTF extensions, custom samplers, animation, skinning,
+and combined vertex-color/material inputs are rejected before Trimesh can discard information.
+USD files use canonical geometry, while the original GLB and evidence stay in the release.
+
+See [usage](../guides/usd-export.md) and [CPU smoke](../reports/phase8-usd-smoke-v1.md).
+
+Collision geometry uses USD `purpose=guide`, separating it from the normal visual rendering path.
+
+USD mass and principal moments use float32 attributes. Values that cannot remain finite and
+strictly positive at that precision are rejected instead of becoming zero or inferred properties.
+Explicit source normals are preserved; absent GLB normals use flat face-varying normals.

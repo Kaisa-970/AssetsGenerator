@@ -441,3 +441,8 @@ scene_extraction_request、scene_extraction Artifact。实例引用精确 AssetD
 用户位姿只进入实例，不修改资产定义。scene_layout_review 保存人工发布布局的检查人、完整
 布局摘要、精确 SceneDefinition 和 BuildRun 关联，不替代 scene_request 或 scene_definition。
 详见 [场景到资产契约](scene-to-assets.md)。
+
+Standard OpenUSD export uses binary Artifact kind `usd_asset` with `OpenUSD@1.0`, canonical frame
+and meter units. The `openusd-rigid-v1` release preserves the source AssetDefinition, adds package-local
+texture Artifacts and export QA, and does not imply Isaac runtime acceptance. See
+[USD export](usd-export.md).

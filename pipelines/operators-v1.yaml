@@ -176,6 +176,26 @@ operators:
     outputs:
       release: {kind: asset_release, carriers: [artifact_ref]}
 
+  - name: usd_export
+    version: 1
+    inputs:
+      asset: {kind: asset_definition, carriers: [artifact_ref]}
+      release: {kind: asset_release, carriers: [artifact_ref]}
+    outputs:
+      usd: {kind: usd_asset, carriers: [artifact_ref], schema_name: OpenUSD, schema_version: "1.0", requires_frame: true, requires_unit: true}
+      textures: {kind: texture_2d, cardinality: zero_or_more, carriers: [artifact_ref]}
+      report: {kind: quality_report, carriers: [artifact_ref]}
+
+  - name: usd_release
+    version: 1
+    inputs:
+      source_release: {kind: asset_release, carriers: [artifact_ref]}
+      asset: {kind: asset_definition, carriers: [artifact_ref]}
+      usd: {kind: usd_asset, carriers: [artifact_ref], schema_name: OpenUSD, schema_version: "1.0", requires_frame: true, requires_unit: true}
+      report: {kind: quality_report, carriers: [artifact_ref]}
+    outputs:
+      release: {kind: asset_release, carriers: [artifact_ref]}
+
   - name: assemble_asset
     version: 1
     inputs:

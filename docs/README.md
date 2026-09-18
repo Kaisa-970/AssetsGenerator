@@ -7,7 +7,7 @@
 - [Phase 8 Collision Generation v1](design/collision-generation.md)
 - [Phase 8 Metric Scale Calibration v1](design/metric-scale-calibration.md)
 - [Phase 8 Explicit Rigid Body Properties v1](design/rigid-body-properties.md)
-- [USD 导出边界提案（尚未实现）](design/usd-export.md)
+- [标准 USD 刚体导出 v1](design/usd-export.md)
 
 - [Completion 生成候选契约](design/completion-candidate.md)
 
@@ -28,6 +28,8 @@
 
 ## 操作指南 · guides
 
+- [标准 USD 刚体导出](guides/usd-export.md)
+
 - [Phase 7 场景到资产使用指南](guides/scene-to-assets.md)
 - [Phase 8 Collision Generation 使用指南](guides/collision-generation.md)
 - [Phase 8 Metric Scale Calibration 使用指南](guides/metric-scale-calibration.md)
@@ -44,9 +46,11 @@
 
 ## 评测报告 · reports
 
+- [2026-09-18：标准 USD 刚体导出 CPU smoke](reports/phase8-usd-smoke-v1.md)
+
 - [2026-09-17：Phase 8 Collision v1 CPU smoke](reports/phase8-collision-smoke-v1.md)
 - [2026-09-17：Phase 8 Metric Scale v1 CPU smoke](reports/phase8-metric-scale-smoke-v1.md)
-- [2026-09-17：Phase 8 Explicit Rigid Body v1 CPU smoke](reports/phase8-rigid-body-smoke-v1.md)
+- [2026-09-18：Phase 8 Explicit Rigid Body v1 CPU smoke](reports/phase8-rigid-body-smoke-v1.md)
 
 - [2026-09-17：Phase 6 CLI 与 Phase 7 显式场景首版](reports/phase7-scene-v1.md)
 

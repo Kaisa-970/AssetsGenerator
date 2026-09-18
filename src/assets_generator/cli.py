@@ -136,6 +136,10 @@ def _parser() -> argparse.ArgumentParser:
     rigid_body.add_argument("--properties", type=Path, required=True)
     rigid_body.add_argument("--store", type=Path, required=True)
     rigid_body.add_argument("--output", type=Path, required=True)
+    usd = subparsers.add_parser("export-usd", help="Export a metric rigid asset using OpenUSD")
+    usd.add_argument("--release", required=True, help="Artifact ID or reference JSON")
+    usd.add_argument("--store", type=Path, required=True)
+    usd.add_argument("--output", type=Path, required=True)
     return parser
 
 
@@ -235,6 +239,14 @@ def main() -> int:
 
 
 def _execute(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
+    if args.command == "export-usd":
+        from .usd_export import export_usd
+
+        usd_result = export_usd(
+            release=_reference(args.release), store_path=args.store, output_path=args.output
+        )
+        print(json.dumps(to_primitive(usd_result), indent=2))
+        return 0
     if args.command == "apply-rigid-body":
         from .rigid_body import apply_rigid_body
 

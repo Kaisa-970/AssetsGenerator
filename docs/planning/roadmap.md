@@ -167,8 +167,8 @@ canonical visual Artifact 和 frame 的两点距离 metric calibration；以及�
 collision Artifact 的用户显式 dynamic rigid-body properties。三者均保留独立 BuildRun、逐输出
 provenance、原子发布和真实 CPU smoke，默认图像 Pipeline 保持不变。
 
-系统不自动估计 mass、friction、inertia 或 center of mass。下一切片评估 USD/IsaacUSD 交付边界；
-runtime 同步和 articulation 后续再做。
+系统不自动估计 mass、friction、inertia 或 center of mass。已接入可选标准 OpenUSD 单刚体导出与 SDK 回读，保留原 AssetDefinition；
+Isaac runtime 导入/仿真验收、runtime 同步和 articulation 后续再做。
 
 加入：
 

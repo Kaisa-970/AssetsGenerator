@@ -65,6 +65,12 @@ def _properties(path: Path) -> dict[str, Any]:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as error:
         raise ContractError("rigid-body properties must be readable UTF-8 JSON") from error
+    return validate_properties(raw)
+
+
+def validate_properties(raw: Any) -> dict[str, Any]:
+    """Validate and normalize explicit SI properties without inferring values."""
+    raw = dict(raw) if isinstance(raw, dict) else raw
     required = {
         "schema_version",
         "source_release_id",

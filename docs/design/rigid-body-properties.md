@@ -27,8 +27,8 @@ The source release and geometry are immutable. Publication reuses every existing
 and adds properties evidence, QA, and provenance. The complete release, including a succeeded
 BuildRun, is exposed through one final directory rename; failure leaves no output directory and
 persists a failed BuildRun. Static/kinematic bodies, compound collision, density inference,
-damping, simulator-specific fields, USD/IsaacUSD, runtime synchronization, and articulation are
-deferred.
+damping, simulator-specific fields, Isaac runtime validation, runtime synchronization, and articulation
+are deferred. Standard USD export is a separate [export workflow](usd-export.md).
 
 Current no-replace publication requires Linux `renameat2(RENAME_NOREPLACE)` support and fails
 explicitly if it is unavailable. Existing output directories, including empty directories created
