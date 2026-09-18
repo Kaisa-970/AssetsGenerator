@@ -2,7 +2,7 @@
 
 ## 架构与契约 · design
 
-- [固定流程节点工作台 v1（设计提案，尚未实现）](design/node-workbench-v1.md)
+- [固定流程节点工作台 v1（实现中）](design/node-workbench-v1.md)
 
 - [Phase 7 场景到资产首版契约](design/scene-to-assets.md)
 - [SAM v1 实例候选契约](design/sam-instance-proposals.md)
@@ -30,6 +30,8 @@
 
 ## 操作指南 · guides
 
+- [固定流程节点工作台](guides/node-workbench.md)
+
 - [标准 USD 刚体导出](guides/usd-export.md)
 
 - [Phase 7 场景到资产使用指南](guides/scene-to-assets.md)
@@ -47,6 +49,8 @@
 - [DA3 独立环境与 Python 接入](guides/da3-environment.md)
 
 ## 评测报告 · reports
+
+- [2026-09-18：节点工作台真实操作与恢复 smoke](reports/node-workbench-smoke-v1.md)
 
 - [2026-09-18：标准 USD 刚体导出 CPU smoke](reports/phase8-usd-smoke-v1.md)
 
