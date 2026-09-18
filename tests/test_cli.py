@@ -121,3 +121,33 @@ def test_import_observations_command_persists_bundle(tmp_path, monkeypatch, caps
         __import__("assets_generator.models", fromlist=["ArtifactRef"]).ArtifactRef(**reference)
     )
     assert bundle["views"][0]["view_id"] == "view_000"
+
+
+def test_workbench_command_passes_explicit_local_configuration(tmp_path, monkeypatch):
+    from assets_generator import cli, workbench_app
+
+    calls = []
+    monkeypatch.setattr(workbench_app, "serve_workbench", lambda **kwargs: calls.append(kwargs))
+    parser = cli._parser()
+    args = parser.parse_args(
+        [
+            "workbench",
+            "--config",
+            str(tmp_path / "config.json"),
+            "--store",
+            str(tmp_path / "store"),
+            "--directory",
+            str(tmp_path / "workbench"),
+            "--port",
+            "8766",
+        ]
+    )
+    assert cli._execute(parser, args) == 0
+    assert calls == [
+        {
+            "config_path": tmp_path / "config.json",
+            "store_path": tmp_path / "store",
+            "directory": tmp_path / "workbench",
+            "port": 8766,
+        }
+    ]

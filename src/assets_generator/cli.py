@@ -24,6 +24,12 @@ def _parser() -> argparse.ArgumentParser:
     compile_command.add_argument("--pipeline", type=Path)
     compile_command.add_argument("--operators", type=Path)
 
+    workbench = subparsers.add_parser("workbench", help="Local fixed photo-to-asset workbench")
+    workbench.add_argument("--config", type=Path, required=True)
+    workbench.add_argument("--store", type=Path, required=True)
+    workbench.add_argument("--directory", type=Path, required=True)
+    workbench.add_argument("--port", type=int, default=8765)
+
     import_observations = subparsers.add_parser("import-observations")
     import_observations.add_argument("--manifest", type=Path, required=True)
     import_observations.add_argument("--store", type=Path, required=True)
@@ -239,6 +245,16 @@ def main() -> int:
 
 
 def _execute(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
+    if args.command == "workbench":
+        from .workbench_app import serve_workbench
+
+        serve_workbench(
+            config_path=args.config,
+            store_path=args.store,
+            directory=args.directory,
+            port=args.port,
+        )
+        return 0
     if args.command == "export-usd":
         from .usd_export import export_usd
 

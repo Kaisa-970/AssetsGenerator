@@ -23,10 +23,15 @@ from assets_generator.workbench_service import LocalWorkbenchService
 
 
 class CountingProposer(FakeProposer):
-    calls = 0
+    def __init__(self):
+        self._calls = [0]
+
+    @property
+    def calls(self):
+        return self._calls[0]
 
     def propose(self, store, image):
-        self.calls += 1
+        self._calls[0] += 1
         return super().propose(store, image)
 
 
@@ -193,3 +198,44 @@ def test_http_upload_wait_restart_confirm_and_download(tmp_path: Path) -> None:
                 s.current().child_run_id for s in repo.load(run_id).workbench.stage_states.values()
             ]
             assert proposer.calls == 1
+
+
+def test_recovery_quarantines_one_run_and_keeps_other_runs_available(tmp_path):
+    from test_workbench_engine import fixture_engine
+
+    from assets_generator.contracts import ContractError
+
+    store, image, profile = fixture_engine(tmp_path)
+    with WorkbenchRepository(store, tmp_path / "workbench") as repo:
+        engine = WorkbenchEngine(repo, {"fake": profile})
+        bad = engine.create(image, "fake", {}, "bad")
+        good = engine.create(image, "fake", {}, "good")
+        engine.drain()
+        original_recover = engine.recover
+
+        def recover(run_id):
+            if run_id == bad.run_id:
+                raise ContractError("published artifact corrupt")
+            return original_recover(run_id)
+
+        engine.recover = recover
+        service = LocalWorkbenchService(engine)
+        service.recover_runs()
+        with running_http(service) as request:
+            status, data = request("GET", "/runs")
+            assert status == 200
+            rows = {row["run_id"]: row for row in json.loads(data)["runs"]}
+            assert rows[bad.run_id]["status"] == "recovery_blocked"
+            assert "published artifact corrupt" in rows[bad.run_id]["recovery_error"]
+            assert rows[good.run_id]["status"] == "waiting_for_input"
+            status, data = request("GET", f"/runs/{bad.run_id}")
+            assert status == 200
+            assert json.loads(data)["outputs"] == []
+            status, data = request(
+                "POST",
+                f"/runs/{bad.run_id}/retry",
+                json.dumps({"expected_revision": 0, "idempotency_key": "retry"}),
+            )
+            assert status == 409
+            assert "recovery blocked" in json.loads(data)["error"]
+            assert request("GET", f"/runs/{good.run_id}")[0] == 200

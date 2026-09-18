@@ -22,7 +22,7 @@ function browser(){
    append(...items){this.children.push(...items)},replaceChildren(...items){this.children=items},
    querySelector(){return this.span??=(element('span'))},setAttribute(k,v){this[k]=v},
    addEventListener(){},remove(){const i=models.indexOf(this);if(i>=0)models.splice(i,1)},after(item){models.push(item)},
-   getContext(){return {drawImage(){},getImageData(){return {data:[]}},putImageData(){}}}};
+   getContext(){return {clearRect(){},drawImage(){},getImageData(){return {data:[]}},putImageData(){}}}};
   if(['button','input','select'].includes(tag))controls.push(e);return e;
  }
  const inputIds=['photo','invert','largest','reviewer'];const buttons=['create','preview','confirm','retry'];

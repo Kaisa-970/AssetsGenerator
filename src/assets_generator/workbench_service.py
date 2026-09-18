@@ -21,6 +21,22 @@ class LocalWorkbenchService:
         self._threads: list[threading.Thread] = []
         self._background_error: str | None = None
         self._closed = False
+        self._recovery_errors: dict[str, str] = {}
+
+    def recover_runs(self) -> None:
+        """Quarantine an invalid run without denying access to other local runs."""
+        for row in self.list_runs():
+            run_id = row["run_id"]
+            if run_id in self._recovery_errors:
+                continue
+            try:
+                self.engine.recover(run_id)
+            except Exception as error:
+                self._recovery_errors[run_id] = f"{type(error).__name__}: {error}"
+
+    def _check_recovery(self, run_id: str) -> None:
+        if run_id in self._recovery_errors:
+            raise RuntimeError(f"run recovery blocked: {self._recovery_errors[run_id]}")
 
     def resume(self) -> None:
         self._dispatch()
@@ -85,13 +101,25 @@ class LocalWorkbenchService:
         for path in sorted((self.engine.store.root / "parent_run_owners").glob("*.json")):
             try:
                 owner = read_json(path)
-                if owner["workbench_directory"] != str(self.engine.repository.directory.resolve()):
+            except (OSError, ValueError):
+                continue  # A corrupt ownership marker cannot establish access to a run.
+            if owner.get("workbench_directory") != str(self.engine.repository.directory.resolve()):
+                continue
+            try:
+                if path.stem in self._recovery_errors:
+                    result.append(self.get_run(path.stem))
                     continue
                 run = self.engine.repository.load(path.stem)
                 if run.workbench is not None:
                     result.append({"run_id": run.run_id, "status": run.status})
-            except FileNotFoundError:
-                continue  # Reserved creation may not yet have its first business snapshot.
+            except FileNotFoundError as error:
+                if not (self.engine.store.root / "runs" / path.name).exists():
+                    continue  # Reserved creation has no first snapshot yet.
+                self._recovery_errors[path.stem] = f"{type(error).__name__}: {error}"
+                result.append(self.get_run(path.stem))
+            except Exception as error:
+                self._recovery_errors[path.stem] = f"{type(error).__name__}: {error}"
+                result.append(self.get_run(path.stem))
         return result
 
     def create_run(self, body: dict[str, Any]) -> dict[str, Any]:
@@ -105,11 +133,21 @@ class LocalWorkbenchService:
             body["parameters"],
             body["idempotency_key"],
         )
+        self._check_recovery(run.run_id)
         self._dispatch()
         return self.get_run(run.run_id)
 
     def get_run(self, run_id: str) -> dict[str, Any]:
         self._owned(run_id)
+        if run_id in self._recovery_errors:
+            return {
+                "run_id": run_id,
+                "status": "recovery_blocked",
+                "recovery_error": self._recovery_errors[run_id],
+                "stages": [],
+                "outputs": [],
+                "qa": [],
+            }
         run = self.engine.repository.load(run_id)
         if run.workbench is None:
             raise ValueError("not a workbench run")
@@ -178,6 +216,7 @@ class LocalWorkbenchService:
         if self._closed:
             raise RuntimeError("workbench service is closing")
         self._owned(run_id)
+        self._check_recovery(run_id)
         revision = body.get("expected_revision")
         if type(revision) is not int:
             raise ValueError("expected_revision must be an integer")
@@ -202,6 +241,7 @@ class LocalWorkbenchService:
 
     def output(self, run_id: str, key: str) -> OutputPayload:
         self._owned(run_id)
+        self._check_recovery(run_id)
         run = self.engine.repository.load(run_id)
         if run.workbench is None:
             raise ValueError("not a workbench run")
