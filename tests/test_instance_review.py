@@ -186,3 +186,39 @@ def test_inverting_full_mask_rejects_empty_result(tmp_path):
     assert len(created) == 1
     assert store.get_build_run(created.pop().stem)["status"] == "failed"
     assert not (tmp_path / "selection").exists()
+
+
+@pytest.mark.parametrize("invert", [False, True])
+def test_keep_largest_removes_strips_and_preserves_evidence(tmp_path, invert):
+    import numpy as np
+
+    from assets_generator.models import StructuredValue
+    from assets_generator.workflow import _import_image
+
+    store, proposals = fixture(tmp_path)
+    pixels = np.zeros((6, 8), dtype=np.uint8)
+    pixels[:, 0] = 255
+    pixels[1:5, 3:7] = 255
+    source = 255 - pixels if invert else pixels
+    path = tmp_path / "components.png"
+    Image.fromarray(source).save(path)
+    mask = _import_image(store, path, "binary_mask")
+    raw = store.read_structured(proposals)
+    raw["proposals"][0]["mask"] = {"artifact_id": mask.artifact_id}
+    changed = store.persist_structured(
+        StructuredValue("instance_proposals", "InstanceProposals", "1.0", raw)
+    )
+    session = InstanceReviewSession(store.root, changed, tmp_path / "selection")
+    result = session.publish(
+        {"proposal_ids": ["p0"], "reviewer": "tester", "invert": invert, "keep_largest": True}
+    )
+    with Image.open(tmp_path / "selection/object_001.png") as image:
+        actual = np.asarray(image)
+    pixels[:, 0] = 0
+    assert np.array_equal(actual, pixels)
+    decision = store.read_structured(ArtifactRef(**result["selection"]))
+    transformed = store.read_structured(ArtifactRef(**decision["proposals"]))
+    assert transformed["transformation"]["removed_pixels"] == 6
+    assert transformed["transformation"]["connectivity"] == 8
+    assert transformed["transformation"]["invert_first"] is invert
+    assert store.read_structured(changed) == raw

@@ -89,6 +89,7 @@ class InstanceReviewSession:
             store_path=self.store.root,
             output_path=self.output_path,
             invert=data.get("invert", False),
+            keep_largest=data.get("keep_largest", False),
         )
         self.published = result
         return result

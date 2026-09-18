@@ -11,6 +11,7 @@ from typing import Any, Protocol
 
 import numpy as np
 from PIL import Image
+from scipy import ndimage  # type: ignore[import-untyped]
 
 from .artifact_store import LocalArtifactStore
 from .completion import _checked
@@ -226,11 +227,14 @@ def select_instance_proposals(
     store_path: Path,
     output_path: Path,
     invert: bool = False,
+    keep_largest: bool = False,
 ) -> dict[str, Any]:
     store = LocalArtifactStore(store_path)
     _checked(store, proposals, "instance_proposals")
     if not isinstance(invert, bool) or (invert and len(proposal_ids) != 1):
         raise ContractError("inversion requires exactly one selected proposal")
+    if not isinstance(keep_largest, bool) or (keep_largest and len(proposal_ids) != 1):
+        raise ContractError("largest component requires exactly one selected proposal")
     if not isinstance(reviewer, str) or not reviewer.strip():
         raise ContractError("selection requires reviewer")
     raw = store.read_structured(proposals)
@@ -268,13 +272,31 @@ def select_instance_proposals(
     )
     _persist_build_run(store, run)
     try:
-        if invert:
+        if invert or keep_largest:
             original_proposals = proposals
             original = ArtifactRef(**indexed[proposal_ids[0]]["mask"])
             _checked(store, original, "binary_mask")
             validate_binary_mask(store, image, original)
             with Image.open(store.blob_path(original)) as source_mask:
-                pixels = 255 - np.asarray(source_mask.convert("L"))
+                pixels = np.asarray(source_mask.convert("L"))
+            if invert:
+                pixels = 255 - pixels
+            parameters: dict[str, Any] = {"operation": "invert_binary_mask"}
+            if keep_largest:
+                labels, count = ndimage.label(pixels != 0, structure=np.ones((3, 3)))
+                sizes = np.bincount(labels.ravel())
+                sizes[0] = 0
+                winner = int(np.argmax(sizes)) if count else 0
+                before = int(np.count_nonzero(pixels))
+                pixels = np.asarray((labels == winner) & (labels != 0), dtype=np.uint8) * 255
+                parameters = {
+                    "operation": "keep_largest_component",
+                    "invert_first": invert,
+                    "connectivity": 8,
+                    "tie_break": "first_row_major",
+                    "policy_version": "1",
+                    "removed_pixels": before - int(np.count_nonzero(pixels)),
+                }
             if not np.any(pixels):
                 raise ContractError("inverted mask has no foreground")
             with tempfile.TemporaryDirectory(prefix="inverted-mask-") as directory:
@@ -291,7 +313,7 @@ def select_instance_proposals(
                 operator="instance_selection",
                 backend="core",
                 backend_version="1",
-                parameters={"operation": "invert_binary_mask"},
+                parameters=parameters,
                 seed=None,
                 source="user",
             )
@@ -318,7 +340,7 @@ def select_instance_proposals(
                     for p in raw["proposals"]
                 ],
                 "transformation": {
-                    "operation": "invert_binary_mask",
+                    **parameters,
                     "source_proposals": to_primitive(original_proposals),
                     "proposal_id": proposal_ids[0],
                 },
@@ -336,7 +358,7 @@ def select_instance_proposals(
                 operator="instance_selection",
                 backend="core",
                 backend_version="1",
-                parameters={"operation": "invert_binary_mask"},
+                parameters=parameters,
                 seed=None,
                 source="user",
             )
