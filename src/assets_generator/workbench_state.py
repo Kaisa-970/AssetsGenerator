@@ -97,6 +97,7 @@ class ChildSucceeded:
 class ExecutionFailed:
     error_code: str
     observation: ProcessObservation | None = None
+    error_detail: str | None = None
 
 
 @dataclass(frozen=True)
@@ -445,6 +446,7 @@ def transition(current: BuildRun, event: Event) -> Transition:
             attempt.execution_mode = "restored" if payload.restored else "executed"
             attempt.finished_at = event.occurred_at
             attempt.error_code = None
+            attempt.error_detail = None
             attempt.retry_blocked_reason = None
             stage.status = "succeeded"
             if attempt.command_receipt:
@@ -477,6 +479,8 @@ def transition(current: BuildRun, event: Event) -> Transition:
                         attempt.worker_execution.launch_phase = "exit_observed"
                 attempt.retry_blocked_reason = _activity_block(attempt)
                 attempt.error_code = payload.error_code
+                if isinstance(payload, ExecutionFailed):
+                    attempt.error_detail = payload.error_detail
                 attempt.finished_at = event.occurred_at
                 stage.status = "failed" if isinstance(payload, ExecutionFailed) else "interrupted"
                 if attempt.command_receipt and isinstance(payload, ExecutionFailed):

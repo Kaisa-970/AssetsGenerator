@@ -20,6 +20,7 @@ from .contracts import (
     validate_operator_inputs,
     validate_operator_outputs,
 )
+from .errors import classify_error
 from .instance_proposals import (
     InstanceProposer,
     prepare_selection_mask,
@@ -344,7 +345,7 @@ class WorkbenchEngine:
                         self._event(
                             run_id,
                             effect.stage_id,
-                            ExecutionFailed(type(error).__name__ + ": " + str(error)),
+                            ExecutionFailed(classify_error(error).value, error_detail=str(error)),
                         )
                 finally:
                     self._queue.task_done()
@@ -394,10 +395,19 @@ class WorkbenchEngine:
             created = self.repository.register_child(run, registration)
             if not created:
                 raise ContractError("child reservation exists; recover before retry")
+            profile = self.profiles[plan.backend_bindings["profile"]]
+            child_pipeline, child_version = (
+                (profile.shape_plan.pipeline_name, profile.shape_plan.pipeline_version)
+                if stage.stage_id == "generate"
+                else (
+                    "instance_proposals" if stage.stage_id == "propose" else "instance_selection",
+                    "1",
+                )
+            )
             child = BuildRun(
                 attempt.child_run_id,
-                stage.stage_id,
-                "1",
+                child_pipeline,
+                child_version,
                 "running",
                 {},
                 [],

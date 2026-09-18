@@ -186,6 +186,7 @@ class WorkerExecution:
 
 @dataclass
 class StageAttempt(NodeAttempt):
+    error_detail: str | None = None
     resolved_inputs: dict[str, PortValue | list[PortValue]] = field(default_factory=dict)
     input_digest: str = ""
     child_run_id: str | None = None

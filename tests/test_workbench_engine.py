@@ -282,7 +282,9 @@ def test_other_run_orphan_blocks_compute_until_explicit_retry(tmp_path, probe_re
         engine.drain()
         blocked = repo.load(new.run_id)
         assert blocked.status == "failed"
-        assert "admission blocked" in blocked.workbench.stage_states["propose"].current().error_code
+        assert (
+            "admission blocked" in blocked.workbench.stage_states["propose"].current().error_detail
+        )
         assert (
             repo.load(
                 blocked.workbench.stage_states["propose"].current().child_run_id
@@ -346,7 +348,7 @@ def test_corrupt_owned_run_process_evidence_blocks_admission(tmp_path):
         assert failed.status == "failed"
         assert (
             "cannot verify process evidence"
-            in failed.workbench.stage_states["propose"].current().error_code
+            in failed.workbench.stage_states["propose"].current().error_detail
         )
 
 
@@ -382,3 +384,4 @@ def test_durable_worker_exit_is_not_invalidated_by_later_pid_reuse(tmp_path):
         new = engine.create(image, "fake", {}, "new")
         engine.drain()
         assert repo.load(new.run_id).status == "waiting_for_input"
+

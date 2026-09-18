@@ -168,7 +168,8 @@ class LocalWorkbenchService:
                 {
                     "stage_id": stage_id,
                     "status": stage.status,
-                    "error": current.error_code if current else None,
+                    "error": (current.error_detail or current.error_code) if current else None,
+                    "error_code": current.error_code if current else None,
                     "execution_mode": current.execution_mode if current else None,
                 }
             )

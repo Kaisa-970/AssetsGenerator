@@ -16,6 +16,7 @@ from scipy import ndimage  # type: ignore[import-untyped]
 from .artifact_store import LocalArtifactStore
 from .completion import _checked
 from .contracts import ContractError, validate_operator_inputs, validate_operator_outputs
+from .errors import PipelineError
 from .models import ArtifactRef, BuildRun, NodeAttempt, StructuredValue
 from .operators import validate_binary_mask
 from .pipeline import load_default_operator_specs
@@ -220,10 +221,14 @@ def propose_instances(
             "run_id": run.run_id,
             "output_directory": str(output_path),
         }
-    except Exception:
+    except Exception as error:
         attempt.status = "failed"
         attempt.error_code = (
-            "release_failed" if attempt.node_id == "publish_proposals" else "backend_failed"
+            "release_failed"
+            if attempt.node_id == "publish_proposals"
+            else error.code.value
+            if isinstance(error, PipelineError)
+            else "backend_failed"
         )
         attempt.finished_at = utc_now()
         run.status = "failed"
