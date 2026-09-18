@@ -427,3 +427,41 @@ def test_two_commands_at_one_revision_only_one_commits(tmp_path: Path) -> None:
             results = list(executor.map(apply, ["first", "second"]))
         assert sorted(results) == [False, True]
         assert len(effects) == 1
+
+
+def test_stage_order_survives_sorted_json_roundtrip() -> None:
+    import json
+
+    from assets_generator.serialization import canonical_json_bytes
+
+    initial = run()
+    assert initial.workbench is not None
+    initial.workbench = WorkbenchState(
+        REF,
+        {"z_first": StageState("z_first"), "a_second": StageState("a_second", True)},
+        stage_order=["z_first", "a_second"],
+    )
+    state = read_build_run(json.loads(canonical_json_bytes(initial)))
+    first = Event("prepare", 0, "z_first", 1, "t", PrepareStage(INPUT, receipt()))
+    state = transition(state, first).state
+    registration = ChildRegistration("child", "parent", "z_first", 1, INPUT.digest(), "/owned")
+    state = transition(
+        state, Event("register", 1, "z_first", 1, "t", ChildRegistered(registration))
+    ).state
+    state = transition(
+        state,
+        Event(
+            "success",
+            2,
+            "z_first",
+            1,
+            "t",
+            ChildSucceeded("child", INPUT.digest(), {"output": REF}, True),
+        ),
+    ).state
+    state = read_build_run(json.loads(canonical_json_bytes(state)))
+    state = transition(state, Event("next", 3, "a_second", 1, "t", PrepareStage(INPUT))).state
+    assert state.workbench is not None
+    assert state.workbench.stage_states["a_second"].status == "running"
+    with pytest.raises(ValueError, match="stage_order"):
+        WorkbenchState(REF, {"z_first": StageState("z_first"), "a_second": StageState("a_second")})

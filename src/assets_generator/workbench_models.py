@@ -217,8 +217,17 @@ class WorkbenchState:
     stage_states: dict[str, StageState]
     schema_version: Literal["1.0"] = "1.0"
     state_revision: int = 0
+    stage_order: list[str] = field(default_factory=list)
     # Transport deduplication only; execution facts remain in attempts.
     event_receipts: dict[str, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not self.stage_order and len(self.stage_states) == 1:
+            self.stage_order = list(self.stage_states)
+        if len(self.stage_order) != len(set(self.stage_order)) or set(self.stage_order) != set(
+            self.stage_states
+        ):
+            raise ValueError("stage_order must explicitly contain every stage exactly once")
 
 
 @dataclass(frozen=True)

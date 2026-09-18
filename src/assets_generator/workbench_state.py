@@ -221,7 +221,8 @@ def transition(current: BuildRun, event: Event) -> Transition:
             "stage cannot be prepared in this state",
         )
         _require(event.attempt == len(stage.attempts) + 1, "attempt must increase by one")
-        for previous in state.workbench.stage_states.values():
+        for previous_id in state.workbench.stage_order:
+            previous = state.workbench.stage_states[previous_id]
             if previous.stage_id == stage.stage_id:
                 break
             _require(previous.status == "succeeded", "upstream stage has not succeeded")
