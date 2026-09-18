@@ -398,3 +398,114 @@ def test_rigid_body_cli(tmp_path, monkeypatch, capsys):
     result = json.loads(capsys.readouterr().out)
     assert store.verify_digest(ArtifactRef(**result["asset_definition"]))
     assert (tmp_path / "cli-release/evidence/rigid-body-properties.json").is_file()
+
+
+def test_failed_assignment_retains_import_provenance(tmp_path):
+    store, metric = _metric_release(tmp_path)
+    with pytest.raises(ContractError, match="do not match"):
+        apply_rigid_body(
+            release=metric.release_manifest,
+            properties_path=_properties(tmp_path, store, metric.release_manifest, frame_id="other"),
+            store_path=store.root,
+            output_path=tmp_path / "failed-binding",
+        )
+    records = [store.read_structured(ref) for ref in store.find_artifacts("provenance_record")]
+    imported = [
+        record for record in records if record["operator"] == "rigid_body_properties_import"
+    ]
+    assert len(imported) == 1
+    run = store.get_build_run(imported[0]["run_id"])
+    assert run["status"] == "failed"
+    assert run["node_attempts"][0]["status"] == "succeeded"
+    assert (
+        run["node_attempts"][0]["outputs"]["properties"]["artifact_id"]
+        == imported[0]["output_artifact_id"]
+    )
+
+
+@pytest.mark.parametrize("mutation", ["missing", "frame", "cloud", "export_missing"])
+def test_rigid_body_validates_visual_contract(tmp_path, mutation):
+    store, metric = _metric_release(tmp_path)
+    release_raw = store.read_structured(metric.release_manifest)
+    asset = store.read_structured(metric.asset_definition)
+    if mutation == "missing":
+        asset["geometry"]["visual_meshes"] = [{"artifact_id": "sha256:" + "f" * 64}]
+    elif mutation == "frame":
+        visual = ArtifactRef(**asset["geometry"]["visual_meshes"][0])
+        identity = store.get_manifest(visual.artifact_id).identity
+        bad = store.persist_bytes(
+            store.blob_path(visual).read_bytes(),
+            kind=identity.kind,
+            schema_name=identity.schema_name,
+            schema_version=identity.schema_version,
+            identity_metadata={**identity.identity_metadata, "frame_id": "other"},
+        )
+        asset["geometry"]["visual_meshes"] = [to_primitive(bad)]
+    elif mutation == "cloud":
+        asset["geometry"]["point_clouds"] = asset["geometry"]["visual_meshes"]
+    else:
+        del release_raw["files"]["geometry/visual.glb"]
+    asset_ref = store.persist_structured(
+        StructuredValue("asset_definition", "AssetDefinition", "1.0", asset)
+    )
+    release_raw["asset_definition"] = to_primitive(asset_ref)
+    release = store.persist_structured(
+        StructuredValue("asset_release", "AssetRelease", "1.0", release_raw)
+    )
+    with pytest.raises(ContractError):
+        apply_rigid_body(
+            release=release,
+            properties_path=_properties(tmp_path, store, release),
+            store_path=store.root,
+            output_path=tmp_path / "bad-visual",
+        )
+
+
+@pytest.mark.parametrize("mutation", ["operator", "run", "geometry"])
+def test_rigid_body_rejects_forged_collision_provenance(tmp_path, mutation):
+    import trimesh
+
+    store, metric = _metric_release(tmp_path)
+    raw = store.read_structured(metric.release_manifest)
+    export_ref = ArtifactRef(**raw["files"]["geometry/collision.glb"])
+    for name, value in list(raw["files"].items()):
+        ref = ArtifactRef(**value)
+        if store.get_manifest(ref.artifact_id).identity.kind != "provenance_record":
+            continue
+        record = store.read_structured(ref)
+        if record.get("output_artifact_id") != export_ref.artifact_id:
+            continue
+        if mutation == "operator":
+            record["operator"] = "forged_export"
+        elif mutation == "run":
+            record["run_id"] = "run_missing"
+        else:
+            identity = store.get_manifest(export_ref.artifact_id).identity
+            wrong = store.persist_bytes(
+                trimesh.Scene(trimesh.creation.box()).export(file_type="glb"),
+                kind=identity.kind,
+                schema_name=identity.schema_name,
+                schema_version=identity.schema_version,
+                identity_metadata=identity.identity_metadata,
+            )
+            raw["files"]["geometry/collision.glb"] = to_primitive(wrong)
+            record["output_artifact_id"] = wrong.artifact_id
+            run = store.get_build_run(record["run_id"])
+            for attempt in run["node_attempts"]:
+                if attempt["node_id"] == record["node_id"]:
+                    attempt["outputs"]["collision_glb"] = to_primitive(wrong)
+            store.record_build_run(
+                run["run_id"], StructuredValue("build_run", "BuildRun", "1.0", run)
+            )
+        forged = store.persist_structured(
+            StructuredValue("provenance_record", "ProvenanceRecord", "1.0", record)
+        )
+        raw["files"][name] = to_primitive(forged)
+    release = store.persist_structured(StructuredValue("asset_release", "AssetRelease", "1.0", raw))
+    with pytest.raises(ContractError, match="provenance|correspond"):
+        apply_rigid_body(
+            release=release,
+            properties_path=_properties(tmp_path, store, release),
+            store_path=store.root,
+            output_path=tmp_path / "forged",
+        )

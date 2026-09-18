@@ -15,7 +15,7 @@ from typing import Any
 import numpy as np
 import trimesh
 
-from .artifact_store import LocalArtifactStore
+from .artifact_store import ArtifactStoreError, LocalArtifactStore
 from .collision import _artifact
 from .contracts import ContractError, validate_operator_inputs, validate_operator_outputs
 from .errors import ErrorCode, classify_error
@@ -184,6 +184,51 @@ def _validated_collision_scene(store: LocalArtifactStore, collision: ArtifactRef
         raise ContractError("source collision mesh must be watertight, convex, and positive-volume")
 
 
+def _mesh_instances(store: LocalArtifactStore, reference: ArtifactRef) -> list[trimesh.Trimesh]:
+    try:
+        scene = _load_scene(store.blob_path(reference).read_bytes())
+        meshes = []
+        for node in sorted(scene.graph.nodes_geometry):
+            transform, name = scene.graph[node]
+            mesh = scene.geometry[name].copy()
+            if not isinstance(mesh, trimesh.Trimesh):
+                raise ContractError("mesh must contain triangular geometry")
+            mesh.apply_transform(transform)
+            if (
+                not len(mesh.faces)
+                or not len(mesh.vertices)
+                or not np.isfinite(mesh.vertices).all()
+            ):
+                raise ContractError("mesh must contain finite nonempty triangular geometry")
+            meshes.append(mesh)
+        if not meshes:
+            raise ContractError("mesh is empty")
+        return meshes
+    except ContractError:
+        raise
+    except Exception as error:
+        raise ContractError("mesh must be loadable triangular geometry") from error
+
+
+def _validate_export_correspondence(
+    store: LocalArtifactStore, canonical: ArtifactRef, exported: ArtifactRef
+) -> None:
+    canonical_meshes = _mesh_instances(store, canonical)
+    exported_meshes = _mesh_instances(store, exported)
+    if len(canonical_meshes) != len(exported_meshes):
+        raise ContractError("release GLB geometry does not correspond to canonical mesh")
+    for source, target in zip(canonical_meshes, exported_meshes, strict=True):
+        expected = np.asarray(source.vertices)[:, [1, 2, 0]]
+        actual = np.asarray(target.vertices)
+        tolerance = max(float(np.max(np.abs(expected))), 1e-12) * 8 * np.finfo(np.float32).eps
+        if (
+            not np.array_equal(source.faces, target.faces)
+            or expected.shape != actual.shape
+            or not np.allclose(expected, actual, rtol=8 * np.finfo(np.float32).eps, atol=tolerance)
+        ):
+            raise ContractError("release GLB geometry does not correspond to canonical mesh")
+
+
 def _has_collision_export_provenance(
     store: LocalArtifactStore,
     source_files: dict[str, ArtifactRef],
@@ -200,8 +245,22 @@ def _has_collision_export_provenance(
             record.get("output_artifact_id") == collision_glb.artifact_id
             and isinstance(derived, list)
             and collision.artifact_id in derived
+            and record.get("operator") in {"collision_export", "metric_scale_export"}
         ):
-            return True
+            try:
+                run = store.get_build_run(record["run_id"])
+            except (ArtifactStoreError, KeyError, OSError, ValueError):
+                continue
+            if run.get("status") != "succeeded":
+                continue
+            if any(
+                attempt.get("node_id") == record.get("node_id")
+                and attempt.get("operator") == record["operator"] + "@1"
+                and attempt.get("status") == "succeeded"
+                and to_primitive(collision_glb) in attempt.get("outputs", {}).values()
+                for attempt in run.get("node_attempts", [])
+            ):
+                return True
     return False
 
 
@@ -239,6 +298,20 @@ def apply_rigid_body(
         )
         import_spec = load_default_operator_specs()["rigid_body_properties_import@1"]
         validate_operator_outputs(import_spec, {"properties": properties}, store)
+        properties_provenance = _persist_provenance(
+            store,
+            run_id=run.run_id,
+            node_id=import_attempt.node_id,
+            port_name="properties",
+            artifact=properties,
+            derived_from=[],
+            operator="rigid_body_properties_import",
+            backend="core",
+            backend_version="1",
+            parameters={"source_path": properties_path.name},
+            seed=None,
+            source="user",
+        )
         import_attempt.status = "succeeded"
         import_attempt.finished_at = utc_now()
         import_attempt.outputs = {"properties": properties}
@@ -302,6 +375,39 @@ def apply_rigid_body(
             raise ContractError("rigid-body assignment requires exactly one visual mesh")
         if not isinstance(collisions, list) or len(collisions) != 1:
             raise ContractError("rigid-body assignment requires exactly one collision mesh")
+        if geometry.get("point_clouds") or geometry.get("gaussians"):
+            raise ContractError("rigid-body assignment rejects point clouds and gaussians")
+        visual = _artifact(visuals[0], "visual_meshes[0]")
+        if not store.verify_digest(visual):
+            raise ContractError("source visual mesh has an invalid digest")
+        visual_identity = store.get_manifest(visual.artifact_id).identity
+        metadata = visual_identity.identity_metadata
+        if visual_identity.kind != "triangle_mesh" or any(
+            metadata.get(key) != value
+            for key, value in {
+                "frame_id": spatial.get("canonical_frame_id"),
+                "unit": "meter",
+                "up_axis": "+Z",
+                "forward_axis": "+X",
+            }.items()
+        ):
+            raise ContractError("source visual mesh does not match canonical metric space")
+        _mesh_instances(store, visual)
+        visual_glb = source_files.get("geometry/visual.glb")
+        if visual_glb is None:
+            raise ContractError("source release must contain geometry/visual.glb")
+        export_identity = store.get_manifest(visual_glb.artifact_id).identity
+        if export_identity.kind != "gltf_asset" or any(
+            export_identity.identity_metadata.get(key) != value
+            for key, value in {
+                "frame_id": "gltf_export",
+                "unit": "meter",
+                "up_axis": "+Y",
+                "forward_axis": "+Z",
+            }.items()
+        ):
+            raise ContractError("release visual GLB does not match metric glTF space")
+        _validate_export_correspondence(store, visual, visual_glb)
         collision = _artifact(collisions[0], "collision_meshes[0]")
         if (
             raw["source_release_id"] != release.artifact_id
@@ -346,6 +452,7 @@ def apply_rigid_body(
             raise ContractError(
                 "release collision GLB lacks provenance from the selected collision mesh"
             )
+        _validate_export_correspondence(store, collision, collision_glb)
         physics = PhysicsInfo(
             schema_version="1.0",
             body_type="dynamic",
@@ -413,20 +520,6 @@ def apply_rigid_body(
         }
         validate_operator_inputs(assignment_spec, assignment_inputs, store)
         validate_operator_outputs(assignment_spec, assignment_outputs, store)
-        properties_provenance = _persist_provenance(
-            store,
-            run_id=run.run_id,
-            node_id=import_attempt.node_id,
-            port_name="properties",
-            artifact=properties,
-            derived_from=[],
-            operator="rigid_body_properties_import",
-            backend="core",
-            backend_version="1",
-            parameters={"source_path": properties_path.name},
-            seed=None,
-            source="user",
-        )
         quality_provenance = _persist_provenance(
             store,
             run_id=run.run_id,
