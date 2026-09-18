@@ -6,9 +6,7 @@ import json
 import os
 import shutil
 import uuid
-from ctypes import CDLL, c_char_p, c_int, get_errno
 from dataclasses import dataclass
-from errno import ENOSYS
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -33,6 +31,7 @@ from .models import (
 )
 from .operators import _load_scene, _scene_vertices
 from .pipeline import load_default_operator_specs
+from .publication import publish_staged_release
 from .runtime import utc_now
 from .scene_workflow import _release_files
 from .serialization import canonical_json_bytes, sha256_bytes, to_primitive
@@ -150,24 +149,7 @@ def validate_properties(raw: Any) -> dict[str, Any]:
 
 
 def _publish_staged_release(staging_path: Path, output_path: Path) -> None:
-    libc = CDLL(None, use_errno=True)
-    renameat2 = getattr(libc, "renameat2", None)
-    if renameat2 is None:
-        raise OSError(ENOSYS, "atomic no-replace publication is unavailable")
-    renameat2.argtypes = [c_int, c_char_p, c_int, c_char_p, c_int]
-    renameat2.restype = c_int
-    if (
-        renameat2(
-            -100,
-            os.fsencode(staging_path),
-            -100,
-            os.fsencode(output_path),
-            1,
-        )
-        != 0
-    ):
-        error_number = get_errno()
-        raise OSError(error_number, os.strerror(error_number), output_path)
+    publish_staged_release(staging_path, output_path)
 
 
 def _validated_collision_scene(store: LocalArtifactStore, collision: ArtifactRef) -> None:

@@ -19,8 +19,10 @@ from .contracts import ContractError, validate_operator_inputs, validate_operato
 from .models import ArtifactRef, BuildRun, NodeAttempt, StructuredValue
 from .operators import validate_binary_mask
 from .pipeline import load_default_operator_specs
+from .publication import publish_staged_release
 from .runtime import utc_now
 from .serialization import canonical_json_bytes, to_primitive
+from .workbench_context import ChildRunContext
 from .workflow import _import_image, _persist_build_run, _persist_provenance
 
 
@@ -80,7 +82,13 @@ def _validate_result(
 
 
 def propose_instances(
-    *, image_path: Path, store_path: Path, output_path: Path, backend: InstanceProposer
+    *,
+    image_path: Path,
+    store_path: Path,
+    output_path: Path,
+    backend: InstanceProposer,
+    run_id: str | None = None,
+    child_context: ChildRunContext | None = None,
 ) -> dict[str, Any]:
     store = LocalArtifactStore(store_path)
     if output_path.exists():
@@ -100,7 +108,7 @@ def propose_instances(
         None,
     )
     run = BuildRun(
-        f"run_{uuid.uuid4().hex}",
+        run_id or f"run_{uuid.uuid4().hex}",
         "instance_proposals",
         "1",
         "running",
@@ -109,7 +117,12 @@ def propose_instances(
         utc_now(),
         None,
     )
-    _persist_build_run(store, run)
+    if child_context is not None:
+        child_context.begin(run)
+    else:
+        if (store.root / "runs" / f"{run.run_id}.json").exists():
+            raise ContractError("explicit run_id already exists")
+        _save_run(store, run, child_context)
     try:
         value = backend.propose(store, image)
         if (value.kind, value.schema_name, value.schema_version) != (
@@ -176,7 +189,7 @@ def propose_instances(
             None,
         )
         run.node_attempts.append(attempt)
-        _persist_build_run(store, run)
+        _save_run(store, run, child_context)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(
             prefix=f".{output_path.name}-", dir=output_path.parent
@@ -199,9 +212,9 @@ def propose_instances(
             attempt.finished_at = utc_now()
             run.status = "succeeded"
             run.finished_at = attempt.finished_at
-            run_ref = _persist_build_run(store, run)
+            run_ref = _save_run(store, run, child_context)
             (stage / "run.json").write_bytes(store.blob_path(run_ref).read_bytes())
-            stage.rename(output_path)
+            publish_staged_release(stage, output_path)
         return {
             "proposals": to_primitive(ref),
             "run_id": run.run_id,
@@ -215,7 +228,7 @@ def propose_instances(
         attempt.finished_at = utc_now()
         run.status = "failed"
         run.finished_at = attempt.finished_at
-        _persist_build_run(store, run)
+        _save_run(store, run, child_context)
         raise
 
 
@@ -228,6 +241,8 @@ def select_instance_proposals(
     output_path: Path,
     invert: bool = False,
     keep_largest: bool = False,
+    run_id: str | None = None,
+    child_context: ChildRunContext | None = None,
 ) -> dict[str, Any]:
     store = LocalArtifactStore(store_path)
     _checked(store, proposals, "instance_proposals")
@@ -261,7 +276,7 @@ def select_instance_proposals(
         None,
     )
     run = BuildRun(
-        f"run_{uuid.uuid4().hex}",
+        run_id or f"run_{uuid.uuid4().hex}",
         "instance_selection",
         "1",
         "running",
@@ -270,39 +285,21 @@ def select_instance_proposals(
         utc_now(),
         None,
     )
-    _persist_build_run(store, run)
+    if child_context is not None:
+        child_context.begin(run)
+    else:
+        if (store.root / "runs" / f"{run.run_id}.json").exists():
+            raise ContractError("explicit run_id already exists")
+        _save_run(store, run, child_context)
     try:
         if invert or keep_largest:
             original_proposals = proposals
             original = ArtifactRef(**indexed[proposal_ids[0]]["mask"])
             _checked(store, original, "binary_mask")
             validate_binary_mask(store, image, original)
-            with Image.open(store.blob_path(original)) as source_mask:
-                pixels = np.asarray(source_mask.convert("L"))
-            if invert:
-                pixels = 255 - pixels
-            parameters: dict[str, Any] = {"operation": "invert_binary_mask"}
-            if keep_largest:
-                labels, count = ndimage.label(pixels != 0, structure=np.ones((3, 3)))
-                sizes = np.bincount(labels.ravel())
-                sizes[0] = 0
-                winner = int(np.argmax(sizes)) if count else 0
-                before = int(np.count_nonzero(pixels))
-                pixels = np.asarray((labels == winner) & (labels != 0), dtype=np.uint8) * 255
-                parameters = {
-                    "operation": "keep_largest_component",
-                    "invert_first": invert,
-                    "connectivity": 8,
-                    "tie_break": "first_row_major",
-                    "policy_version": "1",
-                    "removed_pixels": before - int(np.count_nonzero(pixels)),
-                }
-            if not np.any(pixels):
-                raise ContractError("inverted mask has no foreground")
-            with tempfile.TemporaryDirectory(prefix="inverted-mask-") as directory:
-                path = Path(directory) / "mask.png"
-                Image.fromarray(pixels).save(path)
-                mask = _import_image(store, path, "binary_mask")
+            mask, parameters, pixels = prepare_selection_mask(
+                store, image, original, invert=invert, keep_largest=keep_largest
+            )
             mask_provenance = _persist_provenance(
                 store,
                 run_id=run.run_id,
@@ -415,7 +412,7 @@ def select_instance_proposals(
             None,
         )
         run.node_attempts.append(attempt)
-        _persist_build_run(store, run)
+        _save_run(store, run, child_context)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(
             prefix=f".{output_path.name}-", dir=output_path.parent
@@ -449,9 +446,9 @@ def select_instance_proposals(
             attempt.finished_at = utc_now()
             run.status = "succeeded"
             run.finished_at = attempt.finished_at
-            run_ref = _persist_build_run(store, run)
+            run_ref = _save_run(store, run, child_context)
             (stage / "run.json").write_bytes(store.blob_path(run_ref).read_bytes())
-            stage.rename(output_path)
+            publish_staged_release(stage, output_path)
         return {
             "selection": to_primitive(selection),
             "run_id": run.run_id,
@@ -465,5 +462,63 @@ def select_instance_proposals(
         attempt.finished_at = utc_now()
         run.status = "failed"
         run.finished_at = attempt.finished_at
-        _persist_build_run(store, run)
+        _save_run(store, run, child_context)
         raise
+
+
+def prepare_selection_mask(
+    store: LocalArtifactStore,
+    image: ArtifactRef,
+    original: ArtifactRef,
+    *,
+    invert: bool,
+    keep_largest: bool,
+) -> tuple[ArtifactRef, dict[str, Any], np.ndarray[Any, Any]]:
+    """The exact mask-edit-v1 implementation used by both preview and confirmation."""
+    validate_binary_mask(store, image, original)
+    if not isinstance(invert, bool) or not isinstance(keep_largest, bool):
+        raise ContractError("mask editing flags must be boolean")
+    if not invert and not keep_largest:
+        with Image.open(store.blob_path(original)) as source:
+            return original, {}, np.asarray(source.convert("L"))
+    with Image.open(store.blob_path(original)) as source_mask:
+        pixels = np.asarray(source_mask.convert("L"))
+    if invert:
+        pixels = 255 - pixels
+    parameters: dict[str, Any] = {"operation": "invert_binary_mask"}
+    if keep_largest:
+        labels, count = ndimage.label(pixels != 0, structure=np.ones((3, 3)))
+        sizes = np.bincount(labels.ravel())
+        sizes[0] = 0
+        winner = int(np.argmax(sizes)) if count else 0
+        before = int(np.count_nonzero(pixels))
+        pixels = np.asarray((labels == winner) & (labels != 0), dtype=np.uint8) * 255
+        parameters = {
+            "operation": "keep_largest_component",
+            "invert_first": invert,
+            "connectivity": 8,
+            "tie_break": "first_row_major",
+            "policy_version": "1",
+            "removed_pixels": before - int(np.count_nonzero(pixels)),
+        }
+    if not np.any(pixels):
+        raise ContractError("inverted mask has no foreground")
+    with tempfile.TemporaryDirectory(prefix="inverted-mask-") as directory:
+        path = Path(directory) / "mask.png"
+        Image.fromarray(pixels).save(path)
+        mask = _import_image(store, path, "binary_mask")
+    parameters.update(
+        {
+            "rule_version": "mask-edit-v1",
+            "operation_order": ["invert", "keep_largest"],
+            "invert": invert,
+            "keep_largest": keep_largest,
+        }
+    )
+    return mask, parameters, pixels
+
+
+def _save_run(
+    store: LocalArtifactStore, run: BuildRun, context: ChildRunContext | None
+) -> ArtifactRef:
+    return context.persist(run) if context else _persist_build_run(store, run)

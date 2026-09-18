@@ -43,9 +43,11 @@ from .operators import (
     validate_geometry,
 )
 from .pipeline import compile_pipeline, load_default_operator_specs, load_default_pipeline
+from .publication import publish_staged_release
 from .runtime import Phase1Runtime, utc_now
 from .serialization import canonical_json_bytes, sha256_bytes, to_primitive
 from .spatial import SpatialContractError, validate_mesh_native_frame
+from .workbench_context import ChildRunContext
 
 
 @dataclass(frozen=True)
@@ -174,7 +176,7 @@ def _materialize_release(
         }
         if actual != expected:
             raise RuntimeError("materialized release does not match its manifest")
-        temporary.replace(output_path)
+        publish_staged_release(temporary, output_path)
     except Exception:
         shutil.rmtree(temporary, ignore_errors=True)
         raise
@@ -195,6 +197,8 @@ def build_image_asset(
     pipeline_type: str = "512",
     asset_name: str | None = None,
     run_id: str | None = None,
+    child_context: ChildRunContext | None = None,
+    input_binding: ArtifactRef | None = None,
 ) -> BuildResult:
     if backend_name is not None and backend is None:
         raise ContractError("backend_name requires an inline backend")
@@ -208,7 +212,7 @@ def build_image_asset(
         run_id = f"run_{uuid.uuid4().hex}"
     elif not re.fullmatch(r"run_[A-Za-z0-9_-]+", run_id):
         raise ContractError("invalid explicit run_id")
-    if (store.root / "runs" / f"{run_id}.json").exists():
+    if child_context is None and (store.root / "runs" / f"{run_id}.json").exists():
         raise ContractError("explicit run_id already exists")
     pipeline = load_default_pipeline()
     specs = load_default_operator_specs()
@@ -258,6 +262,13 @@ def build_image_asset(
         resolved_plan.contract_digest,
         {node_id: binding.backend_version for node_id, binding in resolved_plan.backends.items()},
     )
+    if child_context is not None:
+        child_context.begin(run)
+
+        def checkpoint() -> None:
+            child_context.persist(run)
+
+        runtime.checkpoint = checkpoint
     provenance: list[ArtifactRef] = []
     try:
         image_ref = _import_image(store, image_path, "rgb_image")
@@ -276,7 +287,17 @@ def build_image_asset(
         }
         if provided_mask_ref is not None:
             run.inputs["source_mask"] = provided_mask_ref
-        runtime.validate_pipeline_inputs(run.inputs)
+        if input_binding is not None:
+            from .workbench_binding import verify_imported_binding
+
+            mapping = verify_imported_binding(store, input_binding, image_ref, provided_mask_ref)
+            run.inputs["selection_binding"] = input_binding
+            run.inputs["import_binding"] = mapping
+        runtime.validate_pipeline_inputs(
+            {key: value for key, value in run.inputs.items() if key in pipeline.inputs}
+        )
+        if child_context is not None:
+            child_context.persist(run)
 
         def execute_resolve_mask() -> tuple[SegmentationOutput, dict[str, Any]]:
             if provided_mask_ref is not None:
@@ -395,7 +416,7 @@ def build_image_asset(
                 node_id="generate_shape",
                 port_name="mesh",
                 artifact=generated.mesh,
-                derived_from=[prepared.rgba],
+                derived_from=[prepared.rgba, *([input_binding] if input_binding else [])],
                 operator="shape_generation",
                 backend=shape_binding.name,
                 backend_version=str(
@@ -622,7 +643,7 @@ def build_image_asset(
         release_attempt.finished_at = utc_now()
         run.status = "succeeded"
         run.finished_at = release_attempt.finished_at
-        run_ref = _persist_build_run(store, run)
+        run_ref = child_context.persist(run) if child_context else _persist_build_run(store, run)
         try:
             _materialize_release(store, output_path, release_ref, release, run_ref)
         except Exception:
@@ -631,7 +652,7 @@ def build_image_asset(
             release_attempt.finished_at = utc_now()
             run.status = "failed"
             run.finished_at = utc_now()
-            _persist_build_run(store, run)
+            (child_context.persist(run) if child_context else _persist_build_run(store, run))
             raise
         return BuildResult(run_id, asset_ref, release_ref, glb_ref, report_ref, output_path)
     except Exception:
@@ -639,5 +660,5 @@ def build_image_asset(
             raise
         run.status = "failed"
         run.finished_at = utc_now()
-        _persist_build_run(store, run)
+        (child_context.persist(run) if child_context else _persist_build_run(store, run))
         raise

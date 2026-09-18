@@ -29,11 +29,13 @@ class Phase1Runtime:
         store: LocalArtifactStore,
         pipeline: PipelineDefinition,
         specs: dict[str, OperatorSpec],
+        checkpoint: Callable[[], None] | None = None,
     ) -> None:
         self.store = store
         self.pipeline = pipeline
         self.specs = specs
         self.attempts: list[NodeAttempt] = []
+        self.checkpoint = checkpoint
 
     def validate_pipeline_inputs(self, inputs: Mapping[str, PortValue | list[PortValue]]) -> None:
         unknown = set(inputs) - set(self.pipeline.inputs)
@@ -76,6 +78,8 @@ class Phase1Runtime:
             error_code=None,
         )
         self.attempts.append(attempt)
+        if self.checkpoint is not None:
+            self.checkpoint()
         try:
             validate_operator_inputs(spec, inputs, self.store)
             result, outputs = execute()
@@ -93,3 +97,5 @@ class Phase1Runtime:
             raise
         finally:
             attempt.finished_at = utc_now()
+            if self.checkpoint is not None:
+                self.checkpoint()

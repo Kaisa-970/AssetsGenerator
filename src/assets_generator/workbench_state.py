@@ -34,7 +34,8 @@ class PrepareStage:
 
 @dataclass(frozen=True)
 class RetryRequested(PrepareStage):
-    pass
+    decision: DecisionCommand | None = None
+    command_ref: ArtifactRef | None = None
 
 
 @dataclass(frozen=True)
@@ -68,6 +69,7 @@ class MaskPreviewReady:
 class DecisionPrepared:
     command: DecisionCommand
     receipt: CommandReceipt
+    command_ref: ArtifactRef | None = None
 
 
 @dataclass(frozen=True)
@@ -182,6 +184,12 @@ def transition(current: BuildRun, event: Event) -> Transition:
             event.payload.receipt.request_digest == cache_key(event.payload.command),
             "decision request digest mismatch",
         )
+    elif isinstance(event.payload, RetryRequested) and event.payload.decision is not None:
+        _require(
+            event.payload.receipt is not None
+            and event.payload.receipt.request_digest == cache_key(event.payload.decision),
+            "decision retry digest mismatch",
+        )
     elif isinstance(event.payload, PrepareStage) and event.payload.receipt is not None:
         _require(
             event.payload.receipt.request_digest == event.payload.inputs.digest(),
@@ -271,12 +279,26 @@ def transition(current: BuildRun, event: Event) -> Transition:
             command_receipt=payload.receipt,
             worker_execution=payload.worker,
         )
+        decision_retry = isinstance(payload, RetryRequested) and payload.decision is not None
+        if decision_retry:
+            assert isinstance(payload, RetryRequested) and payload.decision is not None
+            previous_attempt = stage.current()
+            _require(
+                stage.human
+                and stage.request_ref == payload.decision.request_ref
+                and stage.draft == payload.decision.draft
+                and payload.command_ref is not None,
+                "invalid confirmed decision retry",
+            )
+            attempt.resolved_inputs = deepcopy(previous_attempt.resolved_inputs)
+            attempt.input_digest = previous_attempt.input_digest
         stage.attempts.append(attempt)
         stage.active_attempt = event.attempt
         stage.status = "running"
-        stage.request_ref = None
-        stage.draft = None
-        effect("prepare_human_request" if stage.human else "register_child")
+        if not decision_retry:
+            stage.request_ref = None
+            stage.draft = None
+        effect("prepare_human_request" if stage.human and not decision_retry else "register_child")
     else:
         attempt = stage.current()
         _require(event.attempt == attempt.attempt, "old attempt event")
@@ -366,6 +388,8 @@ def transition(current: BuildRun, event: Event) -> Transition:
             )
             attempt.resolved_inputs["request"] = payload.command.request_ref
             attempt.resolved_inputs["final_mask"] = payload.command.draft.final_mask
+            if payload.command_ref is not None:
+                attempt.resolved_inputs["decision_command"] = payload.command_ref
             attempt.command_receipt = payload.receipt
             attempt.child_run_id = payload.receipt.child_run_id
             stage.status = "running"

@@ -210,7 +210,7 @@ def test_proposal_publish_failure_records_run(tmp_path, monkeypatch):
     def fail(*args):
         raise OSError("publication failed")
 
-    monkeypatch.setattr(Path, "rename", fail)
+    monkeypatch.setattr("assets_generator.instance_proposals.publish_staged_release", fail)
     with pytest.raises(OSError, match="publication failed"):
         propose_instances(
             image_path=image,
@@ -239,7 +239,7 @@ def test_selection_publish_failure_records_run(tmp_path, monkeypatch):
     def fail(*args):
         raise OSError("publication failed")
 
-    monkeypatch.setattr(Path, "rename", fail)
+    monkeypatch.setattr("assets_generator.instance_proposals.publish_staged_release", fail)
     with pytest.raises(OSError, match="publication failed"):
         select_instance_proposals(
             proposals=ArtifactRef(**proposal["proposals"]),

@@ -263,3 +263,21 @@ operators:
     outputs:
       proposals: {kind: instance_proposals, carriers: [artifact_ref], schema_name: InstanceProposals, schema_version: "1.0"}
       provenance: {kind: provenance_record, carriers: [artifact_ref]}
+
+  - name: workbench_mask_selection
+    version: 1
+    inputs:
+      proposals: {kind: instance_proposals, carriers: [artifact_ref], schema_name: InstanceProposals, schema_version: "1.0"}
+    outputs:
+      selection: {kind: instance_selection, carriers: [artifact_ref], schema_name: InstanceSelection, schema_version: "1.0"}
+      binding: {kind: quality_evidence, carriers: [artifact_ref], schema_name: SelectionInputBinding, schema_version: "1.0"}
+
+  - name: workbench_image_workflow
+    version: 1
+    inputs:
+      binding: {kind: quality_evidence, carriers: [artifact_ref], schema_name: SelectionInputBinding, schema_version: "1.0"}
+    outputs:
+      asset: {kind: asset_definition, carriers: [artifact_ref], schema_name: AssetDefinition, schema_version: "1.0"}
+      release: {kind: asset_release, carriers: [artifact_ref], schema_name: AssetRelease, schema_version: "1.0"}
+      qa: {kind: quality_report, carriers: [artifact_ref]}
+      glb: {kind: gltf_asset, carriers: [artifact_ref], requires_frame: true, requires_unit: true}
