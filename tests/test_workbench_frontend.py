@@ -122,3 +122,23 @@ await assert.rejects(b.run("durableCommand('/runs/run_a/decision',{expected_revi
 await assert.rejects(b.run("durableCommand('/runs/run_a/decision',{expected_revision:4,reviewer:'bob'})"));
 assert.equal(calls,1);
 """)
+
+
+def test_failed_preview_image_never_enables_confirmation():
+    _run_js(r"""
+const b=browser();
+b.ctx.Image=class{set src(value){queueMicrotask(()=>this.onerror())}};
+b.run(`render(${JSON.stringify({...runState('run_a'),image_url:'/image',review:{items:[{proposal_id:'p1',area:4}],draft:{proposal_id:'p1',invert:false,keep_largest:false,mask_url:'/mask'}}})})`);
+await new Promise(resolve=>setImmediate(resolve));
+assert.equal(b.e('confirm').disabled,true);
+assert.equal(b.run('previewLoaded'),false);
+""")
+
+
+def test_explicit_rejection_clears_pending_command():
+    _run_js(r"""
+const b=browser();b.fetch(()=>Promise.resolve({ok:false,status:409,json:async()=>({error:'stale revision'})}));
+await assert.rejects(b.run("durableCommand('/runs/run_a/retry',{expected_revision:3})"));
+assert.equal(storage.get('workbench.pending'),undefined);
+assert.equal(b.run('pendingCommand'),null);
+""")
