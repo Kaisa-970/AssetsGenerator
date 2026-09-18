@@ -2,6 +2,8 @@
 
 ## 架构与契约 · design
 
+- [固定流程节点工作台 v1（设计提案，尚未实现）](design/node-workbench-v1.md)
+
 - [Phase 7 场景到资产首版契约](design/scene-to-assets.md)
 - [SAM v1 实例候选契约](design/sam-instance-proposals.md)
 - [Phase 8 Collision Generation v1](design/collision-generation.md)
