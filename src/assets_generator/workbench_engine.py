@@ -29,7 +29,7 @@ from .instance_proposals import (
 from .models import ArtifactRef, BuildRun, StructuredValue
 from .pipeline import load_default_operator_specs
 from .runtime import utc_now
-from .serialization import cache_key, to_primitive
+from .serialization import cache_key, read_json, to_primitive
 from .workbench_binding import create_selection_binding
 from .workbench_context import ChildRunContext
 from .workbench_models import (
@@ -47,7 +47,7 @@ from .workbench_models import (
     decode_record,
     proposal_evidence_digest,
 )
-from .workbench_persistence import CreationReceipt, ProcessProbe, WorkbenchRepository
+from .workbench_persistence import CreationReceipt, ProcessProbe, WorkbenchRepository, _references
 from .workbench_state import (
     ChildRegistered,
     ChildSucceeded,
@@ -408,12 +408,68 @@ class WorkbenchEngine:
             self.repository.commit(child, owner=registration)
             self._event(run_id, stage.stage_id, ChildRegistered(registration))
         elif effect.kind == "execute_adapter":
+            if not stage.human:
+                self._admit_compute(run_id, stage.stage_id, attempt.attempt)
             self._execute(run, plan, stage.stage_id)
         elif effect.kind == "release_launcher":
             # The active worker owns the channel and releases after durable authorization.
             pass
         else:
             raise ContractError(f"unsupported engine effect {effect.kind}")
+
+    def _admit_compute(self, run_id: str, stage_id: str, attempt_number: int) -> None:
+        """Serial drain cannot account for authorized orphan runners from an older service."""
+        directory = str(self.repository.directory.resolve())
+        for marker in (self.store.root / "parent_run_owners").glob("*.json"):
+            try:
+                owner = read_json(marker)
+            except (OSError, ValueError) as error:
+                raise ContractError("cannot verify workbench process ownership") from error
+            if owner.get("workbench_directory") != directory:
+                continue
+            try:
+                other = self.repository.load(marker.stem)
+            except (OSError, ValueError, KeyError, TypeError) as error:
+                raise ContractError(f"cannot verify process evidence for {marker.stem}") from error
+            if other.workbench is None:
+                raise ContractError("owned run has no workbench process evidence")
+            for other_stage in other.workbench.stage_states.values():
+                for old in other_stage.attempts:
+                    if (other.run_id, other_stage.stage_id, old.attempt) == (
+                        run_id,
+                        stage_id,
+                        attempt_number,
+                    ):
+                        continue
+                    worker = old.worker_execution
+                    if worker is None or worker.launch_phase in {"prepared", "identity_recorded"}:
+                        continue  # No durable authorization: the gate cannot launch its Backend.
+                    if (
+                        worker.launch_phase == "exit_observed"
+                        and worker.last_probe is not None
+                        and worker.last_probe.result == "exited"
+                    ):
+                        continue  # Durable empty-group terminal evidence survives PID reuse.
+                    observation = self.probe.observe(worker.identity())
+                    if observation.result != "exited":
+                        raise ContractError(
+                            f"compute admission blocked by {other.run_id}/{other_stage.stage_id}: "
+                            f"{observation.result}; "
+                            f"{observation.reason or 'process group unverified'}"
+                        )
+
+    def _verify_reference_closure(self, reference: ArtifactRef, visited: set[str]) -> None:
+        if reference.artifact_id in visited:
+            return
+        visited.add(reference.artifact_id)
+        if not self.store.verify_digest(reference):
+            raise ContractError(f"missing or corrupt recovery evidence: {reference.artifact_id}")
+        identity = self.store.get_manifest(reference.artifact_id).identity
+        if identity.identity_metadata.get("media_type") == "application/json":
+            for child in _references(
+                self.store.read_structured(reference), schema_name=identity.schema_name
+            ):
+                self._verify_reference_closure(child, visited)
 
     def _execute(self, run: BuildRun, plan: WorkbenchPlan, stage_id: str) -> None:
         assert run.workbench is not None
@@ -758,6 +814,15 @@ class WorkbenchEngine:
                 self._prepare_next(run_id)
                 break
             attempt = stage.current()
+            if stage.request_ref is not None:
+                self._verify_reference_closure(stage.request_ref, set())
+                request = decode_record(
+                    HumanInputRequest, self.store.read_structured(stage.request_ref)
+                )
+                if (request.run_id, request.stage_id) != (run_id, stage_id):
+                    raise ContractError("human request ownership mismatch")
+            if stage.draft is not None:
+                self._verify_reference_closure(stage.draft.final_mask, set())
             if stage.status in {"running", "waiting_for_input", "failed", "interrupted"}:
                 observation = None
                 if attempt.worker_execution and self.probe:

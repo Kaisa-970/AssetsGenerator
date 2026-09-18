@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from PIL import Image
 from test_instance_proposals import FakeProposer
 from test_scene_extraction import setup
@@ -242,3 +243,142 @@ def test_release_manifests_and_published_run_must_match_store(tmp_path):
             engine.recover(run.run_id)
         path.write_bytes(original)
         assert engine.recover(run.run_id).status == "succeeded"
+
+
+@pytest.mark.parametrize("probe_result", ["alive", "unknown"])
+def test_other_run_orphan_blocks_compute_until_explicit_retry(tmp_path, probe_result):
+    from assets_generator.workbench_models import ProcessObservation, WorkerExecution
+
+    store, image, profile = fixture_engine(tmp_path)
+
+    class Probe:
+        result = probe_result
+
+        def observe(self, identity):
+            return ProcessObservation(
+                "now", self.result, identity if self.result == "alive" else None
+            )
+
+    probe = Probe()
+    with WorkbenchRepository(store, tmp_path / "workbench") as repo:
+        engine = WorkbenchEngine(repo, {"fake": profile}, probe=probe)
+        orphan = engine.create(image, "fake", {}, "orphan")
+        engine.drain()
+        orphan = repo.load(orphan.run_id)
+        attempt = orphan.workbench.stage_states["propose"].current()
+        attempt.worker_execution = WorkerExecution(
+            "job",
+            attempt.child_run_id,
+            "launch",
+            "release_authorized",
+            "host",
+            "boot",
+            123,
+            456,
+            123,
+        )
+        repo.commit(orphan)
+        new = engine.create(image, "fake", {}, "new")
+        engine.drain()
+        blocked = repo.load(new.run_id)
+        assert blocked.status == "failed"
+        assert "admission blocked" in blocked.workbench.stage_states["propose"].current().error_code
+        assert (
+            repo.load(
+                blocked.workbench.stage_states["propose"].current().child_run_id
+            ).node_attempts
+            == []
+        )
+        # Clear old group; this does not implicitly restart the rejected calculation.
+        probe.result = "exited"
+        engine.drain()
+        assert repo.load(new.run_id).status == "failed"
+        engine.retry(new.run_id, blocked.workbench.state_revision, "retry")
+        engine.drain()
+        assert repo.load(new.run_id).status == "waiting_for_input"
+
+
+def test_corrupt_waiting_draft_isolated_without_poisoning_writer(tmp_path):
+    from assets_generator.workbench_service import LocalWorkbenchService
+
+    store, image, profile = fixture_engine(tmp_path)
+    with WorkbenchRepository(store, tmp_path / "workbench") as repo:
+        engine = WorkbenchEngine(repo, {"fake": profile})
+        broken = engine.create(image, "fake", {}, "broken")
+        engine.drain()
+        broken = repo.load(broken.run_id)
+        engine.preview(broken.run_id, broken.workbench.state_revision, "p0", True, True)
+        broken = repo.load(broken.run_id)
+        draft = broken.workbench.stage_states["select"].draft
+        # Its complement is another proposal mask in this fixture; use a dedicated
+        # same-kind corrupt ref for the draft to isolate waiting evidence validation.
+        isolated = store.persist_bytes(
+            b"invalid pixels",
+            kind="binary_mask",
+            schema_name="raster_image",
+            schema_version="1.0",
+            identity_metadata={"media_type": "image/png"},
+        )
+        from dataclasses import replace
+
+        broken.workbench.stage_states["select"].draft = replace(draft, final_mask=isolated)
+        repo.commit(broken)
+        store.blob_path(isolated).unlink()
+        service = LocalWorkbenchService(WorkbenchEngine(repo, {"fake": profile}))
+        service.recover_runs()
+        assert "recovery_error" in service.get_run(broken.run_id)
+        good = service.engine.create(image, "fake", {}, "good")
+        service.engine.drain()
+        assert repo.load(good.run_id).status == "waiting_for_input"
+        service.close()
+
+
+def test_corrupt_owned_run_process_evidence_blocks_admission(tmp_path):
+    store, image, profile = fixture_engine(tmp_path)
+    with WorkbenchRepository(store, tmp_path / "workbench") as repo:
+        engine = WorkbenchEngine(repo, {"fake": profile})
+        old = engine.create(image, "fake", {}, "old")
+        engine.drain()
+        (store.root / "runs" / f"{old.run_id}.json").write_text("{}")
+        new = engine.create(image, "fake", {}, "new")
+        engine.drain()
+        failed = repo.load(new.run_id)
+        assert failed.status == "failed"
+        assert (
+            "cannot verify process evidence"
+            in failed.workbench.stage_states["propose"].current().error_code
+        )
+
+
+def test_durable_worker_exit_is_not_invalidated_by_later_pid_reuse(tmp_path):
+    from assets_generator.workbench_models import ProcessObservation, WorkerExecution
+
+    store, image, profile = fixture_engine(tmp_path)
+
+    class Probe:
+        def observe(self, identity):
+            raise AssertionError("terminal exited process must not be reprobed")
+
+    with WorkbenchRepository(store, tmp_path / "workbench") as repo:
+        engine = WorkbenchEngine(repo, {"fake": profile}, probe=Probe())
+        old = engine.create(image, "fake", {}, "old")
+        engine.drain()
+        old = repo.load(old.run_id)
+        attempt = old.workbench.stage_states["propose"].current()
+        attempt.worker_execution = WorkerExecution(
+            "job",
+            attempt.child_run_id,
+            "launch",
+            "exit_observed",
+            "host",
+            "boot",
+            123,
+            456,
+            123,
+            exit_code=0,
+            last_probe=ProcessObservation("then", "exited"),
+        )
+        repo.commit(old)
+        new = engine.create(image, "fake", {}, "new")
+        engine.drain()
+        assert repo.load(new.run_id).status == "waiting_for_input"
