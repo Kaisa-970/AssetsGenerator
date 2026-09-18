@@ -7,6 +7,7 @@
 - [Phase 8 Collision Generation v1](design/collision-generation.md)
 - [Phase 8 Metric Scale Calibration v1](design/metric-scale-calibration.md)
 - [Phase 8 Explicit Rigid Body Properties v1](design/rigid-body-properties.md)
+- [USD 导出边界提案（尚未实现）](design/usd-export.md)
 
 - [Completion 生成候选契约](design/completion-candidate.md)
 
