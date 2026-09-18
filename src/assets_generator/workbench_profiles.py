@@ -8,12 +8,16 @@ import math
 import os
 import re
 import subprocess
+from collections.abc import Callable
+from contextvars import ContextVar
+from dataclasses import replace
+from functools import partial
 from pathlib import Path
 from typing import Any
 
 from .backend_registry import BackendRegistry, resolve_plan
 from .backends.environment_identity import backend_environment_identity
-from .backends.model_identity import snapshot_digest
+from .backends.model_identity import snapshot_digest, snapshot_state
 from .backends.sam_instances import SAMInstanceProposer
 from .backends.source_identity import backend_source_identity
 from .operators import Trellis2Backend, TripoSRBackend
@@ -23,11 +27,50 @@ from .workbench_engine import BackendProfile
 _BACKENDS = Path(__file__).parent / "backends"
 
 
+_CHECKS: ContextVar[list[Callable[[], None]] | None] = ContextVar("profile_checks", default=None)
+
+
+def _signature(path: Path) -> list[Any]:
+    stat = path.stat()
+    return [
+        str(path.resolve()),
+        stat.st_dev,
+        stat.st_ino,
+        stat.st_size,
+        stat.st_mtime_ns,
+        stat.st_ctime_ns,
+    ]
+
+
+def _guard(probe: Callable[[], Any], before: Any) -> None:
+    def check() -> None:
+        try:
+            unchanged = probe() == before
+        except OSError as error:
+            raise ValueError("backend resources changed; reload profiles") from error
+        if not unchanged:
+            raise ValueError("backend resources changed; reload profiles")
+
+    check()
+    checks = _CHECKS.get()
+    if checks is not None:
+        checks.append(check)
+
+
+def _snapshot_digest(path: Path) -> str:
+    before = snapshot_state(path)
+    digest = snapshot_digest(path)
+    _guard(lambda: snapshot_state(path), before)
+    return digest
+
+
 def _digest(path: Path) -> str:
+    before = _signature(path)
     value = hashlib.sha256()
     with path.open("rb") as stream:
         for block in iter(lambda: stream.read(1024 * 1024), b""):
             value.update(block)
+    _guard(lambda: _signature(path), before)
     return "sha256:" + value.hexdigest()
 
 
@@ -55,33 +98,57 @@ def _environment_identity(python: Path, packages: tuple[str, ...]) -> dict[str, 
     probe = r"""
 import hashlib,importlib.metadata,importlib.util,json,pathlib,sys
 packages={}
+tracked={}
+roots=[]
+def signature(path):
+    stat=path.stat()
+    return [str(path.resolve()),stat.st_dev,stat.st_ino,stat.st_size,
+            stat.st_mtime_ns,stat.st_ctime_ns]
+def content_digest(path):
+    before=signature(path)
+    value=hashlib.sha256()
+    with path.open('rb') as stream:
+        for block in iter(lambda:stream.read(1024*1024),b''):value.update(block)
+    if before!=signature(path):raise RuntimeError('environment changed while hashing')
+    tracked[str(path)]=before
+    return value.digest()
+def listing(root):
+    return sorted(str(path) for path in root.rglob('*') if path.is_file()
+                  and '__pycache__' not in path.parts and path.suffix!='.pyc')
 for name in json.loads(sys.argv[1]):
     dist=importlib.metadata.distribution(name)
     digest=hashlib.sha256()
+    package_root=pathlib.Path(str(dist.locate_file(name.replace('-','_'))))
+    for root in [package_root,pathlib.Path(str(dist._path))]:
+        if root.is_dir(): roots.append([str(root),listing(root)])
     for entry in sorted(dist.files or [],key=str):
         if '__pycache__' in entry.parts or entry.suffix=='.pyc': continue
         path=pathlib.Path(str(dist.locate_file(entry)))
         if path.is_file():
             digest.update(str(entry).encode()+b'\0')
-            with path.open('rb') as stream:
-                content=hashlib.sha256()
-                for block in iter(lambda:stream.read(1024*1024),b''):content.update(block)
-            digest.update(content.digest())
+            digest.update(content_digest(path))
     if name == 'segment_anything':
         spec=importlib.util.find_spec('segment_anything')
         if spec is None or not spec.submodule_search_locations:
             raise RuntimeError('segment_anything package sources are unavailable')
         for root in sorted(spec.submodule_search_locations):
             root=pathlib.Path(root)
+            roots.append([str(root),listing(root)])
             for path in sorted(root.rglob('*')):
                 if not path.is_file() or '__pycache__' in path.parts or path.suffix=='.pyc':
                     continue
                 digest.update(path.relative_to(root).as_posix().encode()+b'\0')
-                digest.update(hashlib.sha256(path.read_bytes()).digest())
+                digest.update(content_digest(path))
     packages[name]={'version':dist.version,'content_digest':'sha256:'+digest.hexdigest()}
 executable=pathlib.Path(sys.executable)
-identity={'python_version':sys.version,'python_executable_digest':'sha256:'+hashlib.sha256(executable.read_bytes()).hexdigest(),'packages':packages}
+identity={'python_version':sys.version,'python_executable_digest':'sha256:'+content_digest(executable).hex(),'packages':packages}
 identity['environment_digest']='sha256:'+hashlib.sha256(json.dumps(identity,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+for root,expected in roots:
+    if listing(pathlib.Path(root))!=expected:raise RuntimeError('environment listing changed')
+for path,expected in tracked.items():
+    if signature(pathlib.Path(path))!=expected:raise RuntimeError('environment changed')
+identity['_resource_signatures']=tracked
+identity['_resource_roots']=roots
 print(json.dumps(identity))
 """
     try:
@@ -98,6 +165,20 @@ print(json.dumps(identity))
         raise ValueError(f"cannot identify local backend environment: {error}") from error
     if not isinstance(value, dict) or not isinstance(value.get("environment_digest"), str):
         raise ValueError("invalid backend environment identity")
+    signatures = value.pop("_resource_signatures", {})
+    roots = value.pop("_resource_roots", [])
+    for filename, expected in signatures.items():
+        _guard(partial(_signature, Path(filename)), expected)
+    for dirname, expected in roots:
+
+        def listing(path: Path = Path(dirname)) -> list[str]:
+            return sorted(
+                str(item)
+                for item in path.rglob("*")
+                if item.is_file() and "__pycache__" not in item.parts and item.suffix != ".pyc"
+            )
+
+        _guard(listing, expected)
     return value
 
 
@@ -191,11 +272,11 @@ def _model_identity(backend: str, model: Path, python: Path) -> dict[str, Any]:
         _path(str(conditioning_model / "config.json"))
         if not list(conditioning_model.glob("*.safetensors")):
             raise ValueError("local DINO model requires safetensors weights")
-        extra["conditioning_model_digest"] = snapshot_digest(conditioning_model)
-    return {"snapshot_digest": snapshot_digest(model), **extra}
+        extra["conditioning_model_digest"] = _snapshot_digest(conditioning_model)
+    return {"snapshot_digest": _snapshot_digest(model), **extra}
 
 
-def load_profiles(config: dict[str, Any]) -> dict[str, BackendProfile]:
+def _load_profiles(config: dict[str, Any]) -> dict[str, BackendProfile]:
     root = _object(config, {"sam", "profiles"}, {"sam", "profiles"})
     sam_keys = {
         "python",
@@ -217,6 +298,7 @@ def load_profiles(config: dict[str, Any]) -> dict[str, BackendProfile]:
         checkpoint,
         **{key: value for key, value in sam.items() if key not in {"python", "checkpoint"}},
     )
+    _guard(lambda: _signature(python), _signature(python))
     proposal_identity = {
         "backend": "sam-v1",
         "checkpoint_digest": _digest(checkpoint),
@@ -243,6 +325,7 @@ def load_profiles(config: dict[str, Any]) -> dict[str, BackendProfile]:
         if backend == "trellis2" and set(options) & triposr:
             raise ValueError("TripoSR options cannot configure TRELLIS")
         executable = _path(options["python"], executable=True)
+        _guard(partial(_signature, executable), _signature(executable))
         repo = _path(options["repo"], directory=True)
         model = _path(options["model"], directory=True)
         timeout = options.get("timeout_seconds", 900.0 if backend == "triposr" else 1800.0)
@@ -258,6 +341,7 @@ def load_profiles(config: dict[str, Any]) -> dict[str, BackendProfile]:
         frame_identity = None
         if backend == "triposr":
             frame = _path(options.get("frame_validation"))
+            _guard(partial(_signature, frame), _signature(frame))
             for key, default in (("chunk_size", 8192), ("mc_resolution", 256)):
                 value = options.get(key, default)
                 if type(value) is not int or value <= 0:
@@ -279,6 +363,7 @@ def load_profiles(config: dict[str, Any]) -> dict[str, BackendProfile]:
         else:
             implementation = Trellis2Backend(executable, repo, str(model), **parameters)
         source = backend_source_identity(repo)
+        _guard(partial(backend_source_identity, repo), source)
         identity = {
             "backend": backend,
             "source": {key: value for key, value in source.items() if key != "path"},
@@ -309,3 +394,22 @@ def load_profiles(config: dict[str, Any]) -> dict[str, BackendProfile]:
             name, proposer, plan, proposal_identity, identity, test_only=False
         )
     return profiles
+
+
+def load_profiles(config: dict[str, Any]) -> dict[str, BackendProfile]:
+    checks: list[Callable[[], None]] = []
+    token = _CHECKS.set(checks)
+    try:
+        profiles = _load_profiles(config)
+
+        def identity_check() -> None:
+            for check in checks:
+                check()
+
+        identity_check()
+        return {
+            name: replace(profile, identity_check=identity_check)
+            for name, profile in profiles.items()
+        }
+    finally:
+        _CHECKS.reset(token)

@@ -222,3 +222,63 @@ def test_invalid_trellis_pipeline_is_value_error(tmp_path, bad):
     (tmp_path / "x.safetensors").write_bytes(b"fixture")
     with pytest.raises(ValueError):
         profiles._model_identity("trellis2", tmp_path, Path(sys.executable))
+
+
+@pytest.mark.parametrize("change", ["checkpoint", "model_add", "model_delete", "symlink"])
+def test_profile_guard_rejects_changed_resources(tmp_path, monkeypatch, change):
+    config = _config(tmp_path, monkeypatch)
+    profile = profiles.load_profiles(config)["local-triposr"]
+    profile.identity_check()
+    model = Path(config["profiles"]["local-triposr"]["model"])
+    if change == "checkpoint":
+        Path(config["sam"]["checkpoint"]).write_bytes(b"changed")
+    elif change == "model_add":
+        (model / "new.json").write_text("{}")
+    elif change == "model_delete":
+        (model / "model.ckpt").unlink()
+    else:
+        interpreter = Path(config["sam"]["python"])
+        interpreter.unlink()
+        interpreter.symlink_to("/bin/true")
+    with pytest.raises(ValueError, match="resources changed"):
+        profile.identity_check()
+
+
+def test_digest_rejects_mutation_during_hash(tmp_path, monkeypatch):
+    path = tmp_path / "weights"
+    path.write_bytes(b"before")
+    original = profiles._signature
+    calls = 0
+
+    def signature(value):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            path.write_bytes(b"after")
+        return original(value)
+
+    monkeypatch.setattr(profiles, "_signature", signature)
+    with pytest.raises(ValueError, match="resources changed"):
+        profiles._digest(path)
+
+
+def test_environment_guard_rejects_new_package_source(tmp_path, monkeypatch):
+    package = tmp_path / "segment_anything"
+    package.mkdir()
+    (package / "__init__.py").write_text("# fixture")
+    info = tmp_path / "segment_anything-1.0.dist-info"
+    info.mkdir()
+    (info / "METADATA").write_text("Name: segment_anything\nVersion: 1.0\n")
+    (info / "RECORD").write_text("segment_anything-1.0.dist-info/METADATA,,\n")
+    monkeypatch.setenv("PYTHONPATH", str(tmp_path))
+    checks = []
+    token = profiles._CHECKS.set(checks)
+    try:
+        identity = profiles._environment_identity(Path(sys.executable), ("segment_anything",))
+    finally:
+        profiles._CHECKS.reset(token)
+    assert not any(key.startswith("_resource") for key in identity)
+    (package / "new.py").write_text("NEW = True")
+    with pytest.raises(ValueError, match="resources changed"):
+        for check in checks:
+            check()
