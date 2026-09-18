@@ -123,6 +123,9 @@ parent_run_id            可选，子运行关联
 `outputs`、`error_code`、时间及执行方式。实现时可用有类型的扩展字段；不得把恢复所需的数据
 藏进 UI 日志。成功输出是精确 ArtifactRef，人工输出还包含 decision/provenance 引用。
 
+`StageAttempt.error_code` 保存稳定错误枚举，`error_detail` 保存可读详情（旧记录缺省 null）。
+父阶段与子运行保留 Backend 超时、执行失败等具体分类。
+
 attempt 的恢复扩展还包括 `command_receipt`、`child_registration` 和 `worker_execution`。
 后两者分别保存子运行所有权和进程执行证据，不另建任务数据库；定义见第 4.1、7.1 节。
 
@@ -365,7 +368,9 @@ stage/attempt、启动请求摘要和 launch 状态；启动握手再记录 host
 本地文件系统为边界，不声称覆盖硬件违约或远程文件系统的耐久性。
 
 工作台 Backend 使用独立进程组，launcher 在其直接子任务结束前不退出；不支持脱离该组的
-守护进程式 Backend。恢复检查已登记进程及组内任务，不能只看 launcher 是否仍存在：
+守护进程式 Backend。首次接入新的 Backend 时须在运行报告显式记录进程行为准入：
+检查 runner 及已知辅助任务是否创建新 session/进程组，并用目标环境运行观察佐证。
+未完成该检查不代表已证明组外 GPU 任务不存在；本机制不提供 cgroup 级后代追踪。恢复检查已登记进程及组内任务，不能只看 launcher 是否仍存在：
 
 - 同一 host/boot，PID 与 starttime 匹配且仍运行：显示旧任务仍活动，禁止再次提交推理。
 - 已退出且相关进程组已清空：按子运行/发布证据决定成功恢复或 interrupted 后显式重试。
@@ -507,3 +512,10 @@ Artifact ID。报告分别记录操作链路是否通过及生成质量观察，
 - [SAM 候选与选择](sam-instance-proposals.md)
 - [场景到资产](scene-to-assets.md)
 - [质量评估](evaluation.md)
+
+### 实现成本备注
+
+计算准入仍遍历本工作台历史运行索引，成本随历史记录增长。具有耐久 `exit_observed`
+及空组退出证据的 worker 不再探测 `/proc`；仅未确认退出的已授权 worker 需要重新探测。
+因此不是每个历史 worker 都扫描一次 `/proc`，但长期使用仍需关注索引遍历开销。
+当前不引入另一份任务事实库或索引缓存优化。
