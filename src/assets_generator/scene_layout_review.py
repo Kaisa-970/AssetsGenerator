@@ -336,9 +336,8 @@ def create_scene_layout_review_server(
             self.wfile.write(data)
 
         def authorized_host(self) -> bool:
-            return (
-                self.headers.get("Host") == f"127.0.0.1:{cast(HTTPServer, self.server).server_port}"
-            )
+            port = cast(HTTPServer, self.server).server_port
+            return self.headers.get("Host") in {f"127.0.0.1:{port}", f"localhost:{port}"}
 
         def do_GET(self) -> None:
             if not self.authorized_host():
@@ -368,7 +367,7 @@ def create_scene_layout_review_server(
                 self.send_error(404)
 
         def do_POST(self) -> None:
-            origin = f"http://127.0.0.1:{cast(HTTPServer, self.server).server_port}"
+            origin = f"http://{self.headers.get('Host')}"
             if (
                 not self.authorized_host()
                 or self.headers.get("Origin") != origin

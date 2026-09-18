@@ -151,7 +151,8 @@ def test_existing_output_is_rejected_before_scene_construction(tmp_path, monkeyp
         )
 
 
-def test_http_server_is_loopback_scoped_and_serves_fixed_models(tmp_path):
+@pytest.mark.parametrize("hostname", ["127.0.0.1", "localhost"])
+def test_http_server_is_loopback_scoped_and_serves_fixed_models(tmp_path, hostname):
     store, draft, _ = draft_fixture(tmp_path)
     session = SceneLayoutReviewSession(store.root, draft, tmp_path / "scene")
     server = create_scene_layout_review_server(session, 0)
@@ -161,8 +162,9 @@ def test_http_server_is_loopback_scoped_and_serves_fixed_models(tmp_path):
     connection = HTTPConnection("127.0.0.1", server.server_port)
 
     def request(method, path, body=None, headers=None):
+        request_headers = {"Host": f"{hostname}:{server.server_port}", **(headers or {})}
         connection.request(
-            method, path, json.dumps(body) if body is not None else None, headers or {}
+            method, path, json.dumps(body) if body is not None else None, request_headers
         )
         response = connection.getresponse()
         return response.status, response.getheader("Content-Type"), response.read()
@@ -176,11 +178,15 @@ def test_http_server_is_loopback_scoped_and_serves_fixed_models(tmp_path):
         assert request("GET", "/models/-1.glb")[0] == 404
         assert request("GET", "/../store")[0] == 404
         assert request("GET", "/session", headers={"Host": "evil.example"})[0] == 403
+        assert request("GET", "/session", headers={"Host": "localhost:1"})[0] == 403
         assert request("POST", "/publish", {})[0] == 403
         headers = {
-            "Origin": f"http://127.0.0.1:{server.server_port}",
+            "Origin": f"http://{hostname}:{server.server_port}",
             "X-Review-Token": config["token"],
         }
+        for origin in ("http://evil.example", "http://localhost:1"):
+            assert request("POST", "/publish", {}, {**headers, "Origin": origin})[0] == 403
+        assert request("POST", "/publish", {}, {**headers, "X-Review-Token": "wrong"})[0] == 403
         poses = {
             item["instance_id"]: {
                 "translation": {"x": 0, "y": 0, "z": 0},
