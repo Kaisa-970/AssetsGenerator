@@ -117,3 +117,72 @@ def test_http_server_is_loopback_scoped_and_serves_only_review_assets(tmp_path):
         server.shutdown()
         thread.join()
         server.server_close()
+
+
+def test_inverted_selection_is_traceable_and_hands_off_to_extraction(tmp_path):
+    import numpy as np
+    from test_scene_extraction import setup
+
+    from assets_generator.scene_extraction import extract_scene_objects
+
+    store, proposals = fixture(tmp_path)
+    original = store.read_structured(proposals)
+    session = InstanceReviewSession(store.root, proposals, tmp_path / "selection")
+    result = session.publish({"proposal_ids": ["p0"], "reviewer": "tester", "invert": True})
+    with Image.open(tmp_path / "selection/object_001.png") as image:
+        pixels = np.asarray(image)
+    assert (pixels[:, :4] == 0).all()
+    assert (pixels[:, 4:] == 255).all()
+    assert store.read_structured(proposals) == original
+    decision = store.read_structured(ArtifactRef(**result["selection"]))
+    transformed = store.read_structured(ArtifactRef(**decision["proposals"]))
+    assert transformed["transformation"]["source_proposals"] == {
+        "artifact_id": proposals.artifact_id
+    }
+    assert transformed["proposals"][0]["predicted_iou"] is None
+    run = store.get_build_run(result["run_id"])
+    assert run["status"] == "succeeded"
+    evidence = store.read_structured(
+        ArtifactRef(**run["node_attempts"][0]["outputs"]["mask_provenance"])
+    )
+    assert evidence["parameters"]["operation"] == "invert_binary_mask"
+    assert evidence["run_id"] == result["run_id"]
+    (tmp_path / "extract").mkdir()
+    args = setup(tmp_path / "extract")
+    args.update(
+        manifest_path=tmp_path / "selection/objects.json",
+        store_path=store.root,
+        output_path=tmp_path / "extracted",
+    )
+    extract_scene_objects(**args)
+
+
+@pytest.mark.parametrize("ids,invert", [(["p0", "p1"], True), (["p0"], "yes")])
+def test_invalid_inversion_is_rejected(tmp_path, ids, invert):
+    store, proposals = fixture(tmp_path)
+    session = InstanceReviewSession(store.root, proposals, tmp_path / "selection")
+    with pytest.raises(ContractError, match="inversion"):
+        session.publish({"proposal_ids": ids, "reviewer": "tester", "invert": invert})
+
+
+def test_inverting_full_mask_rejects_empty_result(tmp_path):
+    from assets_generator.models import StructuredValue
+    from assets_generator.workflow import _import_image
+
+    store, proposals = fixture(tmp_path)
+    full = tmp_path / "full.png"
+    Image.new("L", (8, 6), 255).save(full)
+    mask = _import_image(store, full, "binary_mask")
+    raw = store.read_structured(proposals)
+    raw["proposals"][0]["mask"] = {"artifact_id": mask.artifact_id}
+    changed = store.persist_structured(
+        StructuredValue("instance_proposals", "InstanceProposals", "1.0", raw)
+    )
+    session = InstanceReviewSession(store.root, changed, tmp_path / "selection")
+    before = set((store.root / "runs").glob("*.json"))
+    with pytest.raises(ContractError, match="no foreground"):
+        session.publish({"proposal_ids": ["p0"], "reviewer": "tester", "invert": True})
+    created = set((store.root / "runs").glob("*.json")) - before
+    assert len(created) == 1
+    assert store.get_build_run(created.pop().stem)["status"] == "failed"
+    assert not (tmp_path / "selection").exists()

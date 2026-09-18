@@ -9,6 +9,9 @@ import uuid
 from pathlib import Path
 from typing import Any, Protocol
 
+import numpy as np
+from PIL import Image
+
 from .artifact_store import LocalArtifactStore
 from .completion import _checked
 from .contracts import ContractError, validate_operator_inputs, validate_operator_outputs
@@ -222,9 +225,12 @@ def select_instance_proposals(
     reviewer: str,
     store_path: Path,
     output_path: Path,
+    invert: bool = False,
 ) -> dict[str, Any]:
     store = LocalArtifactStore(store_path)
     _checked(store, proposals, "instance_proposals")
+    if not isinstance(invert, bool) or (invert and len(proposal_ids) != 1):
+        raise ContractError("inversion requires exactly one selected proposal")
     if not isinstance(reviewer, str) or not reviewer.strip():
         raise ContractError("selection requires reviewer")
     raw = store.read_structured(proposals)
@@ -262,6 +268,85 @@ def select_instance_proposals(
     )
     _persist_build_run(store, run)
     try:
+        if invert:
+            original_proposals = proposals
+            original = ArtifactRef(**indexed[proposal_ids[0]]["mask"])
+            _checked(store, original, "binary_mask")
+            validate_binary_mask(store, image, original)
+            with Image.open(store.blob_path(original)) as source_mask:
+                pixels = 255 - np.asarray(source_mask.convert("L"))
+            if not np.any(pixels):
+                raise ContractError("inverted mask has no foreground")
+            with tempfile.TemporaryDirectory(prefix="inverted-mask-") as directory:
+                path = Path(directory) / "mask.png"
+                Image.fromarray(pixels).save(path)
+                mask = _import_image(store, path, "binary_mask")
+            mask_provenance = _persist_provenance(
+                store,
+                run_id=run.run_id,
+                node_id=attempt.node_id,
+                port_name="inverted_mask",
+                artifact=mask,
+                derived_from=[original, original_proposals],
+                operator="instance_selection",
+                backend="core",
+                backend_version="1",
+                parameters={"operation": "invert_binary_mask"},
+                seed=None,
+                source="user",
+            )
+            ys, xs = np.nonzero(pixels)
+            replacement = {
+                **indexed[proposal_ids[0]],
+                "mask": to_primitive(mask),
+                "area": int(np.count_nonzero(pixels)),
+                "bbox": [
+                    int(xs.min()),
+                    int(ys.min()),
+                    int(xs.max() - xs.min() + 1),
+                    int(ys.max() - ys.min() + 1),
+                ],
+                "predicted_iou": None,
+                "stability_score": None,
+                "source": "user",
+                "provenance": to_primitive(mask_provenance),
+            }
+            raw = {
+                **raw,
+                "proposals": [
+                    replacement if p["proposal_id"] == proposal_ids[0] else p
+                    for p in raw["proposals"]
+                ],
+                "transformation": {
+                    "operation": "invert_binary_mask",
+                    "source_proposals": to_primitive(original_proposals),
+                    "proposal_id": proposal_ids[0],
+                },
+            }
+            proposals = store.persist_structured(
+                StructuredValue("instance_proposals", "InstanceProposals", "1.0", raw)
+            )
+            derived_provenance = _persist_provenance(
+                store,
+                run_id=run.run_id,
+                node_id=attempt.node_id,
+                port_name="derived_proposals",
+                artifact=proposals,
+                derived_from=[original_proposals, mask],
+                operator="instance_selection",
+                backend="core",
+                backend_version="1",
+                parameters={"operation": "invert_binary_mask"},
+                seed=None,
+                source="user",
+            )
+            attempt.outputs = {
+                "inverted_mask": mask,
+                "mask_provenance": mask_provenance,
+                "derived_proposals": proposals,
+                "derived_provenance": derived_provenance,
+            }
+            indexed = {p["proposal_id"]: p for p in raw["proposals"]}
         selection = store.persist_structured(
             StructuredValue(
                 "instance_selection",
@@ -293,7 +378,7 @@ def select_instance_proposals(
             seed=None,
             source="user",
         )
-        attempt.outputs = {"selection": selection, "provenance": provenance}
+        attempt.outputs.update({"selection": selection, "provenance": provenance})
         attempt.status = "succeeded"
         attempt.finished_at = utc_now()
         attempt = NodeAttempt(

@@ -88,6 +88,7 @@ class InstanceReviewSession:
             reviewer=reviewer,
             store_path=self.store.root,
             output_path=self.output_path,
+            invert=data.get("invert", False),
         )
         self.published = result
         return result

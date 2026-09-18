@@ -89,3 +89,10 @@ assets-generator extract-scene --manifest '<SELECTION>/objects.json' ...
 
 选择顺序决定 object_001、object_002。不要把 SAM 分数解释为类别置信度，也不要自动将
 全部候选送入 TRELLIS；重叠、部件和背景候选需要人工排除。
+
+若 SAM 只提供背景和物体部件，可在检查页只选择一个背景候选，再启用“取反”。
+彩色预览代表取反后的前景；确认覆盖目标物体且不包含其他物体后再发布。
+取反按整张图的二值补集执行，不保证补集只含一个物体。发布仍输出一个 object，
+持久化新 mask、派生候选集合和 user-source provenance，保留原候选不变；
+原 SAM 的 IoU/stability 分数不沿用到取反结果。取反得到空 mask 时拒绝发布。
+多个普通候选仍各自生成一个物体，不自动求并集。
