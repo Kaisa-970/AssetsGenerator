@@ -68,6 +68,10 @@ class ComfyClient:
 
     def observe(self, journal: ComfySubmissionJournal, key: str) -> dict[str, Any]:
         """Correlate history only; never resubmit or declare outputs imported."""
-        from .comfy_history import validate_history
-
-        return validate_history(journal.read(key), self.history(journal, key))
+        record = journal.read(key)
+        if record["deployment"].get("endpoint") != self.endpoint:
+            raise ValueError("ComfyUI journal endpoint differs from configured service")
+        fixed = journal.observation(key)
+        if fixed is not None:
+            return fixed
+        return journal.record_history(key, self.history(journal, key))

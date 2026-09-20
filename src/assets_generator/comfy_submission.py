@@ -13,7 +13,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from .serialization import canonical_json_bytes
+from .serialization import canonical_json_bytes, sha256_bytes
 
 
 class ComfySubmissionUnknown(ValueError):
@@ -30,6 +30,11 @@ class ComfySubmissionJournal:
             "CREATE TABLE IF NOT EXISTS prompts ("
             "submission_key TEXT PRIMARY KEY, request BLOB NOT NULL, "
             "prompt_id TEXT UNIQUE NOT NULL, phase TEXT NOT NULL)"
+        )
+
+        self.db.execute(
+            "CREATE TABLE IF NOT EXISTS observations ("
+            "submission_key TEXT PRIMARY KEY, body BLOB NOT NULL, digest TEXT NOT NULL)"
         )
 
     def close(self) -> None:
@@ -80,7 +85,7 @@ class ComfySubmissionJournal:
             canonical_json_bytes(parsed) != bytes(request)
             or set(parsed) != {"deployment", "prompt"}
             or str(uuid.UUID(prompt_id)) != prompt_id
-            or phase not in {"prepared", "sending", "acknowledged"}
+            or phase not in {"prepared", "sending", "acknowledged", "observed"}
         ):
             raise ValueError("invalid ComfyUI submission record")
         return {**parsed, "prompt_id": prompt_id, "phase": phase}
@@ -94,7 +99,9 @@ class ComfySubmissionJournal:
             record = self.read(key)
             if record["phase"] == "sending":
                 raise ComfySubmissionUnknown("query original prompt_id; resubmission forbidden")
-            if record["phase"] == "acknowledged":
+            if record["phase"] in {"acknowledged", "observed"}:
+                if record["phase"] == "observed":
+                    self.observation(key)
                 self.db.execute("COMMIT")
                 return record
             self.db.execute("UPDATE prompts SET phase='sending' WHERE submission_key=?", (key,))
@@ -122,3 +129,49 @@ class ComfySubmissionJournal:
             (key,),
         )
         return self.read(key)
+
+    def observation(self, key: str) -> dict[str, Any] | None:
+        record = self.read(key)
+        row = self.db.execute(
+            "SELECT body, digest FROM observations WHERE submission_key=?", (key,)
+        ).fetchone()
+        if record["phase"] != "observed":
+            if row is not None:
+                raise ValueError("ComfyUI observation without committed phase")
+            return None
+        if row is None or sha256_bytes(bytes(row[0])) != row[1]:
+            raise ValueError("ComfyUI fixed observation missing or corrupt")
+        from .comfy_history import validate_history
+
+        raw = json.loads(row[0])
+        validated = validate_history({**record, "phase": "sending"}, raw)
+        return validated
+
+    def record_history(self, key: str, history: dict[str, Any]) -> dict[str, Any]:
+        from .comfy_history import validate_history
+
+        body = canonical_json_bytes(history)
+        self.db.execute("BEGIN IMMEDIATE")
+        try:
+            record = self.read(key)
+            if record["phase"] == "observed":
+                result = self.observation(key)
+                previous = self.db.execute(
+                    "SELECT body FROM observations WHERE submission_key=?", (key,)
+                ).fetchone()
+                if bytes(previous[0]) != body:
+                    raise ValueError("ComfyUI fixed observation conflict")
+                assert result is not None
+            else:
+                result = validate_history(record, json.loads(body))
+                self.db.execute(
+                    "INSERT INTO observations VALUES (?, ?, ?)", (key, body, sha256_bytes(body))
+                )
+                self.db.execute(
+                    "UPDATE prompts SET phase='observed' WHERE submission_key=?", (key,)
+                )
+            self.db.execute("COMMIT")
+        except BaseException:
+            self.db.execute("ROLLBACK")
+            raise
+        return result
