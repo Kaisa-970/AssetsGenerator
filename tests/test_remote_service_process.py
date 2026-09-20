@@ -61,5 +61,47 @@ def test_authorization_failure_never_executes_and_blocks_new_job(tmp_path, monke
         with pytest.raises(ValueError, match="occupied"):
             ServiceProcessWorker(store, other).run(command)
         assert not marker.exists()
+        assert store.observe_worker(owner).result == "exited"
+        old = json.loads(store.worker_record(owner))
+        assert old["exit_code"] is None
+        assert old["launch_phase"] == "identity_recorded"
+        assert ServiceProcessWorker(store, other).run(command).status == "succeeded"
+        assert marker.exists()
+    finally:
+        store.close()
+
+
+@pytest.mark.parametrize("result", ["alive", "unknown"])
+def test_unverified_observation_does_not_release_slot(tmp_path, monkeypatch, result):
+    from assets_generator.serialization import canonical_json_bytes
+    from assets_generator.workbench_models import ProcessObservation, WorkerExecution
+    from assets_generator.workbench_process import LinuxProcessProbe
+
+    owner = request()
+    store = RemoteServiceStore(tmp_path / "service.sqlite", owner.identity)
+    try:
+        store.submit(owner)
+        store.transition(owner, expected="queued", state="running")
+        worker = WorkerExecution("worker", owner.submission_key, "sha256:" + "a" * 64)
+        before = canonical_json_bytes(worker)
+        store.save_worker(owner, before, previous=None)
+        worker.host_id, worker.boot_id = "host", "boot"
+        worker.pid, worker.pgid, worker.starttime_ticks = 123, 123, 456
+        worker.launch_phase = "identity_recorded"
+        store.save_worker(owner, canonical_json_bytes(worker), previous=before)
+        monkeypatch.setattr(
+            LinuxProcessProbe, "observe", lambda *_: ProcessObservation("now", result)
+        )
+        assert store.observe_worker(owner).result == result
+        assert store.db.execute("SELECT COUNT(*) FROM process_exits").fetchone()[0] == 0
+        other = RemoteRequest.create(owner.identity, "other", {})
+        store.submit(other)
+        store.transition(other, expected="queued", state="running")
+        with pytest.raises(ValueError, match="occupied"):
+            store.save_worker(
+                other,
+                canonical_json_bytes(WorkerExecution("other", "other", "digest")),
+                previous=None,
+            )
     finally:
         store.close()

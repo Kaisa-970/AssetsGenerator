@@ -10,6 +10,7 @@ from typing import Any
 
 from .remote_protocol import RemoteIdentity, RemoteJob, RemoteOutput, RemoteRequest, _identifier
 from .serialization import canonical_json_bytes, sha256_bytes
+from .workbench_models import ProcessObservation
 
 
 class RemoteServiceStore:
@@ -41,6 +42,10 @@ class RemoteServiceStore:
             self.db.execute(
                 "CREATE TABLE IF NOT EXISTS process_workers "
                 "(key TEXT PRIMARY KEY, body BLOB NOT NULL)"
+            )
+            self.db.execute(
+                "CREATE TABLE IF NOT EXISTS process_exits "
+                "(key TEXT PRIMARY KEY, worker BLOB NOT NULL, observation BLOB NOT NULL)"
             )
             body = canonical_json_bytes(identity)
             self.db.execute("BEGIN IMMEDIATE")
@@ -238,9 +243,11 @@ class RemoteServiceStore:
                 if previous is None:
                     if record.launch_phase != "prepared":
                         raise ValueError("worker must begin prepared")
-                    for (raw,) in self.db.execute("SELECT body FROM process_workers"):
+                    for key, raw in self.db.execute("SELECT key, body FROM process_workers"):
                         existing = _decode(WorkerExecution, json.loads(raw))
-                        if existing.launch_phase != "exit_observed":
+                        if existing.launch_phase != "exit_observed" and not self._released_worker(
+                            key, raw
+                        ):
                             raise ValueError("service process slot remains occupied")
                 else:
                     old = _decode(WorkerExecution, json.loads(previous))
@@ -265,6 +272,52 @@ class RemoteServiceStore:
                     (request.submission_key, body),
                 )
                 self.db.execute("COMMIT")
+            except BaseException:
+                self.db.execute("ROLLBACK")
+                raise
+
+    def _released_worker(self, key: str, worker: bytes) -> bool:
+        from .workbench_models import ProcessObservation, _decode
+
+        row = self.db.execute(
+            "SELECT worker, observation FROM process_exits WHERE key=?", (key,)
+        ).fetchone()
+        if row is None:
+            return False
+        observation = _decode(ProcessObservation, json.loads(row[1]))
+        if row[0] != worker or observation.result != "exited":
+            raise ValueError("invalid service process exit evidence")
+        return True
+
+    def observe_worker(self, request: RemoteRequest) -> ProcessObservation:
+        """Probe the saved identity; persist only confirmed exit, without inventing a code."""
+        from .workbench_models import ProcessObservation, WorkerExecution, _decode
+        from .workbench_process import LinuxProcessProbe
+
+        with self._lock:
+            self.db.execute("BEGIN IMMEDIATE")
+            try:
+                raw = self.worker_record(request)
+                if raw is None:
+                    raise ValueError("service worker identity missing")
+                worker = _decode(WorkerExecution, json.loads(raw))
+                if self._released_worker(request.submission_key, raw):
+                    row = self.db.execute(
+                        "SELECT observation FROM process_exits WHERE key=?",
+                        (request.submission_key,),
+                    ).fetchone()
+                    observation = _decode(ProcessObservation, json.loads(row[0]))
+                    assert isinstance(observation, ProcessObservation)
+                else:
+                    observation = LinuxProcessProbe().observe(worker.identity())
+                    if observation.result == "exited":
+                        self.db.execute(
+                            "INSERT INTO process_exits VALUES (?, ?, ?)",
+                            (request.submission_key, raw, canonical_json_bytes(observation)),
+                        )
+                self.db.execute("COMMIT")
+                assert isinstance(observation, ProcessObservation)
+                return observation
             except BaseException:
                 self.db.execute("ROLLBACK")
                 raise

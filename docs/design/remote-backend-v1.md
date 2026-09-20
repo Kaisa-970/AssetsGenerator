@@ -239,3 +239,9 @@ ServiceProcessWorker 复用 run_gated_process，将 prepared、identity_recorded
 授权写入失败时 launcher 不释放命令；不完整记录保守保留占用，数据库重开不会自动清除。尚未接重新探测、显式释放占用或真实模型 handler，因此不要将其包装进现有通用 execute_service_job 后声称超时/孤儿进程可重试：后者目前会将普通异常记为失败，模型服务需先按退出证据区分不确定状态。此接口也不提供不同数据库之间的 GPU 互斥。
 
 服务进程/存储合跑 10 项通过：真实独立 Python 命令及退出记录、同作业拒绝重放、授权保存失败不执行、重开数据库后未退出记录阻止另一个作业。Ruff 和 mypy（98 源文件）通过，无真实模型/GPU 验证。
+
+### 显式重新探测进程占用
+
+RemoteServiceStore.observe_worker 使用 LinuxProcessProbe 重新观察已保存的完整进程身份，确认 exited 后单独持久化 process_exits（绑定原 WorkerExecution bytes 和完整观察）。不改写原启动阶段、不编造 exit_code、不改变原作业状态，也不授权原作业重放。新作业准入可使用该固定退出证据释放同数据库进程槽；alive/unknown 保持占用。没有已记录身份的 prepared 窗口仍保守阻塞，尚无显式处置入口。
+
+服务进程/存储合跑 12 项通过：实际授权失败后 launcher 退出的重新探测允许新作业执行；模拟 alive/unknown 均不写退出记录且仍阻塞。Ruff/mypy 通过，无真实模型/GPU 验证。尚未提供用户命令，也未将这些规则接入模型 handler 的终态分类。
