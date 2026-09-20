@@ -127,6 +127,22 @@ const { chromium, expect } = require("@playwright/test");
       if (request.method() !== "GET") inspectionMutations++;
     };
     page.on("request", countMutation);
+    await page
+      .getByText("执行记录 · 1 次", { exact: true })
+      .evaluateAll((items) => items.forEach((item) => item.click()));
+    for (const nodeId of nodeIds) {
+      const summary = page.getByText(`输入输出证据 · ${nodeId} · #1`, {
+        exact: true,
+      });
+      await summary.click();
+      const evidence = summary.locator("..").locator("pre");
+      const displayed = JSON.parse(await evidence.innerText());
+      const attempt = after.run.dag.node_states[nodeId].attempts[0];
+      assert.deepEqual(displayed.resolved_inputs, attempt.resolved_inputs);
+      assert.deepEqual(displayed.outputs, attempt.outputs);
+      assert.deepEqual(displayed.provenance, attempt.provenance);
+      assert.equal(displayed.binding_digest, attempt.binding_digest);
+    }
     const planResponse = await page.request.get(`${url}/api/runs/${id}/plan`);
     assert.equal(planResponse.status(), 200);
     const plan = await planResponse.json();

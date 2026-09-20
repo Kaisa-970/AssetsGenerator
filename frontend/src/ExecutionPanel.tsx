@@ -13,6 +13,16 @@ type NodeState = {
   recovery_blocked_reason?: string | null;
   dispatch_block_reason?: string | null;
   attempts?: {
+    resolved_inputs?: Record<string, unknown>;
+    outputs?: Record<string, unknown>;
+    provenance?: Record<string, unknown>;
+    operator?: string;
+    adapter?: string;
+    input_digest?: string;
+    binding_digest?: string;
+    parameters_digest?: string;
+    started_at?: string;
+    finished_at?: string | null;
     error_code?: string;
     error_detail?: string;
     status?: string;
@@ -668,11 +678,40 @@ export function ExecutionPanel({
                 <details>
                   <summary>执行记录 · {state.attempts.length} 次</summary>
                   {state.attempts.map((attempt, index) => (
-                    <p key={index}>
-                      #{attempt.attempt || index + 1} · {attempt.status}
-                      <br />
-                      {attempt.error_code} {attempt.error_detail}
-                    </p>
+                    <div key={index}>
+                      <p>
+                        #{attempt.attempt || index + 1} · {attempt.status}
+                        <br />
+                        {attempt.error_code} {attempt.error_detail}
+                      </p>
+                      <details>
+                        <summary>
+                          输入输出证据 · {id} · #{attempt.attempt || index + 1}
+                        </summary>
+                        <p>
+                          这是该次执行保存的引用与摘要；展开不读取 Blob
+                          或重新执行节点。
+                        </p>
+                        <pre>
+                          {JSON.stringify(
+                            {
+                              operator: attempt.operator,
+                              adapter: attempt.adapter,
+                              resolved_inputs: attempt.resolved_inputs,
+                              outputs: attempt.outputs,
+                              provenance: attempt.provenance,
+                              input_digest: attempt.input_digest,
+                              binding_digest: attempt.binding_digest,
+                              parameters_digest: attempt.parameters_digest,
+                              started_at: attempt.started_at,
+                              finished_at: attempt.finished_at,
+                            },
+                            null,
+                            2,
+                          )}
+                        </pre>
+                      </details>
+                    </div>
                   ))}
                 </details>
               )}
