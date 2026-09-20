@@ -27,3 +27,15 @@
 ## 耐久远程服务联调后的全量回归
 
 在 `f2a19fd` 上运行单次完整 Python 回归：**1051 passed in 256.14s**。运行期间仅编辑文档，没有修改 Python 实现或测试。Ruff lint/format（194 文件）、mypy（97 源文件）、sdist/wheel 构建与 git diff --check 通过。未重跑浏览器测试或真实 GPU 推理。远程 CPU 菱形、服务重开和 worker SIGKILL 不重放已有测试，真实模型进程门控与自动恢复仍待实现。
+
+## 选区远程链与后处理来源补齐后的回归
+
+代码基线 `70b9ee0`。单次完整 Python 回归 **1104 passed in 281.70s**；
+Ruff lint/format（220 文件）、mypy（110 源文件）及 sdist/wheel 构建通过。
+前端 Vitest **15 passed**、Playwright **14 passed**，TypeScript/Vite 构建通过。
+Vite 仍提示 GLB 预览 chunk 超过 500 kB；此次没有改变打包策略。
+测试期间未修改实现，构建没有产生受版本控制的差异。
+
+新增单图 workflow 回归验证 `postprocess_mode` 进入 shape provenance；
+这不追溯修改既有发布证据，也不证明真实运行使用了某一种后处理路径。
+本轮未重跑 GPU，没有新增纹理质量或模型能力结论。
