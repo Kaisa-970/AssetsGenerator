@@ -106,3 +106,17 @@ SAM-only profiles 与双 HTTP 服务 CPU 发布/恢复的已登记回归。
 验证分次执行：32 项编辑器/远程配置/mask 测试通过；随后 25 项 mask/实际 HTTP
 发布/编辑器测试通过；补充的一位 PNG 和透明色键上传回归单项通过。Ruff、mypy、
 diff 检查通过。没有新增 GPU 或浏览器真实后端验收，未声称完整 Python 回归通过。
+
+## 双输入真实浏览器 CPU 验收
+
+代码基线 `bd048b5`，使用重新构建的前端及 `examples/cpu_image_editor.py` 实际 HTTP
+服务，Chromium 执行 `frontend/smoke/image-mask.cjs`，未拦截或模拟 API。
+4×4 RGB 与含前景/背景的灰度 PNG 分别上传；后端编译就绪，完整 `input_refs`
+固定到运行；RGBA 在浏览器正常解码；显式恢复前后 node_states 完全一致，只有
+一次 attempt，浏览器没有 pageerror。另从 Store 重新解码输出，确认全部 16 个
+像素的 RGB 保持不变、alpha 与 mask 完全一致，浏览器 alpha 也逐像素一致。
+
+仓库外证据记为 `<MASK_BROWSER_ROOT>/mask-browser.json`、`mask-browser.png` 和
+`pixel-verification.json`，不提交输入、Store 或生成图。服务已正常关闭。
+前端构建通过；仍存在已有的 bundle 大小提示。这次未运行 GPU、未做服务重启
+验收，也没有重跑完整 Python 或浏览器回归套件。

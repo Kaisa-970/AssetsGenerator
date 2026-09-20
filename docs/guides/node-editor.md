@@ -239,3 +239,24 @@ OperatorSpec 校验 kind、schema、carrier、digest 和证据完整性，再固
 
 远程 shape 仍必须通过启动配置注入可信 profile；画布只保存节点绑定和参数，不保存
 模型路径或未校验的服务地址。
+
+无需模型即可验证双输入画布：先构建前端，再启动 CPU 示例服务。
+
+```bash
+npm --prefix frontend run build
+PYTHONPATH=src <PYTHON> examples/cpu_image_editor.py \
+  --directory <DATASET_ROOT>/mask-editor --port 8770
+```
+
+打开页面，加载 `cpu-image-mask`，点击编译校验，在运行页分别上传同尺寸 RGB 图片
+和二值灰度 PNG mask。启动后点击 `预览图片 · composite · rgba`。
+可重复浏览器验收使用真实服务，无模拟 API：
+
+```bash
+node frontend/smoke/image-mask.cjs http://127.0.0.1:8770 \
+  <RGB_IMAGE> <MASK_PNG> <FRESH_EVIDENCE_DIRECTORY>
+```
+
+验收 mask 须同时包含前景和背景；证据目录需预先创建，不能覆盖旧验收文件。
+脚本检查真实编译、双上传、完整绑定、浏览器 alpha 预览和显式恢复不增加 attempt。
+这是 CPU 合成验收，不包含 Shape 模型推理或服务重启。
