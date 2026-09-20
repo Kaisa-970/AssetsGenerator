@@ -2225,6 +2225,9 @@ test("multi-input editor uploads RGB and mask and submits complete bindings", as
   page,
 }) => {
   const starts: any[] = [];
+  let rejectMask = false;
+  let delayMask: Promise<void> | undefined;
+  let releaseMask: (() => void) | undefined;
   const template = {
     pipeline: "mask_shape",
     version: "1",
@@ -2286,9 +2289,17 @@ test("multi-input editor uploads RGB and mask and submits complete bindings", as
     else if (path === "/api/drafts") body = { drafts: [] };
     else if (path === "/api/inputs/image")
       body = { image_ref: { artifact_id: "image_ref" } };
-    else if (path === "/api/inputs/mask")
+    else if (path === "/api/inputs/mask") {
+      if (rejectMask) {
+        await route.fulfill({
+          status: 400,
+          json: { error: "invalid replacement mask" },
+        });
+        return;
+      }
+      if (delayMask) await delayMask;
       body = { mask_ref: { artifact_id: "mask_ref" } };
-    else if (path === "/api/runs" && route.request().method() === "POST") {
+    } else if (path === "/api/runs" && route.request().method() === "POST") {
       starts.push(route.request().postDataJSON());
       body = {
         run: {
@@ -2331,4 +2342,39 @@ test("multi-input editor uploads RGB and mask and submits complete bindings", as
     mask: { artifact_id: "mask_ref" },
   });
   expect(starts[0]).not.toHaveProperty("image_ref");
+  rejectMask = true;
+  await page.getByLabel("上传输入 mask").setInputFiles({
+    name: "bad.png",
+    mimeType: "image/png",
+    buffer: Buffer.from("invalid"),
+  });
+  await expect(
+    page.getByText(/输入 mask 上传失败：.*invalid replacement mask/),
+  ).toBeVisible();
+  await expect(page.getByLabel("输入 mask Artifact ID")).toHaveValue("");
+  await expect(start).toBeDisabled();
+  await expect(page.getByLabel("输入 image Artifact ID")).toHaveValue(
+    "image_ref",
+  );
+  expect(starts).toHaveLength(1);
+  rejectMask = false;
+  delayMask = new Promise<void>((resolve) => {
+    releaseMask = resolve;
+  });
+  const sent = page.waitForRequest((r) => r.url().endsWith("/api/inputs/mask"));
+  await page.getByLabel("上传输入 mask").setInputFiles({
+    name: "late.png",
+    mimeType: "image/png",
+    buffer: Buffer.from("mask"),
+  });
+  await sent;
+  await page.getByRole("button", { name: "＋ 管线输入", exact: true }).click();
+  await expect(page.getByLabel("输入 input Artifact ID")).toBeVisible();
+  releaseMask!();
+  await expect(
+    page.getByText("上传期间输入契约已修改，请为当前输入重新选择文件。"),
+  ).toBeVisible();
+  await expect(page.getByLabel("输入 mask Artifact ID")).toHaveValue("");
+  await expect(start).toBeDisabled();
+  expect(starts).toHaveLength(1);
 });

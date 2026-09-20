@@ -138,6 +138,17 @@ export function ExecutionPanel({
   const [inputRefs, setInputRefs] = useState<
     Record<string, Record<string, unknown>>
   >({});
+  const inputSignature = JSON.stringify(pipeline.inputs);
+  const inputGeneration = useRef({ signature: inputSignature, revision: 0 });
+  if (inputGeneration.current.signature !== inputSignature) {
+    inputGeneration.current = {
+      signature: inputSignature,
+      revision: inputGeneration.current.revision + 1,
+    };
+  }
+  useEffect(() => {
+    setInputRefs({});
+  }, [inputSignature]);
   const multiView =
     Object.keys(pipeline.inputs).length === 1 &&
     "observations" in pipeline.inputs;
@@ -263,6 +274,13 @@ export function ExecutionPanel({
   };
   const uploadInputArtifact = async (name: string, file?: File) => {
     if (!file || uploadPending.current) return;
+    const revision = inputGeneration.current.revision;
+    setInputArtifact(name, "");
+    setUploadMessage("");
+    if (!file.size || file.size > 20 * 1024 * 1024) {
+      setUploadMessage("请选择非空且不超过 20 MiB 的图片。");
+      return;
+    }
     const kind = pipeline.inputs[name]?.kind;
     const endpoint =
       kind === "binary_mask"
@@ -290,6 +308,10 @@ export function ExecutionPanel({
       const reference = value.image_ref || value.mask_ref;
       if (!response.ok || typeof reference?.artifact_id !== "string")
         throw Error(value.error || "服务未返回有效 Artifact 引用");
+      if (inputGeneration.current.revision !== revision) {
+        setUploadMessage("上传期间输入契约已修改，请为当前输入重新选择文件。");
+        return;
+      }
       setInputArtifact(name, reference.artifact_id);
       setUploadMessage(`输入 ${name} 已上传并绑定。`);
     } catch (error) {
