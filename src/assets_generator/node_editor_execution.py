@@ -52,6 +52,17 @@ def validate_editor_inputs(plan: CompiledPlan) -> str:
         "zero_or_one",
     }:
         raise ContractError(f"canvas {name} input must accept a scalar ArtifactRef")
+    fixed_schema = {
+        "rgba_image": ("png", "1.0"),
+        "observation_bundle": ("ObservationBundle", "1.0"),
+    }.get(kind)
+    if fixed_schema is not None:
+        for field, expected in zip(("schema_name", "schema_version"), fixed_schema, strict=True):
+            declared = contract.get(field)
+            if declared is not None and declared != expected:
+                raise ContractError(
+                    f"canvas {name} input requires {field}={expected}; got {declared}"
+                )
     return name
 
 
