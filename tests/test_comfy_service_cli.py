@@ -70,3 +70,37 @@ def test_service_nonserve_missing_database_is_not_recreated(tmp_path):
     with pytest.raises(ValueError, match="refusing to recreate"):
         _execute(parser, args)
     assert not directory.exists()
+
+
+def test_service_execution_reports_failure_exit_code(tmp_path, monkeypatch, capsys):
+    import assets_generator.comfy_service_cli as module
+    from assets_generator.remote_protocol import RemoteJob
+    from assets_generator.serialization import canonical_json_bytes
+
+    path = tmp_path / "profile.json"
+    path.write_text(json.dumps(profile()))
+    directory = tmp_path / "jobs"
+    owner = RemoteServiceStore(directory / "service.sqlite", ComfyImageProfile.load(path).identity)
+    owner.close()
+    job = RemoteJob(
+        "one",
+        "failed",
+        None,
+        canonical_json_bytes({"code": "COMFY_EXECUTION_FAILED", "detail": "fixture"}),
+    )
+    monkeypatch.setattr(module, "execute_next_image", lambda *args: job)
+    parser = _parser()
+    args = parser.parse_args(
+        [
+            "comfy-service",
+            "execute-next",
+            "--profile",
+            str(path),
+            "--directory",
+            str(directory),
+            "--store",
+            str(tmp_path / "store"),
+        ]
+    )
+    assert _execute(parser, args) == 1
+    assert json.loads(capsys.readouterr().out)["error"]["code"] == "COMFY_EXECUTION_FAILED"

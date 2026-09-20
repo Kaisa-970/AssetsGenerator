@@ -117,3 +117,10 @@ assets-generator node-editor --directory /path/to/editor --store /path/to/core-s
 节点目录提供 image_transform@1 / comfy_image@1，实例通过 Backend 选择配置。
 该接线有启动/目录测试，尚未完成浏览器交互验收或真实 ComfyUI 验收。网关监听
 和显式执行命令仍需单独运行，不会因编辑器轮询自动派发远程模型。
+
+## 退出码
+
+执行动作（start/resume/execute-next/recover）确认任务失败时返回 1，并在 JSON
+error 中保留错误码和详情；结果未知返回 3。命令参数或校验错误返回 2。成功执行、
+空队列及成功的只读查询返回 0；status/list 的退出码只表示查询是否成功，任务
+状态以 JSON 为准。

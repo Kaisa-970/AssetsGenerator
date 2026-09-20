@@ -493,3 +493,9 @@ node-editor --comfy-config 加载受信网关/profile 映射，register_comfy_pr
 最初 smoke 因未接受模板确认、随后漏算输入节点失败，修正脚本后通过，没有将
 这两次失败视作产品缺陷。Vite 保留 >500 kB chunk 提示。此验证不证明浏览器发起
 ComfyUI 推理已闭环，也没有真实模型验收。
+
+### CLI 明确失败退出码修复
+
+执行命令此前对 failed 终态仍返回 0，已改为 1；未知仍为 3，参数错误为 2，
+status/list 成功查询保持 0。6 项 CLI 回归、Ruff 格式/检查和 mypy 通过，验证
+失败执行非零返回、JSON 保留原错误、只读状态查询不混用执行失败退出码。

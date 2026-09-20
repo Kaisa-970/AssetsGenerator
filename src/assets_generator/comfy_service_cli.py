@@ -65,7 +65,7 @@ def execute(args: argparse.Namespace) -> int:
         else:
             job = recover_image_job(profile, owner, args.key, journal, store)
         print(json.dumps(_job_value(job), indent=2))
-        return 0
+        return 1 if job is not None and job.state == "failed" else 0
     except ComfySubmissionUnknown as error:
         print(
             json.dumps(

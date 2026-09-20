@@ -66,7 +66,10 @@ def test_cli_validate_start_uncertain_resume_and_status(tmp_path, monkeypatch, c
     assert calls == ["start"]
     with pytest.raises(ValueError, match="state conflict"):
         run("start", ("--request", str(request_path)))
-    assert run("resume") == 0
+    assert run("resume") == 1
+    assert json.loads(capsys.readouterr().out)["error"]["code"] == "FIXTURE_FAILURE"
+    assert run("status") == 0
+    assert json.loads(capsys.readouterr().out)["state"] == "failed"
     assert calls == ["start", "finish"]
     owner = RemoteServiceStore(
         directory / "service.sqlite", ComfyImageProfile.load(profile_path).identity

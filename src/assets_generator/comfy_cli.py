@@ -98,8 +98,9 @@ def execute(args: argparse.Namespace) -> int:
         if args.action != "status":
             assert store is not None
             profile.finish(owner, req, args.directory / "comfy.sqlite", store)
-        print(json.dumps(_job_value(owner.lookup(req)), indent=2))
-        return 0
+        job = owner.lookup(req)
+        print(json.dumps(_job_value(job), indent=2))
+        return 1 if args.action != "status" and job is not None and job.state == "failed" else 0
     except ComfySubmissionUnknown as error:
         print(
             json.dumps(
