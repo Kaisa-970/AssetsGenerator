@@ -281,3 +281,9 @@ import_shape_rgba 按现有 prepare_observation 的 rgba_image/png@1.0 契约读
 ShapeServiceHandler 接受受信 Backend factory 和部署身份 verifier，客户端只可传 shape_generation@1、唯一 rgba 输入、固定摘要以及 seed/pipeline_type；拒绝模型路径等额外字段。导入后给 factory 注入 ServiceProcessWorker，调用现有 ShapeBackend.generate，推理前后重新核对部署身份，要求已登记且零退出的进程证据，再导出 mesh 与 shape_metadata。临时服务侧 ArtifactStore 不进入发布包。
 
 本轮组合测试使用 CPU 测试 Backend（执行独立 Python 命令并返回小型 GLB），验证进程登记、两次身份检查、结果下载、临时目录清理和额外模型路径拒绝。shape handler/input/output 合跑 13 项通过，Ruff/mypy（101 文件）通过。尚未提供真实 profile factory、DAG shape Adapter 或启动 CLI；测试不证明任何真实模型可用。
+
+## DAG RemoteShapeAdapter
+
+新增受信 RemoteShapeAdapter，绑定既有 shape_generation@1（端口来自 operators YAML），固定服务 endpoint/identity，并允许节点配置 seed/pipeline_type。image Artifact 以 rgba 上传，返回值要求 mesh/shape_metadata 的媒体类型与内容校验，再输出原 Operator 的 mesh/material/native_frame。未修改 OperatorSpec 或复制端口定义。
+
+DAG→耐久 HTTP 服务→ShapeServiceHandler→门控 CPU 测试 Backend→shape 导入已通过，成功后关闭服务仍能本地恢复，attempt 保持一次。该测试使用实际 YAML 合同，修正测试输入为显式 artifact_ref carrier 后，Adapter/handler/output 合跑 11 项通过；Ruff/mypy（102 文件）通过。尚未注册到生产编辑器目录，未运行真实模型。
