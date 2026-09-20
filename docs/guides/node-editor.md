@@ -86,3 +86,13 @@ node frontend/smoke/embedded-review.cjs <SMOKE_ROOT>/browser-config.json
 ### Profile 启动进度
 
 启用真实本地 profile 时，CLI 会在 stderr 输出 SAM checkpoint、SAM environment、每个 profile 的 source/model weights/environment 和最终一致性检查的开始、完成与耗时。模型快照摘要可能耗时较长；进度输出不跳过哈希，也不代表 GPU 已开始推理。服务地址只会在全部 profile 身份检查通过后打印。
+
+### 上传与响应丢失验收
+
+使用上面的 CPU smoke server，并使用新的空 `<SMOKE_ROOT>`，执行：
+
+```bash
+node frontend/smoke/embedded-review.cjs <SMOKE_ROOT>/browser-config.json --upload-retry
+```
+
+脚本通过浏览器上传真实图片；验证上传不创建运行后，将启动 POST 转发给真实服务，服务端创建成功后仅丢弃浏览器响应。刷新页面并重试原请求，核对请求内容、幂等键、ArtifactRef 和 run ID 不变，再完成 iframe mask 审查、发布和输出下载。脚本使用 Fake Backend，人工决定明确标注自动化测试，不是用户质量批准。

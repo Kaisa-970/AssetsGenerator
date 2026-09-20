@@ -64,3 +64,7 @@
 浏览器在请求前保存 sessionStorage 原请求和 UUID；响应未确认时可明确重试原请求，刷新或修改草稿不会改变它。明确放弃仅清除本地待办，不取消已有服务端运行。旧 API 无 key 调用仍兼容，但没有幂等保证。当前已完成运行的重放仍会重新编译并校验当前资源与图片身份；配置或路径内容变化时拒绝重放，可从运行列表查看已有结果。本轮未新增 GPU 推理。
 
 本轮验证：67 项 editor/execution/workbench foundation/engine Python 回归单次通过（47.05 秒）；前端 9 项 Vitest、11 项 Playwright 及 TypeScript/Vite 构建通过，另单独重跑了改草稿后重试原请求的浏览器用例。Ruff、mypy（86 源码文件）及 Python 构建通过。测试包含预留后中断、快照后中断、运行中重放、服务重启、键冲突、索引损坏拒绝及直接恢复的 marker 修复；并未重复宣称全仓测试或真实 GPU 端到端已验证。
+
+上传及创建幂等的实际 HTTP/浏览器 CPU 验收：可复现脚本 `frontend/smoke/embedded-review.cjs --upload-retry` 已接入真实服务。真实上传后运行列表为空；首次 POST 经真实服务处理后由测试拦截器丢弃响应；浏览器刷新并显式重试，原请求、图片引用与 run ID 均相同，列表只有一个运行。随后在实际 iframe 选择 mask、填写自动化检查人、确认发布；三个节点均 succeeded、各一次 attempt，决定回执一个，四类输出读取均 200 且非空，浏览器错误为 0。
+
+外部证据：`<SMOKE_ROOT>/embedded-result.json`、`embedded-completed.png`；本次 run 为 `dag_c02d4669e4764242b703d04ae9b98ed7`。独立读取 Store 中该 BuildRun 后验证完整证据闭包通过，BuildRun Artifact 为 `sha256:581f9d187062a3f80156e05f37dd7ae31d14eb5b6843783d4ff6673c9b8fb6e4`。首次脚本读取浏览器响应体触发 Playwright inspector cache 错误，未创建运行；改用 route.fetch 转发真实请求并保留响应用于核对后通过。无新增模型/GPU 推理，不将本轮 CPU 流程验收等同于模型质量验收。

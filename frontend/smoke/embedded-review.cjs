@@ -1,5 +1,6 @@
 const fs = require("fs");
-const { chromium } = require("@playwright/test");
+const assert = require("node:assert/strict");
+const { chromium, expect } = require("@playwright/test");
 (async () => {
   const config = JSON.parse(fs.readFileSync(process.argv[2]));
   const b = await chromium.launch({ headless: true });
@@ -11,14 +12,53 @@ const { chromium } = require("@playwright/test");
   await p.goto(config.url);
   await p.getByRole("button", { name: "dag-image-asset", exact: true }).click();
   await p.getByRole("button", { name: "运行", exact: true }).click();
-  await p.getByLabel("运行图片路径").fill(config.image);
-  const creation = p.waitForResponse(
-    (response) =>
-      response.url() === config.url + "/api/runs" &&
-      response.request().method() === "POST",
-  );
-  await p.getByRole("button", { name: "启动新运行", exact: true }).click();
-  const created = await (await creation).json();
+  let created;
+  let uploaded;
+  let originalRequest;
+  const uploadRetry = process.argv.includes("--upload-retry");
+  if (uploadRetry) {
+    await p.getByLabel("图片来源", { exact: true }).selectOption("upload");
+    await p.route(config.url + "/api/inputs/image", async (route) => {
+      const response = await route.fetch();
+      assert.equal(response.status(), 201);
+      uploaded = await response.json();
+      await route.fulfill({ response });
+    });
+    await p.getByLabel("上传运行图片").setInputFiles(config.image);
+    await expect(p.getByText("图片已上传；点击启动新运行才会执行模型。", { exact: true })).toBeVisible();
+    assert.ok(uploaded.image_ref.artifact_id);
+    assert.deepEqual(await (await p.request.get(config.url + "/api/runs")).json(), { runs: [] });
+    // Let the real server commit and dispatch, then lose only the response.
+    await p.route(config.url + "/api/runs", async (route) => {
+      if (route.request().method() !== "POST") return route.continue();
+      originalRequest = route.request().postDataJSON();
+      const response = await route.fetch();
+      assert.equal(response.status(), 202);
+      created = await response.json();
+      await route.abort("failed");
+    });
+    await p.getByRole("button", { name: "启动新运行", exact: true }).click();
+    await p.getByRole("button", { name: "重试原创建请求", exact: true }).waitFor();
+    await expect(p.getByRole("button", { name: "重试原创建请求", exact: true })).toBeEnabled();
+    await p.unroute(config.url + "/api/runs");
+    await p.reload();
+    await p.getByRole("button", { name: "运行", exact: true }).click();
+    const replayResponse = p.waitForResponse((r) => r.url() === config.url + "/api/runs" && r.request().method() === "POST");
+    await p.getByRole("button", { name: "重试原创建请求", exact: true }).click();
+    const replay = await replayResponse;
+    assert.deepEqual(replay.request().postDataJSON(), originalRequest);
+    assert.deepEqual(originalRequest.image_ref, uploaded.image_ref);
+    assert.equal((await replay.json()).run.run_id, created.run.run_id);
+    const runs = await (await p.request.get(config.url + "/api/runs")).json();
+    assert.equal(runs.runs.length, 1);
+  } else {
+    await p.getByLabel("运行图片路径").fill(config.image);
+    const creation = p.waitForResponse(
+      (response) => response.url() === config.url + "/api/runs" && response.request().method() === "POST",
+    );
+    await p.getByRole("button", { name: "启动新运行", exact: true }).click();
+    created = await (await creation).json();
+  }
   const runId = created.run.run_id;
 
   await p
@@ -58,9 +98,15 @@ const { chromium } = require("@playwright/test");
     Object.keys(result.run.dag.receipts).length !== 1
   )
     throw Error(JSON.stringify({ result, errors }));
+  if (uploadRetry) assert.deepEqual(result.run.dag.named_actual_inputs.image, uploaded.image_ref);
+  for (const output of result.outputs) {
+    const response = await p.request.get(config.url + output.url);
+    assert.equal(response.status(), 200);
+    assert.ok((await response.body()).length > 0);
+  }
   fs.writeFileSync(
     config.root + "/embedded-result.json",
-    JSON.stringify({ result, errors }, null, 2),
+    JSON.stringify({ result, errors, uploaded, originalRequest }, null, 2),
   );
   console.log(
     result.run.run_id,
