@@ -9,7 +9,7 @@ operators:
   - name: encode_png
     version: 1
     inputs:
-      image: {kind: rgb_image, carriers: [artifact_ref]}
+      image: {kind: rgb_image, carriers: [artifact_ref], schema_name: raster_image, schema_version: "1.0"}
     outputs:
       image: {kind: rgb_image, carriers: [artifact_ref], schema_name: png, schema_version: "1.0"}
 
