@@ -1,0 +1,18 @@
+pipeline: dag_image_asset
+version: '1'
+inputs:
+  image: {kind: rgb_image, carriers: [artifact_ref]}
+nodes:
+  candidates:
+    operator: instance_proposals@1
+    adapter: image_proposals@1
+    inputs: {image: pipeline.inputs.image}
+  choose_object:
+    operator: workbench_mask_selection@1
+    adapter: image_mask_selection@1
+    inputs: {proposals: candidates.outputs.proposals}
+  generate_asset:
+    operator: workbench_image_workflow@1
+    adapter: image_build@1
+    parameters: {seed: 42, pipeline_type: '512'}
+    inputs: {binding: choose_object.outputs.binding}
