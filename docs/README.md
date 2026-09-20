@@ -129,3 +129,4 @@
 - [TRELLIS.2 执行器中断与孤儿进程门控](reports/trellis-executor-interruption.md)
 
 - [真实父 DAG 故障重试与发布](reports/parent-dag-retry-real.md)
+- [多图浏览器上传、真实重建与重启恢复](reports/multiview-browser-upload-real.md)
