@@ -39,6 +39,7 @@
 
 ## 操作指南 · guides
 
+- [接入一个可组合 DAG 模块](guides/add-dag-module.md)
 - [通用 DAG Core：CPU 开发示例](guides/generic-dag-core.md)
 
 - [固定流程节点工作台](guides/node-workbench.md)
