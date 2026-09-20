@@ -127,3 +127,5 @@
 - [SAM-only 编辑器真实环境启动核验](reports/sam-only-editor-startup.md)
 - [SAM-only 与远程 TRELLIS.2 浏览器全链](reports/sam-only-browser-real-complete.md)
 - [TRELLIS.2 执行器中断与孤儿进程门控](reports/trellis-executor-interruption.md)
+
+- [真实父 DAG 故障重试与发布](reports/parent-dag-retry-real.md)

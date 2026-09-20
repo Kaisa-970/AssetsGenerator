@@ -20,7 +20,8 @@ SAM-only 配置完成真实环境启动核验，双服务模板完成 CPU 发布
 当前实现范围与限制见 [远程 Backend 状态表](../design/remote-backend-v1.md)。
 SAM-only 配置的[真实浏览器完整链](sam-only-browser-real-complete.md)及
 [真实执行器中断门控](trellis-executor-interruption.md)已分别验收；
-后者不覆盖 HTTP 服务重启及父 DAG 故障重试到成功发布全链。
+后者不覆盖 HTTP 服务重启；另已完成[真实父 DAG 故障重试到发布](parent-dag-retry-real.md)，
+该项为 API 脚本验收，不是浏览器重试或采样阶段中断验收。
 实验性 ComfyUI 图片链现已通过 CPU 浏览器运行、恢复及图片输出预览验证，
 另有只读部署声明预检；仍未完成真实 ComfyUI 模型验收。
 不把已完成输出恢复或一次 HTTP 200 当作推理中断验收。
@@ -32,11 +33,9 @@ SAM-only 配置的[真实浏览器完整链](sam-only-browser-real-complete.md)�
 
 接下来的真实验收按以下顺序推进，沿用隔离目录与串行 GPU：
 
-1. 远程生成的父 DAG 故障后显式重试并成功发布：核对 SAM、人工决定、RGBA 准备
-   不重放；shape 保留失败 attempt，第二次使用新作业键；最终发布可读。
-2. 多图浏览器上传与真实 DA3/Open3D 全链，以及服务进程重启后的固定证据核对。
-3. 同一选区绑定两个真实 Shape Backend 的比较管线；检查来源、参数和发布互相独立。
-4. 具备真实 ComfyUI 部署后，验证 profile 预检、提交与图片输出；仍明确内部身份边界。
+1. 多图浏览器上传与真实 DA3/Open3D 全链，以及服务进程重启后的固定证据核对。
+2. 同一选区绑定两个真实 Shape Backend 的比较管线；检查来源、参数和发布互相独立。
+3. 具备真实 ComfyUI 部署后，验证 profile 预检、提交与图片输出；仍明确内部身份边界。
 
 上述是待执行验收，不是已完成事实。不能通过降低身份校验或修改旧运行来复用不匹配的证据。
 
