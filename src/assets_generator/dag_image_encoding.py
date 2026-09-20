@@ -35,7 +35,7 @@ class EncodePngAdapter:
             ):
                 raise ContractError("PNG encoding requires a single opaque RGB frame")
             metadata = identity.identity_metadata
-            if (
+            if identity.schema_name == "raster_image" and (
                 metadata.get("channel_layout") != image.mode
                 or metadata.get("width") != image.width
                 or metadata.get("height") != image.height
