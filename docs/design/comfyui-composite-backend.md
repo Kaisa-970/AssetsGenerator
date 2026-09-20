@@ -160,3 +160,15 @@ upload_image 从有效 RGB/RGBA PNG Artifact 读取，校验编码和摘要后�
 52 项 ComfyUI 测试、Ruff/mypy 通过。回读只证明观察时刻的文件内容，不保证
 远程文件随后不可变；服务端隔离、提交前再次核验及输入映射的耐久记录仍需
 外层编排接入。当前返回的映射尚非 provenance Artifact，也没有真实 ComfyUI 验收。
+
+### 图片边界组件串联验收
+
+本机真实 HTTP 协议 fixture 已串联输入 Artifact → multipart 上传与回读 → 类型化
+workflow 绑定 → 耐久提交 → 历史关联 → PNG 下载 → 输出 Artifact。分别覆盖正常
+回执和服务收包后关闭连接，重开日志后查询原 UUID，上传与 prompt POST 均各一次。
+关闭 HTTP 服务后固定观察和 Artifact 可离线恢复；删除输出 Blob 后明确阻塞，
+不重下载、不补写。输入与输出采用不同图片，避免同内容复用掩盖链路遗漏。
+
+全部 ComfyUI 测试 54 项通过；新增测试 Ruff 通过。这是组件级集成测试，fixture
+没有运行 ComfyUI 节点或模型。输入映射目前由测试调用者纳入提交 deployment，
+未提供生产编排入口；外层归属、防日志丢失、复合 provenance 和 DAG 仍待实现。
