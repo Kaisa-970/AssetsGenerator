@@ -38,6 +38,11 @@ def test_explicit_execute_and_inspect(tmp_path, monkeypatch, capsys):
         "--job",
         "same-key",
     ]
+    assert cli.main(["list", *options[:-2], "--limit", "1"]) == 0
+    assert json.loads(capsys.readouterr().out) == {
+        "jobs": [{"job_id": "same-key", "state": "queued", "error": None}],
+        "next_before": None,
+    }
     assert cli.main(["inspect", *options]) == 0
     assert json.loads(capsys.readouterr().out)["state"] == "queued"
     assert cli.main(["execute", *options]) == 0

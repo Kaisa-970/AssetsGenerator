@@ -192,6 +192,34 @@ class RemoteServiceStore:
                 self.db.execute("ROLLBACK")
                 raise
 
+    def list_jobs(self, *, limit: int = 100, before: int | None = None) -> dict[str, Any]:
+        """Read a bounded newest-first page; cursor is the immutable insertion rowid."""
+        if type(limit) is not int or not 1 <= limit <= 1000:
+            raise ValueError("job limit must be in 1..1000")
+        if before is not None and (type(before) is not int or before < 1):
+            raise ValueError("job cursor must be a positive integer")
+        with self._lock:
+            rows = self.db.execute(
+                "SELECT rowid, key, request, job FROM jobs WHERE (? IS NULL OR rowid < ?) "
+                "ORDER BY rowid DESC LIMIT ?",
+                (before, before, limit + 1),
+            ).fetchall()
+            jobs = []
+            for _, key, raw_request, raw_job in rows[:limit]:
+                raw = json.loads(raw_request)
+                request = RemoteRequest.create(self.identity, key, raw["payload"])
+                if canonical_json_bytes(request.to_dict()) != raw_request:
+                    raise ValueError("corrupt service request")
+                job = RemoteJob.parse(json.loads(raw_job), request, expected_job_id=key)
+                jobs.append(
+                    {
+                        "job_id": job.job_id,
+                        "state": job.state,
+                        "error": json.loads(job.error_json) if job.error_json else None,
+                    }
+                )
+            return {"jobs": jobs, "next_before": rows[limit - 1][0] if len(rows) > limit else None}
+
     def claim_next_queued(self) -> RemoteRequest | None:
         """Atomically claim one job; any unresolved running job blocks queue drain."""
         with self._lock:

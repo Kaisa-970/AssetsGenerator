@@ -75,3 +75,31 @@ def test_explicit_job_blocks_queue_without_consuming_other_request(tmp_path):
         assert store.lookup(b).state == "running"
     finally:
         store.close()
+
+
+def test_job_listing_paginates_without_changing_states(tmp_path):
+    identity = request().identity
+    store = RemoteServiceStore(tmp_path / "db", identity)
+    try:
+        for key in ("first", "second", "third"):
+            store.submit(RemoteRequest.create(identity, key, {}))
+        store.transition(
+            RemoteRequest.create(identity, "second", {}), expected="queued", state="running"
+        )
+        before = list(store.db.execute("SELECT key, request, job FROM jobs"))
+        page = store.list_jobs(limit=2)
+        assert page["jobs"] == [
+            {"job_id": "third", "state": "queued", "error": None},
+            {"job_id": "second", "state": "running", "error": None},
+        ]
+        tail = store.list_jobs(limit=2, before=page["next_before"])
+        assert [job["job_id"] for job in tail["jobs"]] == ["first"]
+        assert tail["next_before"] is None
+        assert before == list(store.db.execute("SELECT key, request, job FROM jobs"))
+        store.submit(RemoteRequest.create(identity, "fourth", {}))
+        assert store.list_jobs(limit=2, before=page["next_before"]) == tail
+        for limit in (0, 1001, True):
+            with pytest.raises(ValueError, match="limit"):
+                store.list_jobs(limit=limit)
+    finally:
+        store.close()

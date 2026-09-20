@@ -100,3 +100,9 @@ PYTHONPATH=src python -m assets_generator.remote_shape_cli drain \
 `execute --job` 与 `drain` 使用同样的数据库级空闲准入：若另一作业仍 running，
 显式执行也在领取阶段拒绝，目标作业保留 queued，不调用 handler。底层模型进程门控继续作为
 第二层保护；这不自动消除历史中断作业，也不跨数据库调度。
+
+服务端 `list` 不要求 `--job`，其余配置参数与 serve 相同。`--limit 100` 限制返回条数
+（1–1000），输出 `jobs`（job_id/state/error）和 `next_before`。有下一页时传
+`--before <next_before>`，按登记顺序从新到旧浏览。分页游标不受新增任务影响；每页是当时
+保存的状态，不是整个列表的跨页事务快照。读取不探测进程、不恢复、不领取任务。
+当前命令仍先核验 profile，启动成本与 inspect 相同。
