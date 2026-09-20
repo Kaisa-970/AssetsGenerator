@@ -20,6 +20,7 @@ from test_remote_shape_service import Backend
 from assets_generator.artifact_store import LocalArtifactStore
 from assets_generator.dag_adapters import AdapterRegistry
 from assets_generator.dag_engine import DagEngine
+from assets_generator.dag_image_mask import ApplyBinaryMaskAdapter
 from assets_generator.dag_persistence import DagRepository
 from assets_generator.dag_remote_profiles import register_remote_shape_profiles
 from assets_generator.node_editor import DraftEditor, create_editor_server
@@ -31,10 +32,12 @@ from assets_generator.worker import ProcessJobRequest
 
 
 @pytest.mark.parametrize("abandon_first", [False, True])
-def test_remote_asset_chain_through_editor_http(tmp_path, abandon_first):
+@pytest.mark.parametrize("masked_input", [False, True])
+def test_remote_asset_chain_through_editor_http(tmp_path, abandon_first, masked_input):
     with serve(tmp_path / "service.sqlite") as (remote, client, _):
         identity = request().identity
         registry = AdapterRegistry()
+        registry.register(ApplyBinaryMaskAdapter())
         register_remote_shape_profiles(
             registry,
             {
@@ -87,7 +90,13 @@ def test_remote_asset_chain_through_editor_http(tmp_path, abandon_first):
                     time.sleep(0.05)
 
             try:
-                graph = yaml.safe_load(Path("pipelines/remote_shape_asset_v1.yaml").read_text())
+                graph = yaml.safe_load(
+                    Path(
+                        "examples/remote-mask-shape.yaml"
+                        if masked_input
+                        else "pipelines/remote_shape_asset_v1.yaml"
+                    ).read_text()
+                )
                 graph["nodes"]["shape"]["backend"] = "cpu"
                 assert post("/api/compile", {"pipeline": graph})["execution_ready"]
                 data = io.BytesIO()
@@ -99,6 +108,17 @@ def test_remote_asset_chain_through_editor_http(tmp_path, abandon_first):
                     "image_ref": uploaded["image_ref"],
                     "idempotency_key": "browser-intent-one",
                 }
+                if masked_input:
+                    rgb_data = io.BytesIO()
+                    Image.new("RGB", (2, 2), (255, 20, 10)).save(rgb_data, format="PNG")
+                    mask_data = io.BytesIO()
+                    Image.frombytes("L", (2, 2), bytes([255, 0, 0, 255])).save(
+                        mask_data, format="PNG"
+                    )
+                    rgb = post("/api/inputs/image", rgb_data.getvalue(), binary=True)
+                    mask = post("/api/inputs/mask", mask_data.getvalue(), binary=True)
+                    del creation["image_ref"]
+                    creation["input_refs"] = {"image": rgb["image_ref"], "mask": mask["mask_ref"]}
                 started = post("/api/runs", creation)
                 run_id = started["run"]["run_id"]
                 waiting = settled(run_id)
@@ -108,7 +128,9 @@ def test_remote_asset_chain_through_editor_http(tmp_path, abandon_first):
                 assert exported["source_plan_id"] == waiting["run"]["dag"]["plan_id"]
                 original_plan = get(f"/api/runs/{run_id}/plan")
                 cloned = exported["pipeline"]
-                assert cloned["inputs"]["image"]["kind"] == "rgba_image"
+                assert cloned["inputs"]["image"]["kind"] == (
+                    "rgb_image" if masked_input else "rgba_image"
+                )
                 assert cloned["nodes"]["shape"]["backend"] == "cpu"
                 assert (
                     cloned["nodes"]["shape"]["parameters"]

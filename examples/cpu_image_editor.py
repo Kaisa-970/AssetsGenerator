@@ -10,6 +10,7 @@ from assets_generator.artifact_store import LocalArtifactStore
 from assets_generator.dag_adapters import AdapterRegistry
 from assets_generator.dag_engine import DagEngine
 from assets_generator.dag_image_encoding import EncodePngAdapter
+from assets_generator.dag_image_mask import ApplyBinaryMaskAdapter
 from assets_generator.dag_image_resize import ResizeImageAdapter
 from assets_generator.dag_persistence import DagRepository
 from assets_generator.node_editor import DraftEditor, create_editor_server
@@ -24,6 +25,7 @@ def main() -> None:
     registry = AdapterRegistry()
     registry.register(EncodePngAdapter())
     registry.register(ResizeImageAdapter())
+    registry.register(ApplyBinaryMaskAdapter())
     with ExitStack() as stack:
         repository = stack.enter_context(
             DagRepository(LocalArtifactStore(args.directory / "store"), args.directory / "runtime")

@@ -222,9 +222,9 @@ OperatorSpec 校验 kind、schema、carrier、digest 和证据完整性，再固
 `named_actual_inputs`。缺失、额外或损坏引用会拒绝创建；重复幂等请求必须使用
 同一映射，不会重跑已有节点。
 
-这是后端 API 契约，当前运行面板仍只展示单图或 ObservationBundle 的专用表单。
-在前端加入任意多输入表单前，应为每个支持的输入 kind 提供上传/Artifact 选择器
-和关系校验提示，不能把输入 JSON 文本框当作用户体验。
+运行面板已支持多个命名的标量 Artifact 输入：RGB、RGBA 和 binary mask 可上传，
+其他类型可填写已导入 Artifact ID。集合或 StructuredValue 输入尚无对应表单，
+编译反馈会说明当前入口不适用。单图和 ObservationBundle 保留专用表单。
 
 ## RGB 与二值 mask 组合
 

@@ -74,6 +74,19 @@ def validate_editor_execution(plan: CompiledPlan) -> str:
     return name
 
 
+def validate_editor_reference_inputs(plan: CompiledPlan) -> None:
+    """The named-reference endpoint accepts complete scalar ArtifactRef mappings."""
+    if not plan.nodes:
+        raise ContractError("canvas execution requires at least one processing node")
+    for name, port in plan.inputs.items():
+        contract = port.contract
+        if "artifact_ref" not in contract["carriers"] or contract["cardinality"] not in {
+            "one",
+            "zero_or_one",
+        }:
+            raise ContractError(f"canvas {name} input must accept a scalar ArtifactRef")
+
+
 class NodeEditorExecution:
     def __init__(
         self,
@@ -463,8 +476,7 @@ class NodeEditorExecution:
             if input_refs is not None:
                 if any(value is not None for value in (image_path, image_ref, observations_ref)):
                     raise ContractError("multi-input refs cannot be combined with image sources")
-                if not plan.static_plan.nodes:
-                    raise ContractError("canvas execution requires at least one processing node")
+                validate_editor_reference_inputs(plan.static_plan)
                 name = None
                 if not isinstance(input_refs, dict) or set(input_refs) != set(
                     plan.static_plan.inputs
