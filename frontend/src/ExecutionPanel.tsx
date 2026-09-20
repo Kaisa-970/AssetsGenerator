@@ -1,7 +1,10 @@
-import { GlbPreview } from "./GlbPreview";
 import { RunGraph } from "./RunGraph";
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import type { Pipeline } from "./graph";
+
+const GlbPreview = lazy(() =>
+  import("./GlbPreview").then((module) => ({ default: module.GlbPreview })),
+);
 
 type NodeState = {
   status: string;
@@ -649,7 +652,9 @@ export function ExecutionPanel({
         </div>
       )}
       {preview && (
-        <GlbPreview {...preview} onClose={() => setPreview(undefined)} />
+        <Suspense fallback={<p role="status">正在加载预览组件…</p>}>
+          <GlbPreview {...preview} onClose={() => setPreview(undefined)} />
+        </Suspense>
       )}
       {message && <p role="status">{message}</p>}
     </section>

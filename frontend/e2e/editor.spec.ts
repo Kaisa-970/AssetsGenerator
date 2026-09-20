@@ -952,10 +952,25 @@ test("published GLB preview loads geometry and closes without mutation", async (
   glb.writeUInt32LE(0x004e4942, 24 + json.length);
   Buffer.from(positions.buffer).copy(glb, 28 + json.length);
   let mutations = 0;
+  let failOutput = false;
+  let delayOutput = false;
+  let releaseOutput: (() => void) | undefined;
+  let outputEntered = false;
   const output = "/api/runs/dag_preview/outputs/generate/glb";
   await page.route("**/api/**", async (route) => {
     if (route.request().method() !== "GET") mutations++;
     const path = new URL(route.request().url()).pathname;
+    if (path === output && delayOutput) {
+      outputEntered = true;
+      await new Promise<void>((resolve) => {
+        releaseOutput = resolve;
+      });
+    }
+    if (path === output && failOutput)
+      return route.fulfill({
+        status: 400,
+        json: { error: "invalid evidence" },
+      });
     if (path === output)
       return route.fulfill({ body: glb, contentType: "model/gltf-binary" });
     await route.fulfill({
@@ -993,5 +1008,22 @@ test("published GLB preview loads geometry and closes without mutation", async (
   await dialog.getByRole("button", { name: "重置视角" }).click();
   await dialog.getByRole("button", { name: "关闭模型预览" }).click();
   await expect(dialog).toHaveCount(0);
+  failOutput = true;
+  await page
+    .getByRole("button", { name: "预览模型 · generate", exact: true })
+    .click();
+  await expect(dialog.getByRole("status")).toContainText("HTTP 400");
+  await expect(dialog.locator("canvas")).toHaveCount(0);
+  await dialog.getByRole("button", { name: "关闭模型预览" }).click();
+  failOutput = false;
+  delayOutput = true;
+  await page
+    .getByRole("button", { name: "预览模型 · generate", exact: true })
+    .click();
+  await expect.poll(() => outputEntered).toBe(true);
+  await dialog.getByRole("button", { name: "关闭模型预览" }).click();
+  releaseOutput!();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.locator("canvas")).toHaveCount(0);
   expect(mutations).toBe(0);
 });

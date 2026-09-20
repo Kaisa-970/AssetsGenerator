@@ -85,6 +85,7 @@ export function GlbPreview({
       if (Number(response.headers.get("content-length")) > 128 * 1024 * 1024)
         throw Error("模型超过 128 MiB 预览限制");
       const data = await response.arrayBuffer();
+      if (!active) return;
       validateGlb(data);
       const manager = new THREE.LoadingManager();
       manager.setURLModifier((resource) => {
@@ -176,6 +177,7 @@ export function GlbPreview({
         renderer?.forceContextLoss();
         renderer?.domElement.remove();
         renderer = undefined;
+        reset.current = () => {};
         setStatus(`预览失败：${String(error)}`);
       }
     });

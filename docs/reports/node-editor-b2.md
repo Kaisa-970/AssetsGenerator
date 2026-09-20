@@ -88,3 +88,7 @@ GLB 独立回读：70740 顶点、96610 三角面、2292388 字节；Store 中�
 GLB 交互预览首版：固定 npm Three.js 0.169.0，保留原下载链接，新增与 run/node/output 绑定的只读弹窗，自动包围盒取景、OrbitControls、坐标轴和中性光照。验证 GLB 头/长度及资源 URI，拒绝外部和 data URI；关闭会取消请求/动画及释放渲染资源，晚到解析结果直接释放。预览不写运行、不派发模型。
 
 本轮 14 项 Vitest 通过（含 5 项 GLB 资源边界），已有 12 项 Playwright 通过，随后新增小型真实编码 GLB 的浏览器预览用例单独通过，未把两轮相加声称单次 13 项。TypeScript/Vite 构建通过。尚未验收真实发布 GLB、内嵌纹理视觉结果、加载中关闭/换运行及 WebGL 不可用路径；不据此关闭完整 B2。当前渲染代码随首屏打包，Vite 提示主 chunk 较大，后续应按需加载优化。
+
+预览实际资产验收：读取既有 `dag_df9385b3f8864f3f8b8c51de82864c23` 的 release GLB，在更新后的真实编辑器服务加载成功；截图可见几何及顶点颜色。重置视角、关闭后父 BuildRun 完全不变，浏览器错误/变更请求均为零，所有资源来自当前服务。外部证据为 `<DATASET_ROOT>/node-editor-multiview-validation/model-preview.png` 与 `preview-validation.json`；脚本 `frontend/smoke/preview.cjs` 只读已发布模型，不启动推理。
+
+预览改为 React.lazy 按需加载，首屏构建 JS 约 492 KB，渲染组件约 587 KB 单独加载（仍有单 chunk 大小提示）。补充输出 HTTP 400 显示错误且无旧 canvas、加载中关闭后无预览残留的浏览器回归，早期取消不继续解析。14 项 Vitest 和 13 项 Playwright 单次通过；随后新增加载中关闭断言的单个预览回归再次通过。构建通过。未重跑 GPU；内嵌纹理视觉验收、WebGL 不可用及更多切换场景仍待补，不宣称全部预览验收关闭。
