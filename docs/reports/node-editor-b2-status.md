@@ -163,3 +163,10 @@ composite resolved_inputs 均等于第一运行输出引用；绑定期间仍只
 验证：2 项定向 Playwright（模拟 API）通过，覆盖精确 RGBA 引用提交、绑定不启动、
 不重复上传、改为 RGB 契约后禁止启动和已有多输入路径。27 项 Vitest、前端构建、
 Prettier 与 diff 检查通过。未做此新增入口的真实 GPU/浏览器后端联合验收。
+
+## 运行切换时的输入绑定隔离
+
+运行面板切换当前选中的历史运行时，会清空多输入 ArtifactRef 与单图历史 image
+引用；旧运行的输出按钮不会把引用带入新运行。新增 Playwright 回归证明 A 运行
+绑定后切换到 B，所有输入为空且启动按钮保持禁用。Vitest 27 项、前端构建、
+Prettier 和 diff 检查通过。

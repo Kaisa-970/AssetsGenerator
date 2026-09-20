@@ -193,6 +193,8 @@ export function ExecutionPanel({
     setSelected(id);
     setEnvelope(undefined);
     setReview(undefined);
+    setInputRefs({});
+    setReusedImage(undefined);
     setMessage("");
   };
   const accept = (value: Envelope) => {
