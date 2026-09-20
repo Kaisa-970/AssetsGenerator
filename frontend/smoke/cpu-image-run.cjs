@@ -122,6 +122,40 @@ const { chromium, expect } = require("@playwright/test");
         states[nodeIds[1]].attempts[0].resolved_inputs,
       );
     }
+    let inspectionMutations = 0;
+    const countMutation = (request) => {
+      if (request.method() !== "GET") inspectionMutations++;
+    };
+    page.on("request", countMutation);
+    const planResponse = await page.request.get(`${url}/api/runs/${id}/plan`);
+    assert.equal(planResponse.status(), 200);
+    const plan = await planResponse.json();
+    assert.equal(plan.plan_id, after.run.dag.plan_id);
+    await page
+      .getByRole("button", { name: "查看固定运行图", exact: true })
+      .click();
+    const dialog = page.getByRole("dialog", {
+      name: "固定运行图",
+      exact: true,
+    });
+    for (const nodeId of nodeIds) {
+      await dialog.locator(`.react-flow__node[data-id="${nodeId}"]`).click();
+      const details = dialog.locator(".run-binding-details pre");
+      await expect
+        .poll(async () => JSON.parse(await details.innerText()))
+        .toEqual({
+          operator: "encode_png@1",
+          ...plan.bindings[nodeId],
+        });
+      assert.match(
+        plan.bindings[nodeId].implementation_digest,
+        /^sha256:[0-9a-f]{64}$/,
+      );
+    }
+    await page.getByRole("button", { name: "关闭运行图", exact: true }).click();
+    assert.deepEqual((await snapshot()).run, after.run);
+    assert.equal(inspectionMutations, 0);
+    page.off("request", countMutation);
     assert.deepEqual(errors, []);
     console.log(
       JSON.stringify({
