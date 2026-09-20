@@ -124,3 +124,18 @@ alive/unknown/缺失身份一律拒绝；已有 succeeded/其他 failed 不覆�
 → 成功发布。原失败 attempt 与 remote_result 完整保留，shape 两次 attempt，下游各一次；
 原服务作业保持 failed，新作业 succeeded。此测试模拟进程退出后终态未发布的窗口，
 不宣称已验收真实 GPU 进程中途被杀的场景。
+
+## 从普通照片和人工 mask 开始
+
+`pipelines/remote_selected_image_asset_v1.yaml` 使用 RGB 输入，串接已有 instance proposals、
+人工选区、`selection_prepare@1`、远程 shape 及五节点发布后半段。编辑器需同时传入本地
+`--config/--profile`（提供 SAM proposals）和 `--remote-config`，并通过 `--template` 加载示例。
+当前本地 profile 仍包含 shape 配置；尚未拆出 SAM-only 环境配置入口。
+
+人工确认之前无远程提交。prepare 从 SelectionInputBinding 读取原图和最终 mask，复用
+绑定验证与 binary-mask 校验，输出 RGBA、ObservationBundle 和 SelectionImportVerification。
+这三个输出及 provenance 保留在 DAG；现有 shape assembly 仍只绑定 RGBA 来源，不把
+ObservationBundle ID 自动补进资产。后续可通过显式观测关联扩展组装契约。
+
+CPU 集成测试覆盖人工等待/决定、alpha 保留、精确 RGBA 输入、HTTP shape 发布及服务关闭后恢复。
+此示例尚未完成真实 SAM + 远程 TRELLIS.2 同次运行验收。

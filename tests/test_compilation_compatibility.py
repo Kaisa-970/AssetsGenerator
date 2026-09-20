@@ -27,7 +27,12 @@ def test_legacy_contract_serialization_preserves_historical_identities():
     # Reconstruct the pre-modular-release contract, rather than claiming that
     # new operators and a new canonicalization relation leave its identity unchanged.
     specs = load_default_operator_specs()
-    for key in ("geometry_validation@1", "shape_asset_assembly@1", "asset_export@1"):
+    for key in (
+        "geometry_validation@1",
+        "shape_asset_assembly@1",
+        "asset_export@1",
+        "selection_prepare@1",
+    ):
         del specs[key]
     specs["canonicalize@1"] = replace(specs["canonicalize@1"], relations=())
     assert cache_key(specs) == (

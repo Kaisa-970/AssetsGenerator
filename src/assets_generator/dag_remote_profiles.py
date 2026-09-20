@@ -8,6 +8,7 @@ from .dag_asset_export import AssetExportAdapter
 from .dag_canonicalize import CanonicalizeAdapter
 from .dag_geometry_validation import GeometryValidationAdapter
 from .dag_remote_shape import RemoteShapeAdapter
+from .dag_selection_prepare import SelectionPrepareAdapter
 from .remote_protocol import RemoteIdentity
 
 
@@ -43,6 +44,7 @@ def register_remote_shape_profiles(registry: AdapterRegistry, raw: dict[str, Any
     for name, adapter in adapters.items():
         registry.register_backend(name, adapter)
     for core in (
+        SelectionPrepareAdapter(),
         CanonicalizeAdapter(),
         GeometryValidationAdapter(),
         ShapeAssetAssemblyAdapter(),

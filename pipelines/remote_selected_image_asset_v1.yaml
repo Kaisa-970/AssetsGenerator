@@ -1,0 +1,53 @@
+pipeline: remote_selected_image_asset_v1
+version: 1
+inputs:
+  image:
+    kind: rgb_image
+    carriers:
+    - artifact_ref
+nodes:
+  candidates:
+    operator: instance_proposals@1
+    adapter: image_proposals@1
+    inputs:
+      image: pipeline.inputs.image
+  choose_object:
+    operator: workbench_mask_selection@1
+    adapter: image_mask_selection@1
+    inputs:
+      proposals: candidates.outputs.proposals
+  prepare:
+    operator: selection_prepare@1
+    adapter: selection_prepare@1
+    inputs:
+      binding: choose_object.outputs.binding
+  shape:
+    operator: shape_generation@1
+    adapter: remote_shape@1
+    inputs:
+      image: prepare.outputs.rgba
+  canonical:
+    operator: canonicalize@1
+    adapter: canonicalize_shape@1
+    inputs:
+      mesh: shape.outputs.mesh
+      native_frame: shape.outputs.native_frame
+  quality:
+    operator: geometry_validation@1
+    adapter: geometry_validation@1
+    inputs:
+      mesh: canonical.outputs.mesh
+      source_mesh: shape.outputs.mesh
+  assemble:
+    operator: shape_asset_assembly@1
+    adapter: shape_asset_assembly@1
+    inputs:
+      mesh: canonical.outputs.mesh
+      image: prepare.outputs.rgba
+      spatial: canonical.outputs.spatial_info
+      quality: quality.outputs.report
+  publish:
+    operator: asset_export@1
+    adapter: asset_export@1
+    inputs:
+      asset: assemble.outputs.asset

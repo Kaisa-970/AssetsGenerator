@@ -316,3 +316,12 @@ operators:
       release: {kind: asset_release, carriers: [artifact_ref], schema_name: AssetRelease, schema_version: "1.0"}
       qa: {kind: quality_report, carriers: [artifact_ref]}
       glb: {kind: gltf_asset, carriers: [artifact_ref], requires_frame: true, requires_unit: true}
+
+  - name: selection_prepare
+    version: 1
+    inputs:
+      binding: {kind: quality_evidence, carriers: [artifact_ref], schema_name: SelectionInputBinding, schema_version: "1.0"}
+    outputs:
+      rgba: {kind: rgba_image, carriers: [artifact_ref]}
+      observations: {kind: observation_bundle, carriers: [artifact_ref], schema_name: ObservationBundle, schema_version: "1.0"}
+      verification: {kind: quality_evidence, carriers: [artifact_ref], schema_name: SelectionImportVerification, schema_version: "1.0"}

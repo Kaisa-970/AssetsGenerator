@@ -82,7 +82,7 @@ def test_remote_only_editor_starts_without_model_environment(tmp_path, monkeypat
     def create(editor, port):
         catalog = editor.catalog()
         assert catalog["execution_enabled"]
-        assert len(catalog["adapters"]) == 5
+        assert len(catalog["adapters"]) == 6
         raw = yaml.safe_load(Path("pipelines/remote_shape_asset_v1.yaml").read_text())
         compiled = editor.compile(raw)
         assert compiled["ok"]
