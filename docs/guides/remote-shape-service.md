@@ -143,3 +143,26 @@ CPU 集成测试覆盖人工等待/决定、alpha 保留、精确 RGBA 输入、
 selection_prepare 在任何转换前验证绑定的完整引用闭包，并用已有 selection、原 proposals 和
 MaskDraft 在内存中重建预期绑定身份；仅比较图片/mask 自报字段不足以通过。缺失历史 mask
 会拒绝且保持缺失，不会因验证重算而重新写回 Store。
+
+### 直接启动“照片 → 选区 → 远程生成”编辑器
+
+先启动远程服务并把 stdout 中的 `service_id`、`backend_digest` 写入
+`examples/remote-selected-editor.json.example` 的副本。再准备本地 image profile（其中
+`backend`、SAM/shape Python 和模型路径指向现有环境），然后运行：
+
+```bash
+cp examples/remote-selected-editor.json.example "$RUN_ROOT/remote.json"
+# 编辑 $RUN_ROOT/remote.json，替换 <...> 占位符
+PYTHONPATH=src python -m assets_generator.cli node-editor \
+  --directory "$RUN_ROOT/editor" \
+  --store "$RUN_ROOT/store" \
+  --config "$IMAGE_CONFIG" --profile "$IMAGE_PROFILE" \
+  --remote-config "$RUN_ROOT/remote.json" \
+  --template pipelines/remote_selected_image_asset_v1.yaml \
+  --port 8767
+```
+
+打开画布后选择该模板，点击“运行”，上传 RGB 照片或填写服务器本地路径。运行会先在
+选区节点等待；完成人工选择后才创建远程 shape 作业。服务端可用 `drain` 消费队列，
+然后在画布点击“恢复 / 继续此运行”。发布结果和 `quality.report` 会出现在运行输出中。
+本地 image profile 目前会加载其声明的资源摘要；首次启动可能较慢。

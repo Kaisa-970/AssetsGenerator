@@ -154,3 +154,23 @@ def test_editor_rgba_upload_start_and_empty_foreground_rejection(tmp_path):
                     execution.start(graph, image_ref={"artifact_id": bad.artifact_id})
             finally:
                 execution.close()
+
+
+def test_local_selection_and_remote_shape_profiles_bind_composed_template(tmp_path):
+    from test_workbench_engine import fixture_engine
+
+    from assets_generator.dag_profiles import image_adapter_registry
+
+    # The local profile supplies proposal/selection adapters; remote profile owns shape generation.
+    _, _, local_profile = fixture_engine(tmp_path)
+    registry = image_adapter_registry({"local": local_profile}, "local")
+    register_remote_shape_profiles(registry, configuration())
+    raw = yaml.safe_load(Path("pipelines/remote_selected_image_asset_v1.yaml").read_text())
+    raw["nodes"]["shape"]["backend"] = "second"
+    plan = registry.bind_plan(
+        compile_pipeline(
+            _pipeline_from_raw(raw), load_default_operator_specs(), require_explicit_joins=True
+        )
+    )
+    assert plan.bindings["candidates"].adapter == "image_proposals@1"
+    assert plan.bindings["shape"].parameters["service_id"] == "second"

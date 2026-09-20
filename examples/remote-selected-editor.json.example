@@ -1,0 +1,10 @@
+{
+  "default_profile": "trellis-remote",
+  "profiles": {
+    "trellis-remote": {
+      "endpoint": "http://127.0.0.1:8770",
+      "service_id": "<service_id_from_serve_output>",
+      "backend_digest": "sha256:<64_hex_chars_from_serve_output>"
+    }
+  }
+}
