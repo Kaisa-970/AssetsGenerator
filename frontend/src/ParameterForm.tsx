@@ -17,14 +17,14 @@ export function ParameterForm({
   onChange: (value: Record<string, unknown>) => void;
 }) {
   const [draft, setDraft] = useState<Record<string, string>>({});
-  const [error, setError] = useState("");
+  const [error, setError] = useState<{ field: string; message: string }>();
   const previous = useRef({ adapter, parameters });
   useEffect(() => {
     const old = previous.current;
     previous.current = { adapter, parameters };
     if (old.adapter !== adapter) {
       setDraft({});
-      setError("");
+      setError(undefined);
       return;
     }
     setDraft((pending) =>
@@ -122,13 +122,14 @@ export function ParameterForm({
                             Array.isArray(parsed)))
                       )
                         throw Error(`需要 ${field.type}`);
-                      setError("");
+                      setError(undefined);
                       clearDraft(name);
                       onChange({ ...parameters, [name]: parsed });
                     } catch {
-                      setError(
-                        `${name} 需要有效的 ${field.type} JSON，尚未应用`,
-                      );
+                      setError({
+                        field: name,
+                        message: `${name} 需要有效的 ${field.type} JSON，尚未应用`,
+                      });
                     }
                   }}
                 >
@@ -173,14 +174,33 @@ export function ParameterForm({
                       (field.maximum !== undefined &&
                         Number(parsed) > field.maximum))
                   ) {
-                    setError(`${name} 不符合 ${field.type} 范围要求，尚未应用`);
+                    setError({
+                      field: name,
+                      message: `${name} 不符合 ${field.type} 范围要求，尚未应用`,
+                    });
                     return;
                   }
-                  setError("");
+                  setError(undefined);
                   clearDraft(name);
                   onChange({ ...parameters, [name]: parsed });
                 }}
               />
+            )}
+            {Object.hasOwn(draft, name) && (
+              <span>
+                {name} 尚未应用；保存、编译和运行使用已应用值。
+                <button
+                  type="button"
+                  onClick={() => {
+                    clearDraft(name);
+                    setError((previous) =>
+                      previous?.field === name ? undefined : previous,
+                    );
+                  }}
+                >
+                  放弃字段编辑 · {name}
+                </button>
+              </span>
             )}
             {stale && (
               <span role="alert">
@@ -212,7 +232,7 @@ export function ParameterForm({
           </label>
         );
       })}
-      {error && <p role="alert">{error}</p>}
+      {error && <p role="alert">{error.message}</p>}
       <p>
         对象和数组按字段显式应用；嵌套内容由后端编译校验。也可在下方编辑完整
         JSON。

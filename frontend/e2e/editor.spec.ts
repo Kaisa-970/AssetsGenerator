@@ -511,6 +511,11 @@ test("parameter form sends typed values and preserves other instances", async ({
   await page.getByLabel("参数 seed", { exact: true }).fill("1.5");
   await page.getByLabel("参数 seed", { exact: true }).press("Tab");
   await expect(page.getByRole("alert")).toContainText("尚未应用");
+  await page
+    .getByRole("button", { name: "放弃字段编辑 · seed", exact: true })
+    .click();
+  await expect(page.getByLabel("参数 seed", { exact: true })).toHaveValue("42");
+  await expect(page.getByRole("alert")).toHaveCount(0);
   await page.getByLabel("参数 seed", { exact: true }).fill("99");
   await page.getByLabel("参数 seed", { exact: true }).press("Tab");
   await page.getByLabel("参数 size", { exact: true }).selectOption("1");
@@ -532,6 +537,21 @@ test("parameter form sends typed values and preserves other instances", async ({
   await page
     .getByRole("button", { name: "应用字段 · matrix", exact: true })
     .click();
+  await expect(
+    page.getByLabel("参数 options JSON", { exact: true }),
+  ).toHaveValue('{"label":"pending"}');
+  await expect(
+    page.getByText("options 尚未应用；保存、编译和运行使用已应用值。", {
+      exact: false,
+    }),
+  ).toBeVisible();
+  await page.getByLabel("参数 matrix JSON", { exact: true }).fill("[9]");
+  await page
+    .getByRole("button", { name: "放弃字段编辑 · matrix", exact: true })
+    .click();
+  await expect(
+    page.getByLabel("参数 matrix JSON", { exact: true }),
+  ).toHaveValue(JSON.stringify([1, 0, 0, 1], null, 2));
   await expect(
     page.getByLabel("参数 options JSON", { exact: true }),
   ).toHaveValue('{"label":"pending"}');
