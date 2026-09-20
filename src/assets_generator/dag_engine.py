@@ -1,4 +1,4 @@
-"""Serial, durable CPU/human DAG execution; process/GPU adapters are not admitted."""
+"""Serial, durable DAG execution with owned, gated process adapters."""
 
 from __future__ import annotations
 
@@ -9,16 +9,21 @@ from typing import Any
 from .compiled_plan import CompiledNode, digest, freeze, thaw
 from .contracts import ContractError, validate_operator_outputs, validate_port_value
 from .dag_adapters import AdapterRegistry, BoundDagPlan, NodeExecutionContext
+from .dag_evidence import index_evidence, node_evidence
 from .dag_models import DagAttempt, DagNodeState, DagState, PortMap
 from .dag_persistence import DagRepository, EvidenceError
 from .dag_provenance import expected_node_provenance_records, persist_node_provenance
 from .errors import classify_error
 from .models import ArtifactRef, BuildRun, NodeAttempt, StructuredValue
 from .pipeline import _operator_specs_from_raw, _port_spec
+from .process_admission import admit_compute
 from .relations import RelationValidatorRegistry, ResolvedRelation, default_relation_registry
 from .runtime import utc_now
-from .serialization import canonical_json_bytes, to_primitive
-from .workbench_persistence import _references
+from .serialization import canonical_json_bytes, read_json, to_primitive
+from .workbench_context import ChildRunContext
+from .workbench_models import ChildRegistration
+from .workbench_persistence import ProcessProbe, _references
+from .workbench_process import LinuxProcessProbe
 
 
 class DagEngine:
@@ -27,17 +32,17 @@ class DagEngine:
         repository: DagRepository,
         registry: AdapterRegistry,
         relations: RelationValidatorRegistry | None = None,
+        probe: ProcessProbe | None = None,
     ):
         self.repository = repository
         self.store = repository.store
         self.registry = registry
         self.relations = relations or default_relation_registry()
+        self.probe = probe or LinuxProcessProbe()
 
     def _plan(self, run: BuildRun) -> BoundDagPlan:
         assert run.dag is not None
         self.repository.verify_reference_closure(run.dag.plan)
-        if any(state.dispatch_block_reason for state in run.dag.node_states.values()):
-            raise ContractError("process dispatch blocks are unsupported by the CPU-only engine")
         manifest = self.store.get_manifest(run.dag.plan.artifact_id)
         if (
             manifest.identity.kind != "dag_plan"
@@ -119,6 +124,7 @@ class DagEngine:
             for node in run.dag.node_states.values()
             for attempt in node.attempts
         ]
+        index_evidence(run.dag, self.repository)
         self.repository.save(run, expected_revision=run.dag.revision)
 
     def _inputs(self, run: BuildRun, node: CompiledNode) -> PortMap:
@@ -298,10 +304,23 @@ class DagEngine:
         assert run.dag is not None
         self._resume_prepared_decisions(run, plan)
         nodes = {node.node_id: node for node in plan.static_plan.nodes}
+        index_evidence(run.dag, self.repository)
         known_invalid = set(run.dag.invalid_evidence)
         # Detect every missing historical reference before publishing a block. The
         # exemption is an audit fact, never permission to consume that evidence.
         pending = _references(to_primitive(run))
+        for state in run.dag.node_states.values():
+            for attempt in state.attempts:
+                if attempt.child_registration is not None:
+                    child_id = attempt.child_registration.child_run_id
+                    reference = ArtifactRef(
+                        **read_json(self.store.root / "runs" / f"{child_id}.json")
+                    )
+                    pending.append(reference)
+                    try:
+                        self.repository.verify_reference_closure(reference)
+                    except EvidenceError as error:
+                        self._block(run, state, "recovery_child_invalid", error)
         seen: set[str] = set()
         while pending:
             ref = pending.pop()
@@ -345,11 +364,59 @@ class DagEngine:
                     self._block(run, state, "recovery_dependency_invalid", error)
         for node_id in plan.static_plan.topological_order:
             state = run.dag.node_states[node_id]
+            if state.dispatch_block_reason:
+                try:
+                    admit_compute(self.repository, self.probe)
+                except ContractError as error:
+                    state.dispatch_block_reason = str(error)
+                else:
+                    state.dispatch_block_reason = None
+            if any(
+                worker.launch_phase not in {"prepared", "identity_recorded", "exit_observed"}
+                for attempt in state.attempts
+                for worker in attempt.worker_executions
+            ):
+                try:
+                    admit_compute(self.repository, self.probe)
+                except ContractError as error:
+                    state.dispatch_block_reason = str(error)
+                else:
+                    state.dispatch_block_reason = None
             if state.status == "running":
                 state.status = "interrupted"
                 state.current().status = "interrupted"
                 state.current().error_code = "execution_interrupted"
                 state.current().finished_at = utc_now()
+            if (
+                state.status in {"interrupted", "failed"}
+                and state.attempts
+                and state.current().child_registration is not None
+                and not state.dispatch_block_reason
+            ):
+                node = nodes[node_id]
+                attempt = state.current()
+                adapter = self.registry.resolve(plan.bindings[node_id])
+                if callable(getattr(adapter, "recover", None)):
+                    try:
+                        current_inputs = self._inputs(run, node)
+                        self._validate_inputs(node, current_inputs)
+                        if canonical_json_bytes(current_inputs) != canonical_json_bytes(
+                            attempt.resolved_inputs
+                        ) or attempt.input_digest != self._input_digest(
+                            plan, node, current_inputs, attempt.decision
+                        ):
+                            raise ContractError("child recovery input binding mismatch")
+                        binding = plan.bindings[node_id]
+                        if (
+                            attempt.operator != node.operator
+                            or attempt.adapter != binding.adapter
+                            or attempt.binding_digest != digest(binding.to_dict())
+                            or attempt.parameters_digest != digest(binding.parameters)
+                        ):
+                            raise ContractError("child recovery implementation binding mismatch")
+                        self._execute(run, plan, node, recover_child=True)
+                    except Exception as error:
+                        self._block(run, state, "recovery_child_invalid", error)
             if state.status not in {"succeeded", "waiting_for_input", "recovery_blocked"}:
                 continue
             if not state.attempts:
@@ -360,7 +427,9 @@ class DagEngine:
                 "recovery_historical_evidence_invalid: historical evidence invalid"
             ):
                 try:
-                    for artifact_id in run.dag.invalid_evidence:
+                    for artifact_id in set(run.dag.invalid_evidence) & node_evidence(
+                        run.dag, node_id
+                    ):
                         self.repository.verify_reference_closure(ArtifactRef(artifact_id))
                 except EvidenceError:
                     continue  # Repair evidence or explicitly retry to acknowledge this audit.
@@ -386,6 +455,24 @@ class DagEngine:
                 ):
                     raise ContractError("recorded implementation identity differs from plan")
                 self._human_evidence(run, plan, node, attempt)
+                if attempt.child_registration is not None:
+                    child_id = attempt.child_registration.child_run_id
+                    child_reference = ArtifactRef(
+                        **read_json(self.store.root / "runs" / f"{child_id}.json")
+                    )
+                    self.repository.verify_reference_closure(child_reference)
+                if attempt.status == "succeeded" and binding.spec.get("uses_child_run"):
+                    registration = attempt.child_registration
+                    if registration is None or attempt.child_result is None:
+                        raise ContractError("child workflow success requires durable evidence")
+                    self.repository.verify_reference_closure(attempt.child_result)
+                    child = self.store.read_structured(attempt.child_result)
+                    if (
+                        child.get("run_id") != registration.child_run_id
+                        or child.get("parent_run_id") != run.run_id
+                        or child.get("status") != "succeeded"
+                    ):
+                        raise ContractError("child result binding mismatch")
                 code = "recovery_output_invalid"
                 if attempt.status == "succeeded":
                     self._validate_outputs(node, attempt.outputs)
@@ -413,37 +500,37 @@ class DagEngine:
                     state.recovery_blocked_reason = None
             except Exception as error:
                 self._block(run, state, code, error)
-        used_inputs = {
-            binding.port
-            for node in nodes.values()
-            for binding in node.inputs.values()
-            if binding.source == "pipeline_input"
-        }
-        unused = {
-            key: value
-            for key, value in run.dag.named_actual_inputs.items()
-            if key not in used_inputs
-        }
-        if unused:
+        # Newly discovered historical corruption blocks its actual owners, even
+        # if their current attempts no longer reference the damaged artifact.
+        for artifact_id in set(run.dag.invalid_evidence) - known_invalid:
+            owners = {
+                item.node_id
+                for item in run.dag.evidence_consumers.get(artifact_id, [])
+                if item.node_id is not None
+            }
+            for owner in owners:
+                state = run.dag.node_states[owner]
+                if state.status != "recovery_blocked":
+                    self._block(
+                        run,
+                        state,
+                        "recovery_historical_evidence_invalid",
+                        ContractError(
+                            "historical evidence invalid; inspect invalid_evidence and retry"
+                        ),
+                    )
+            if not owners:
+                run.dag.unassigned_evidence_blocks[artifact_id] = run.dag.invalid_evidence[
+                    artifact_id
+                ]
+        # Unused inputs and legacy unlocatable evidence belong to the run,
+        # never an arbitrary first node. They clear only after evidence repair.
+        for artifact_id in list(run.dag.unassigned_evidence_blocks):
             try:
-                self._verify_values(unused)
-            except Exception as error:
-                self._block(
-                    run,
-                    next(iter(run.dag.node_states.values())),
-                    "recovery_unused_input_invalid",
-                    error,
-                )
-        if set(run.dag.invalid_evidence) - known_invalid and not any(
-            state.recovery_blocked_reason for state in run.dag.node_states.values()
-        ):
-            state = next(iter(run.dag.node_states.values()))
-            self._block(
-                run,
-                state,
-                "recovery_historical_evidence_invalid",
-                ContractError("historical evidence invalid; inspect invalid_evidence and retry"),
-            )
+                self.repository.verify_reference_closure(ArtifactRef(artifact_id))
+            except EvidenceError:
+                continue
+            del run.dag.unassigned_evidence_blocks[artifact_id]
         self._aggregate(run, plan)
 
     def _aggregate(self, run: BuildRun, plan: BoundDagPlan) -> None:
@@ -465,6 +552,7 @@ class DagEngine:
         statuses = {state.status for state in states.values()}
         ready = any(
             state.status == "pending"
+            and not state.dispatch_block_reason
             and all(
                 states[parent].status == "succeeded"
                 for parent in plan.static_plan.dependencies[key]
@@ -473,7 +561,11 @@ class DagEngine:
         )
         if "running" in statuses or ready:
             run.status = "running"
-        elif "recovery_blocked" in statuses:
+        elif (
+            "recovery_blocked" in statuses
+            or run.dag.unassigned_evidence_blocks
+            or any(state.dispatch_block_reason for state in states.values())
+        ):
             run.status = "recovery_blocked"
         elif "waiting_for_input" in statuses:
             run.status = "waiting_for_input"
@@ -511,6 +603,16 @@ class DagEngine:
                     continue
                 inputs = self._inputs(run, node)
                 binding = plan.bindings[node.node_id]
+                if binding.spec["execution_kind"] == "process":
+                    try:
+                        self._validate_inputs(node, inputs)
+                        admit_compute(self.repository, self.probe)
+                    except ContractError as error:
+                        state.dispatch_block_reason = str(error)
+                        self._aggregate(run, plan)
+                        self._save(run)
+                        continue
+                    state.dispatch_block_reason = None
                 attempt = DagAttempt(
                     len(state.attempts) + 1,
                     resolved_inputs=inputs,
@@ -545,7 +647,43 @@ class DagEngine:
             self._save(run)
             return run
 
-    def _execute(self, run: BuildRun, plan: BoundDagPlan, node: CompiledNode) -> None:
+    def _child_context(self, run: BuildRun, node: CompiledNode) -> ChildRunContext:
+        assert run.dag is not None
+        attempt = run.dag.node_states[node.node_id].current()
+        if attempt.child_reservation is None:
+            child_id = f"run_{uuid.uuid4().hex}"
+            attempt.child_reservation = ChildRegistration(
+                child_id,
+                run.run_id,
+                node.node_id,
+                attempt.attempt,
+                attempt.input_digest,
+                str(self.store.root / "run_owners" / f"{child_id}.json"),
+            )
+            self._save(run)
+        reservation = attempt.child_reservation
+        created = self.repository.register_child(run, reservation)
+        index = self.store.root / "runs" / f"{reservation.child_run_id}.json"
+        if created or not index.exists():
+            child = BuildRun(
+                reservation.child_run_id,
+                node.operator.split("@")[0],
+                node.operator.split("@")[1],
+                "running",
+                {},
+                [],
+                utc_now(),
+                None,
+                parent_run_id=run.run_id,
+            )
+            self.repository.commit(child, owner=reservation)
+        attempt.child_registration = reservation
+        self._save(run)
+        return ChildRunContext(self.repository, reservation)
+
+    def _execute(
+        self, run: BuildRun, plan: BoundDagPlan, node: CompiledNode, *, recover_child: bool = False
+    ) -> None:
         assert run.dag is not None
         state = run.dag.node_states[node.node_id]
         attempt = state.current()
@@ -555,18 +693,52 @@ class DagEngine:
             if attempt.decision is not None:
                 self._human_evidence(run, plan, node, attempt)
             adapter = self.registry.resolve(binding)
-            result = adapter.execute(
-                NodeExecutionContext(
-                    run.run_id,
-                    node.node_id,
-                    copy.deepcopy(attempt.resolved_inputs),
-                    binding.parameters,
-                    self.store,
-                    attempt.decision,
-                    f"{run.run_id}/{node.node_id}/{attempt.attempt}",
-                    self._input_digest(plan, node, attempt.resolved_inputs),
-                )
+            from .dag_worker import DagProcessWorker
+
+            worker = (
+                DagProcessWorker(self, run, node.node_id)
+                if binding.spec["execution_kind"] == "process"
+                else None
             )
+            child_context = None
+            output_path = None
+            if binding.spec.get("uses_child_run") and (
+                binding.spec["execution_kind"] != "human" or attempt.decision is not None
+            ):
+                if recover_child:
+                    if attempt.child_registration is None:
+                        raise ContractError("child recovery requires registration")
+                    child_context = ChildRunContext(self.repository, attempt.child_registration)
+                else:
+                    child_context = self._child_context(run, node)
+                output_path = (
+                    self.repository.directory
+                    / "executions"
+                    / run.run_id
+                    / child_context.registration.child_run_id
+                    / "release"
+                )
+            context = NodeExecutionContext(
+                run.run_id,
+                node.node_id,
+                copy.deepcopy(attempt.resolved_inputs),
+                binding.parameters,
+                self.store,
+                attempt.decision,
+                f"{run.run_id}/{node.node_id}/{attempt.attempt}",
+                self._input_digest(plan, node, attempt.resolved_inputs),
+                worker,
+                child_context,
+                output_path,
+            )
+            if recover_child:
+                result = adapter.recover(context)  # type: ignore[attr-defined]
+                if result is None:
+                    return
+                if result.wait_request is not None:
+                    raise ContractError("child recovery cannot create a new human request")
+            else:
+                result = adapter.execute(context)
             if result.wait_request is not None:
                 if binding.spec["execution_kind"] != "human" or attempt.decision is not None:
                     raise ContractError("only an undecided human node can wait")
@@ -593,6 +765,14 @@ class DagEngine:
                 if binding.spec["execution_kind"] == "human" and attempt.decision is None:
                     raise ContractError("human node cannot succeed without explicit decision")
                 outputs = copy.deepcopy(dict(result.outputs))
+                if child_context is not None:
+                    child_id = child_context.registration.child_run_id
+                    child = self.repository.load(child_id)
+                    if child.status != "succeeded" or child.parent_run_id != run.run_id:
+                        raise ContractError("child workflow did not complete successfully")
+                    attempt.child_result = ArtifactRef(
+                        **read_json(self.store.root / "runs" / f"{child_id}.json")
+                    )
                 self._validate_outputs(node, outputs)
                 attempt.provenance = persist_node_provenance(
                     self.store,
@@ -641,6 +821,14 @@ class DagEngine:
                 self._aggregate(run, plan)
                 self._save(run)
                 raise
+            if plan.bindings[node_id].spec["execution_kind"] == "process":
+                try:
+                    admit_compute(self.repository, self.probe)
+                except ContractError as error:
+                    state.dispatch_block_reason = str(error)
+                    self._aggregate(run, plan)
+                    self._save(run)
+                    raise
             affected = {node_id}
             pending = [node_id]
             while pending:
@@ -651,6 +839,7 @@ class DagEngine:
             for key in affected:
                 run.dag.node_states[key].status = "pending"
                 run.dag.node_states[key].recovery_blocked_reason = None
+                run.dag.node_states[key].dispatch_block_reason = None
             self._aggregate(run, plan)
             self._save(run)
             return self.drain(run_id)

@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from assets_generator.artifact_store import LocalArtifactStore
+from assets_generator.compiled_plan import thaw
 from assets_generator.contracts import ContractError, OperatorSpec, PortSpec, RelationSpec
 from assets_generator.dag_adapters import AdapterRegistry, AdapterSpec, NodeExecutionResult
 from assets_generator.dag_engine import DagEngine
@@ -522,6 +523,11 @@ def test_older_history_block_requires_repair_or_explicit_retry(tmp_path):
         blob.unlink()
         run = engine.recover(run.run_id)
         assert run.status == "recovery_blocked"
+        assert run.dag.node_states["A"].status == "succeeded"
+        assert run.dag.node_states["B"].status == "recovery_blocked"
+        consumers = repo.load(run.run_id).dag.evidence_consumers[historical.artifact_id]
+        assert any(c.node_id == "B" and c.attempt == 1 and c.port == "image" for c in consumers)
+        assert all(c.node_id != "A" for c in consumers)
         run = engine.recover(run.run_id)
         assert run.status == "recovery_blocked"
         blob.write_bytes(data)
@@ -543,3 +549,45 @@ def test_failed_upstream_retry_preserves_blocked_descendant_history(tmp_path):
             assert persisted.dag.node_states[name].status == "blocked"
             assert persisted.dag.node_states[name].current().status == "succeeded"
             assert len(persisted.dag.node_states[name].attempts) == 1
+
+
+def test_unused_input_corruption_blocks_run_not_arbitrary_node(tmp_path):
+    store, adapter, registry, original, source = setup(tmp_path)
+    # Recompile from a definition to include an intentionally unused input.
+    from assets_generator.pipeline import _operator_specs_from_raw
+
+    static = original.static_plan
+    specs = _operator_specs_from_raw(
+        {"operators": [thaw(n.operator_contract) for n in static.nodes if n.node_id in {"A", "D"}]}
+    )
+    definition = PipelineDefinition(
+        "unused",
+        "1",
+        {
+            "source": PortSpec(("rgb_image",)),
+            "unused": PortSpec(("rgb_image",)),
+        },
+        {
+            "A": {
+                "operator": "copy@1",
+                "adapter": "copy@1",
+                "inputs": {"image": "pipeline.inputs.source"},
+            }
+        },
+    )
+    plan = registry.bind_plan(compile_pipeline(definition, specs, require_explicit_joins=True))
+    extra = store.persist_bytes(
+        b"unused", kind="rgb_image", schema_name="raster_image", schema_version="1.0"
+    )
+    with DagRepository(store, tmp_path / "repo") as repo:
+        engine = DagEngine(repo, registry)
+        run = engine.drain(engine.create(plan, {"source": source, "unused": extra}).run_id)
+        blob = store.blob_path(extra)
+        data = blob.read_bytes()
+        blob.unlink()
+        run = engine.recover(run.run_id)
+        assert run.status == "recovery_blocked"
+        assert run.dag.node_states["A"].status == "succeeded"
+        assert extra.artifact_id in repo.load(run.run_id).dag.unassigned_evidence_blocks
+        blob.write_bytes(data)
+        assert engine.recover(run.run_id).status == "succeeded"

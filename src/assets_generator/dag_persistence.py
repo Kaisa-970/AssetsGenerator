@@ -99,7 +99,9 @@ class DagRepository(WorkbenchRepository):
             run.dag.__post_init__()
             exempt = set(run.dag.invalid_evidence)
             if exempt:
-                if exempt - set(previous.dag.invalid_evidence) and not any(
+                if (exempt - set(previous.dag.invalid_evidence)) - set(
+                    run.dag.unassigned_evidence_blocks
+                ) and not any(
                     node.recovery_blocked_reason for node in run.dag.node_states.values()
                 ):
                     raise ValueError("invalid evidence requires an explicit recovery block")
@@ -109,6 +111,17 @@ class DagRepository(WorkbenchRepository):
                 # cannot be smuggled into this history-only exemption.
                 reachable: set[str] = set()
                 pending = _references(json.loads(canonical_json_bytes(previous)))
+                for node in previous.dag.node_states.values():
+                    for attempt in node.attempts:
+                        if attempt.child_registration is not None:
+                            child_id = attempt.child_registration.child_run_id
+                            pending.append(
+                                ArtifactRef(
+                                    **json.loads(
+                                        (self.store.root / "runs" / f"{child_id}.json").read_bytes()
+                                    )
+                                )
+                            )
                 while pending:
                     ref = pending.pop()
                     if ref.artifact_id in reachable:
@@ -119,7 +132,9 @@ class DagRepository(WorkbenchRepository):
                             pending.extend(self._children(ref))
                     except (OSError, ValueError, KeyError):
                         pass
-                if not exempt <= reachable:
+                # Previously admitted corruption remains an audit fact even when
+                # its parent becomes unreadable. Only new exemptions need proof.
+                if not (exempt - set(previous.dag.invalid_evidence)) <= reachable:
                     raise ValueError("invalid evidence must belong to previous snapshot")
                 if run.dag.plan.artifact_id in exempt:
                     raise ValueError("cannot exempt the execution plan")

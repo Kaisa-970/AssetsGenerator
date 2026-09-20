@@ -256,3 +256,48 @@ def test_retry_cannot_rewrite_previous_terminal_attempt(tmp_path: Path, status: 
         node.status = "running"
         with pytest.raises(ValueError, match="historical DAG attempts"):
             repo.save(run, expected_revision=0)
+
+
+def test_child_reservation_cannot_bind_another_node_or_input():
+    from assets_generator.workbench_models import ChildRegistration
+
+    reservation = ChildRegistration("child", "parent", "other", 1, "input", "owner")
+    with pytest.raises(ValueError, match="node/attempt/input"):
+        DagNodeState(
+            "a",
+            "running",
+            [
+                DagAttempt(
+                    1,
+                    input_digest="input",
+                    child_reservation=reservation,
+                )
+            ],
+        )
+
+
+def test_nested_corruption_keeps_previously_verified_exemptions(tmp_path):
+    store = LocalArtifactStore(tmp_path / "store")
+    with DagRepository(store, tmp_path / "service") as repo:
+        run = run_record(store)
+        q = evidence(store, {"leaf": 1})
+        p = evidence(store, {"child": {"artifact_id": q.artifact_id}})
+        node = run.dag.node_states["a"]
+        node.attempts.append(DagAttempt(1, "succeeded", outputs={"out": p}))
+        repo.create(run)
+        store.blob_path(q).unlink()
+        node.status = "recovery_blocked"
+        node.recovery_blocked_reason = "nested child missing"
+        run.status = "recovery_blocked"
+        run.dag.invalid_evidence[q.artifact_id] = "missing Q"
+        repo.save(run, expected_revision=0)
+        store.blob_path(p).unlink()
+        run = repo.load(run.run_id)
+        run.dag.invalid_evidence[p.artifact_id] = "missing P"
+        repo.save(run, expected_revision=1)
+        run = repo.load(run.run_id)
+        assert set(run.dag.invalid_evidence) == {p.artifact_id, q.artifact_id}
+        repo.save(run, expected_revision=2)
+        run.dag.invalid_evidence["sha256:" + "0" * 64] = "unrelated"
+        with pytest.raises(ValueError, match="previous snapshot"):
+            repo.save(run, expected_revision=3)

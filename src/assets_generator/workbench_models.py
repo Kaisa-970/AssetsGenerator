@@ -5,11 +5,23 @@ from __future__ import annotations
 import dataclasses
 import types
 from dataclasses import dataclass, field
-from typing import Any, Literal, TypeVar, Union, cast, get_args, get_origin, get_type_hints
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Literal,
+    TypeVar,
+    Union,
+    cast,
+    get_args,
+    get_origin,
+    get_type_hints,
+)
 
-from .dag_models import DagState
 from .models import ArtifactRef, BuildRun, NodeAttempt, PortValue
 from .serialization import cache_key, to_primitive
+
+if TYPE_CHECKING:
+    pass
 
 Status = Literal["pending", "running", "waiting_for_input", "succeeded", "failed", "interrupted"]
 
@@ -322,6 +334,8 @@ def _decode(annotation: Any, value: Any) -> Any:
     if dataclasses.is_dataclass(annotation):
         if not isinstance(value, dict):
             raise ValueError("expected record")
+        from .dag_models import DagState
+
         hints = (
             get_type_hints(
                 annotation, localns={"WorkbenchState": WorkbenchState, "DagState": DagState}
@@ -340,6 +354,8 @@ def _decode(annotation: Any, value: Any) -> Any:
 
 
 def read_build_run(value: dict[str, Any]) -> BuildRun:
+    from .dag_models import DagState
+
     # BuildRun keeps its extension annotation lazy to avoid a models import cycle.
     raw = dict(value)
     extension = raw.pop("workbench", None)

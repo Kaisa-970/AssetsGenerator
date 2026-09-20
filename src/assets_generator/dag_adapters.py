@@ -1,7 +1,7 @@
-"""Trusted CPU/human adapters and immutable, revalidated DAG execution bindings.
+"""Trusted CPU/human/gated-process adapters with immutable execution bindings.
 
-This slice deliberately rejects model/process/service Backends: admitting them
-requires the process ownership and compute admission integration of a later slice.
+HTTP and arbitrary unresolved Backend bindings remain unsupported. Process
+adapters receive a worker with durable authorization and cross-run admission.
 """
 
 from __future__ import annotations
@@ -19,6 +19,8 @@ from .compiled_plan import CompiledPlan, digest, freeze, thaw
 from .contracts import ContractError
 from .models import ArtifactRef, PortValue
 from .serialization import canonical_json_bytes, sha256_bytes
+from .workbench_context import ChildRunContext
+from .worker import ProcessJobRequest, WorkerJob
 
 _SCHEMA_KEYS = frozenset(
     {
@@ -113,6 +115,7 @@ class AdapterSpec:
     parameter_schema: Mapping[str, Any] = field(default_factory=lambda: {"type": "object"})
     defaults: Mapping[str, Any] = field(default_factory=dict)
     execution_kind: str = "cpu"
+    uses_child_run: bool = False
 
     def __post_init__(self) -> None:
         if any(not isinstance(v, str) or not v or "@" in v for v in (self.name, self.version)):
@@ -122,8 +125,10 @@ class AdapterSpec:
             for v in self.operators
         ):
             raise ContractError("adapter requires versioned operators")
-        if self.execution_kind not in {"cpu", "human"}:
-            raise ContractError("A2 supports CPU and human adapters only")
+        if self.execution_kind not in {"cpu", "human", "process"}:
+            raise ContractError("supports CPU, human and gated process adapters only")
+        if type(self.uses_child_run) is not bool:
+            raise ContractError("uses_child_run must be boolean")
         _check_schema(self.parameter_schema)
         if self.parameter_schema["type"] != "object":
             raise ContractError("adapter parameter schema must describe object")
@@ -147,12 +152,17 @@ class AdapterSpec:
             "parameter_schema": thaw(self.parameter_schema),
             "defaults": thaw(self.defaults),
             "execution_kind": self.execution_kind,
+            **({"uses_child_run": True} if self.uses_child_run else {}),
         }
 
     def normalize_parameters(self, parameters: Mapping[str, Any]) -> Mapping[str, Any]:
         result: Mapping[str, Any] = freeze({**thaw(self.defaults), **thaw(parameters)})
         _validate(result, self.parameter_schema, "parameters")
         return result
+
+
+class ProcessWorker(Protocol):
+    def run(self, request: ProcessJobRequest) -> WorkerJob: ...
 
 
 @dataclass(frozen=True)
@@ -165,6 +175,9 @@ class NodeExecutionContext:
     decision: ArtifactRef | None = None
     attempt_id: str = ""
     input_digest: str = ""
+    worker: ProcessWorker | None = None
+    child_context: ChildRunContext | None = None
+    output_path: Path | None = None
 
 
 @dataclass(frozen=True)

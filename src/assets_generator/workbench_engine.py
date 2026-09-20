@@ -30,7 +30,7 @@ from .instance_proposals import (
 from .models import ArtifactRef, BuildRun, StructuredValue
 from .pipeline import load_default_operator_specs
 from .runtime import utc_now
-from .serialization import cache_key, read_json, to_primitive
+from .serialization import cache_key, to_primitive
 from .workbench_binding import create_selection_binding
 from .workbench_context import ChildRunContext
 from .workbench_models import (
@@ -428,45 +428,11 @@ class WorkbenchEngine:
             raise ContractError(f"unsupported engine effect {effect.kind}")
 
     def _admit_compute(self, run_id: str, stage_id: str, attempt_number: int) -> None:
-        """Serial drain cannot account for authorized orphan runners from an older service."""
-        directory = str(self.repository.directory.resolve())
-        for marker in (self.store.root / "parent_run_owners").glob("*.json"):
-            try:
-                owner = read_json(marker)
-            except (OSError, ValueError) as error:
-                raise ContractError("cannot verify workbench process ownership") from error
-            if owner.get("workbench_directory") != directory:
-                continue
-            try:
-                other = self.repository.load(marker.stem)
-            except (OSError, ValueError, KeyError, TypeError) as error:
-                raise ContractError(f"cannot verify process evidence for {marker.stem}") from error
-            if other.workbench is None:
-                raise ContractError("owned run has no workbench process evidence")
-            for other_stage in other.workbench.stage_states.values():
-                for old in other_stage.attempts:
-                    if (other.run_id, other_stage.stage_id, old.attempt) == (
-                        run_id,
-                        stage_id,
-                        attempt_number,
-                    ):
-                        continue
-                    worker = old.worker_execution
-                    if worker is None or worker.launch_phase in {"prepared", "identity_recorded"}:
-                        continue  # No durable authorization: the gate cannot launch its Backend.
-                    if (
-                        worker.launch_phase == "exit_observed"
-                        and worker.last_probe is not None
-                        and worker.last_probe.result == "exited"
-                    ):
-                        continue  # Durable empty-group terminal evidence survives PID reuse.
-                    observation = self.probe.observe(worker.identity())
-                    if observation.result != "exited":
-                        raise ContractError(
-                            f"compute admission blocked by {other.run_id}/{other_stage.stage_id}: "
-                            f"{observation.result}; "
-                            f"{observation.reason or 'process group unverified'}"
-                        )
+        from .process_admission import admit_compute
+
+        admit_compute(
+            self.repository, self.probe, exclude_attempt=(run_id, stage_id, attempt_number)
+        )
 
     def _verify_reference_closure(self, reference: ArtifactRef, visited: set[str]) -> None:
         if reference.artifact_id in visited:

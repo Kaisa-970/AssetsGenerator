@@ -181,16 +181,27 @@ class WorkbenchRepository:
         self._ready()
         _identifier(registration.child_run_id)
         parent = self.load(parent.run_id)
-        if parent.workbench is None or parent.run_id != registration.parent_run_id:
+        if parent.run_id != registration.parent_run_id:
             raise ValueError("registration parent mismatch")
-        attempt = parent.workbench.stage_states[registration.stage_id].current()
-        receipt = attempt.command_receipt
-        if (
-            receipt is None
-            or receipt.child_run_id != registration.child_run_id
-            or attempt.attempt != registration.attempt
-            or attempt.input_digest != registration.input_digest
-        ):
+        if parent.workbench is not None:
+            attempt = parent.workbench.stage_states[registration.stage_id].current()
+            receipt = attempt.command_receipt
+            valid = (
+                receipt is not None
+                and receipt.child_run_id == registration.child_run_id
+                and attempt.attempt == registration.attempt
+                and attempt.input_digest == registration.input_digest
+            )
+        elif parent.dag is not None:
+            dag_attempt = parent.dag.node_states[registration.stage_id].current()
+            valid = (
+                dag_attempt.child_reservation == registration
+                and dag_attempt.attempt == registration.attempt
+                and dag_attempt.input_digest == registration.input_digest
+            )
+        else:
+            valid = False
+        if not valid:
             raise ValueError("registration requires a matching durable parent receipt")
         path = self.store.root / "run_owners" / f"{registration.child_run_id}.json"
         if registration.registration_location != str(path):
@@ -281,27 +292,37 @@ class WorkbenchRepository:
             raise ValueError("child ownership has not been reserved")
 
         def write_snapshot() -> ArtifactRef:
+            registrations: list[ChildRegistration | None] = []
             if run.workbench is not None:
-                for stage in run.workbench.stage_states.values():
-                    for attempt in stage.attempts:
-                        registration = attempt.child_registration
-                        if registration is None:
-                            continue
-                        owner_path = (
-                            self.store.root
-                            / "run_owners"
-                            / f"{_identifier(registration.child_run_id)}.json"
-                        )
-                        if decode_record(ChildRegistration, read_json(owner_path)) != registration:
-                            raise ValueError("child registration does not match durable ownership")
-                        self.io.sync_existing(owner_path)
-                        child = self.load(registration.child_run_id)
-                        if child.parent_run_id != run.run_id:
-                            raise ValueError("child index parent mismatch")
-                        child_index = self.store.root / "runs" / f"{registration.child_run_id}.json"
-                        child_ref = ArtifactRef(**read_json(child_index))
-                        self._sync_reference(child_ref, set())
-                        self.io.sync_existing(child_index)
+                registrations.extend(
+                    attempt.child_registration
+                    for stage in run.workbench.stage_states.values()
+                    for attempt in stage.attempts
+                )
+            if run.dag is not None:
+                registrations.extend(
+                    attempt.child_registration
+                    for node in run.dag.node_states.values()
+                    for attempt in node.attempts
+                )
+            for registration in registrations:
+                if registration is None:
+                    continue
+                owner_path = (
+                    self.store.root
+                    / "run_owners"
+                    / f"{_identifier(registration.child_run_id)}.json"
+                )
+                if decode_record(ChildRegistration, read_json(owner_path)) != registration:
+                    raise ValueError("child registration does not match durable ownership")
+                self.io.sync_existing(owner_path)
+                child = self.load(registration.child_run_id)
+                if child.parent_run_id != run.run_id:
+                    raise ValueError("child index parent mismatch")
+                child_index = self.store.root / "runs" / f"{registration.child_run_id}.json"
+                child_ref = ArtifactRef(**read_json(child_index))
+                self._sync_reference(child_ref, set())
+                self.io.sync_existing(child_index)
             visited: set[str] = set()
             raw = json.loads(canonical_json_bytes(run))
             for reference in _references(raw):
