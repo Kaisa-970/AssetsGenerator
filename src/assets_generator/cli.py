@@ -23,11 +23,16 @@ def _parser() -> argparse.ArgumentParser:
     from .dag_cli import add_parser
 
     add_parser(subparsers)
-    editor = subparsers.add_parser("node-editor", help="Local DAG draft editor (no execution)")
+    editor = subparsers.add_parser(
+        "node-editor", help="Local DAG editor with optional single-image execution"
+    )
     editor.add_argument("--directory", type=Path, required=True)
     editor.add_argument("--port", type=int, default=8767)
     editor.add_argument("--operators", type=Path)
     editor.add_argument("--template", type=Path, action="append", default=[])
+    editor.add_argument("--config", type=Path)
+    editor.add_argument("--store", type=Path)
+    editor.add_argument("--profile")
     compile_command = subparsers.add_parser("compile-pipeline")
     compile_command.add_argument("--pipeline", type=Path)
     compile_command.add_argument("--operators", type=Path)
@@ -256,7 +261,15 @@ def _execute(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
     if args.command == "node-editor":
         from .node_editor import serve_editor
 
-        serve_editor(args.directory, args.port, args.operators, args.template)
+        serve_editor(
+            args.directory,
+            args.port,
+            args.operators,
+            args.template,
+            config=args.config,
+            store=args.store,
+            profile=args.profile,
+        )
         return 0
     if args.command == "dag-image":
         from .dag_cli import execute

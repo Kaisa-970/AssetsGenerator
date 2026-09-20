@@ -404,3 +404,30 @@ footer {
     display: none;
   }
 }
+.execution-panel select {
+  max-width: 100%;
+  margin-top: 10px;
+}
+.execution-panel .run-identity {
+  overflow-wrap: anywhere;
+  font-family: monospace;
+}
+.run-node {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 0;
+  border-bottom: 1px solid #dce3e9;
+}
+.run-node span {
+  font-size: 12px;
+  color: #497088;
+}
+.run-node p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.run-node a {
+  font-size: 13px;
+  color: #1d637a;
+}

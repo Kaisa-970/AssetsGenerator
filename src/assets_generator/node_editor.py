@@ -1,4 +1,4 @@
-"""Local draft editor: static compilation only, never dispatch models."""
+"""Local draft editor with optional owned single-image DAG execution."""
 
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ import yaml
 from .contracts import ContractError
 from .dag_adapters import AdapterRegistry
 from .multi_view_relations import register_multi_view_relations
+from .node_editor_execution import NodeEditorExecution, validate_editor_inputs
 from .pipeline import (
     _pipeline_from_raw,
     compile_pipeline,
@@ -35,9 +36,13 @@ class DraftEditor:
         operators: Path | None = None,
         templates: list[Path] | None = None,
         adapters: AdapterRegistry | None = None,
+        execution: NodeEditorExecution | None = None,
+        execution_profile: str | None = None,
     ):
         self.directory = directory.absolute()
-        self.adapters = adapters
+        self.execution = execution
+        self.execution_profile = execution_profile
+        self.adapters = execution.engine.registry if execution else adapters
         self.specs = load_default_operator_specs()
         if operators:
             self.specs.update(load_operator_specs(operators))
@@ -55,7 +60,8 @@ class DraftEditor:
             "operators": {k: to_primitive(v) for k, v in self.specs.items()},
             "adapters": self.adapters.catalog() if self.adapters else [],
             "templates": self.templates,
-            "execution_enabled": False,
+            "execution_enabled": self.execution is not None,
+            "execution_profile": self.execution_profile,
         }
 
     def compile(self, raw: Any) -> dict[str, Any]:
@@ -75,12 +81,21 @@ class DraftEditor:
                 if self.adapters
                 else None
             )
+            execution_reason = None
+            if self.execution and bound:
+                try:
+                    validate_editor_inputs(plan)
+                except ContractError as error:
+                    execution_reason = str(error)
             return {
                 "ok": True,
                 "plan": plan.to_dict(),
                 "diagnostics": [],
-                "scope": "static_contracts_only",
-                "execution_ready": False,
+                "scope": "bound_execution" if self.execution else "static_contracts_only",
+                "execution_ready": self.execution is not None
+                and bound is not None
+                and execution_reason is None,
+                "execution_reason": execution_reason,
                 "bound_plan": bound.to_dict() if bound else None,
             }
         except (ValueError, KeyError, TypeError, AttributeError) as error:
@@ -157,6 +172,17 @@ def create_editor_server(editor: DraftEditor, port: int = 8767) -> ThreadingHTTP
             try:
                 if path == "/api/catalog":
                     self.respond(200, editor.catalog())
+                elif path == "/api/runs" and editor.execution:
+                    self.respond(200, {"runs": editor.execution.list_runs()})
+                elif path.startswith("/api/runs/") and editor.execution:
+                    parts = path.removeprefix("/api/runs/").split("/")
+                    if len(parts) == 4 and parts[1] == "outputs":
+                        output = editor.execution.output(parts[0], parts[2], parts[3])
+                        self.send(200, output.data, output.media_type)
+                    elif len(parts) == 1:
+                        self.respond(200, editor.execution.snapshot(parts[0]))
+                    else:
+                        raise ValueError("invalid run route")
                 elif path == "/api/drafts":
                     self.respond(
                         200,
@@ -190,7 +216,7 @@ def create_editor_server(editor: DraftEditor, port: int = 8767) -> ThreadingHTTP
                 self.respond(
                     404, {"error": "not found; build frontend with npm run build if missing"}
                 )
-            except (ValueError, OSError) as error:
+            except (ValueError, OSError, KeyError, RuntimeError) as error:
                 self.respond(400, {"error": str(error)})
 
         def mutate(self) -> None:
@@ -208,11 +234,42 @@ def create_editor_server(editor: DraftEditor, port: int = 8767) -> ThreadingHTTP
                 path = urlsplit(self.path).path
                 if self.command == "POST" and path == "/api/compile":
                     self.respond(200, editor.compile(body.get("pipeline")))
+                elif self.command == "POST" and path == "/api/runs" and editor.execution:
+                    if not isinstance(body, dict) or set(body) != {"pipeline", "image_path"}:
+                        raise ValueError("run requires pipeline and image_path")
+                    self.respond(202, editor.execution.start(body["pipeline"], body["image_path"]))
+                elif self.command == "POST" and path.startswith("/api/runs/") and editor.execution:
+                    parts = path.removeprefix("/api/runs/").split("/")
+                    if len(parts) != 2 or not isinstance(body, dict):
+                        raise ValueError("invalid run action")
+                    run_id, action = parts
+                    if "node_id" in body and (
+                        not isinstance(body["node_id"], str) or not body["node_id"]
+                    ):
+                        raise ValueError("node_id must be nonempty text")
+                    if action == "resume" and set(body) == {"expected_revision"}:
+                        value = editor.execution.resume(run_id, body["expected_revision"])
+                    elif action == "retry" and set(body) == {"node_id", "expected_revision"}:
+                        value = editor.execution.retry(
+                            run_id, body["node_id"], body["expected_revision"]
+                        )
+                    elif action == "review" and set(body) == {"node_id"}:
+                        value = editor.execution.review(run_id, body["node_id"])
+                    else:
+                        raise ValueError("unknown action or invalid fields")
+                    self.respond(202, value)
                 elif self.command == "PUT" and path.startswith("/api/drafts/"):
                     self.respond(200, editor.save(path.removeprefix("/api/drafts/"), body))
                 else:
                     self.respond(404, {"error": "unknown route"})
-            except (ValueError, OSError, AttributeError) as error:
+            except (
+                ValueError,
+                OSError,
+                AttributeError,
+                KeyError,
+                RuntimeError,
+                TypeError,
+            ) as error:
                 self.respond(400, {"error": str(error)})
 
         do_POST = mutate
@@ -221,12 +278,60 @@ def create_editor_server(editor: DraftEditor, port: int = 8767) -> ThreadingHTTP
     return ThreadingHTTPServer(("127.0.0.1", port), Handler)
 
 
-def serve_editor(directory: Path, port: int, operators: Path | None, templates: list[Path]) -> None:
-    server = create_editor_server(DraftEditor(directory, operators, templates), port)
-    print(f"http://127.0.0.1:{server.server_port}/ (Ctrl+C 关闭)", flush=True)
-    try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        pass
-    finally:
-        server.server_close()
+def serve_editor(
+    directory: Path,
+    port: int,
+    operators: Path | None,
+    templates: list[Path],
+    *,
+    config: Path | None = None,
+    store: Path | None = None,
+    profile: str | None = None,
+) -> None:
+    from contextlib import ExitStack
+
+    with ExitStack() as stack:
+        execution = None
+        editor = DraftEditor(directory, operators, templates)
+        if any(value is not None for value in (config, store, profile)):
+            if config is None or store is None or profile is None:
+                raise ValueError("execution requires --config, --store and --profile together")
+            from .artifact_store import LocalArtifactStore
+            from .dag_engine import DagEngine
+            from .dag_image_adapters import (
+                DagImageBuildAdapter,
+                DagMaskSelectionAdapter,
+                DagProposalAdapter,
+            )
+            from .dag_persistence import DagRepository
+            from .serialization import read_json
+            from .workbench_profiles import load_profiles
+
+            profiles = load_profiles(read_json(config))
+            if profile not in profiles:
+                raise ValueError(f"unknown profile: {profile}")
+            registry = AdapterRegistry()
+            for adapter in (
+                DagProposalAdapter(profiles[profile]),
+                DagMaskSelectionAdapter(),
+                DagImageBuildAdapter(profiles[profile]),
+            ):
+                registry.register(adapter)
+            repository = DagRepository(LocalArtifactStore(store), directory / "runtime")
+            stack.enter_context(repository)
+            execution = NodeEditorExecution(
+                DagEngine(repository, registry, editor.relations),
+                specs=editor.specs,
+                relations=editor.relations,
+            )
+            stack.callback(execution.close)
+            editor = DraftEditor(
+                directory, operators, templates, execution=execution, execution_profile=profile
+            )
+        server = create_editor_server(editor, port)
+        stack.callback(server.server_close)
+        print(f"http://127.0.0.1:{server.server_port}/ (Ctrl+C 关闭)", flush=True)
+        try:
+            server.serve_forever()
+        except KeyboardInterrupt:
+            pass

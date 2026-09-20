@@ -120,3 +120,75 @@ def test_diagnostic_locates_bad_input_port(tmp_path):
     diagnostic = editor.compile(raw)["diagnostics"][0]
     assert diagnostic["node_id"] == "B"
     assert diagnostic["port"] == "source"
+
+
+def test_http_execution_routes_and_strict_requests(tmp_path):
+    class Execution:
+        def start(self, pipeline, image_path):
+            assert pipeline == {"pipeline": "draft"}
+            assert image_path == "/tmp/input.png"
+            return {"run": {"run_id": "dag_example"}, "busy": True, "error": None}
+
+        def snapshot(self, run_id):
+            assert run_id == "dag_example"
+            return {"run": {"run_id": run_id}, "busy": False, "error": None}
+
+        def list_runs(self):
+            return [{"run_id": "dag_example", "status": "succeeded"}]
+
+        def resume(self, run_id, expected_revision):
+            assert run_id == "dag_example" and expected_revision == 3
+            return self.snapshot(run_id)
+
+        def output(self, run_id, node, port):
+            from assets_generator.workbench_http import OutputPayload
+
+            assert (run_id, node, port) == ("dag_example", "generate", "glb")
+            return OutputPayload(b"glTF", "model/gltf-binary")
+
+    editor = fixture(tmp_path)
+    editor.execution = Execution()
+    server = create_editor_server(editor, 0)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{server.server_port}"
+
+    def post(path, body, origin=None):
+        headers = {"Content-Type": "application/json"}
+        if origin:
+            headers["Origin"] = origin
+        return urlopen(Request(base + path, json.dumps(body).encode(), headers, method="POST"))
+
+    try:
+        with post(
+            "/api/runs", {"pipeline": {"pipeline": "draft"}, "image_path": "/tmp/input.png"}
+        ) as response:
+            assert response.status == 202
+            assert json.load(response)["run"]["run_id"] == "dag_example"
+        with urlopen(base + "/api/runs") as response:
+            assert len(json.load(response)["runs"]) == 1
+        with urlopen(base + "/api/runs/dag_example") as response:
+            assert not json.load(response)["busy"]
+        with post("/api/runs/dag_example/resume", {"expected_revision": 3}) as response:
+            assert response.status == 202
+        with urlopen(base + "/api/runs/dag_example/outputs/generate/glb") as response:
+            assert response.headers["Content-Type"] == "model/gltf-binary"
+            assert response.read() == b"glTF"
+        for body in (
+            {"pipeline": {}},
+            {"pipeline": {}, "image_path": "/tmp/input.png", "extra": True},
+        ):
+            with pytest.raises(HTTPError) as caught:
+                post("/api/runs", body)
+            assert caught.value.code == 400
+        for invalid_node in ([], {}, None, 1, ""):
+            with pytest.raises(HTTPError) as caught:
+                post("/api/runs/dag_example/review", {"node_id": invalid_node})
+            assert caught.value.code == 400
+        with pytest.raises(HTTPError) as caught:
+            post("/api/runs", {}, "http://evil.test")
+        assert caught.value.code == 403
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()

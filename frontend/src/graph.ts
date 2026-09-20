@@ -39,6 +39,8 @@ export type Pipeline = {
 };
 export type Layout = Record<string, { x: number; y: number }>;
 export type Catalog = {
+  execution_enabled?: boolean;
+  execution_profile?: string;
   operators: Record<string, Operator>;
   adapters: Adapter[];
   templates: { id: string; label: string; pipeline: Pipeline }[];

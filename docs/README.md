@@ -56,6 +56,7 @@
 ## 评测报告 · reports
 
 - [节点编辑器 B1 首版](reports/node-editor-b1.md)
+- [节点编辑器 B2 单图执行首片](reports/node-editor-b2.md)
 
 - [Generic DAG 多视图迁移切片](reports/generic-dag-multi-view.md)
 

@@ -37,6 +37,7 @@ import {
 } from "./graph";
 import "@xyflow/react/dist/style.css";
 import "./style.css";
+import { ExecutionPanel } from "./ExecutionPanel";
 type Data = Record<string, unknown> & {
   label: string;
   operator: string;
@@ -279,7 +280,9 @@ function App() {
           <span className="brand-icon">◈</span>
           <div>
             <strong>资产管线</strong>
-            <small>NODE EDITOR · B1</small>
+            <small>
+              NODE EDITOR · {catalog.execution_enabled ? "B2" : "B1"}
+            </small>
           </div>
         </div>
         <div className="identity">
@@ -328,7 +331,11 @@ function App() {
                 setTab("plan");
                 setMessage(
                   r.ok
-                    ? "编译通过；此页面不启动推理。"
+                    ? catalog.execution_enabled
+                      ? r.execution_ready
+                        ? "编译通过；可在运行页创建新运行。"
+                        : `编译通过；当前入口不可运行：${r.execution_reason || "执行条件未满足"}`
+                      : "编译通过；此页面不启动推理。"
                     : "编译未通过，请查看诊断。",
                 );
               })
@@ -486,7 +493,8 @@ function App() {
             <MiniMap pannable zoomable nodeColor="#bccddb" />
           </ReactFlow>
           <div className="canvas-note">
-            拖动连接端口 · Delete 删除节点 · 不执行模型
+            拖动连接端口 · Delete 删除节点 ·{" "}
+            {catalog.execution_enabled ? "草稿与运行独立" : "不执行模型"}
           </div>
         </main>
         <aside className="inspector">
@@ -503,12 +511,31 @@ function App() {
             >
               编译结果
             </button>
+            {catalog.execution_enabled && (
+              <button
+                className={tab === "run" ? "active" : ""}
+                onClick={() => setTab("run")}
+              >
+                运行
+              </button>
+            )}
           </nav>
-          {tab === "plan" ? (
+          {catalog.execution_enabled && (
+            <div hidden={tab !== "run"}>
+              <ExecutionPanel
+                pipeline={pipeline}
+                profile={catalog.execution_profile}
+                executionReason={
+                  (result as { execution_reason?: string } | undefined)
+                    ?.execution_reason
+                }
+              />
+            </div>
+          )}
+          {tab === "run" ? null : tab === "plan" ? (
             <>
               <p>
-                编译反馈为后端权威结果。静态契约通过不代表模型绑定或执行可用；B2
-                才接入运行。修改图后需要重新编译。
+                编译反馈为后端权威结果。静态契约通过不代表模型推理成功。修改图后需要重新编译；启动运行时后端再次校验。
               </p>
               <pre>
                 {result
