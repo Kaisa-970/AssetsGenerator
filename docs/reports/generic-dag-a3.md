@@ -1,6 +1,6 @@
 # Generic DAG：进程执行与单图迁移切片
 
-状态：后端与单运行浏览器审查切片已实现，已通过本轮 CPU/HTTP/前端回归；不宣称里程碑 A 完成。
+状态：后端与单运行浏览器审查切片已实现，已通过本轮 CPU/HTTP/前端回归；不宣称里程碑 A 完成。后续已完成 [真实单图 smoke](generic-dag-real-smoke.md) 与 [真实推理中断及显式重试](generic-dag-interruption.md)，下文未运行 GPU 的表述保留为各历史轮次记录。
 
 ## 实现
 

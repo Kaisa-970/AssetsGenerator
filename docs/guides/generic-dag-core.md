@@ -66,7 +66,7 @@ PYTHONPATH=src <MAIN_CHECKOUT>/.venv/bin/python -m assets_generator.cli dag-imag
 
 `resume --run <RUN_ID>` 恢复并继续 ready 节点；`retry` 另需节点和最新 revision。重复决定只核对回执，中断执行通过显式 retry 继续。不要将新决定复用旧 key。`generate_asset` 输出 asset/release/glb/qa ArtifactRef，实际发布目录位于服务目录 `executions/<RUN_ID>/<CHILD_ID>/release`。
 
-此入口尚未通过真实模型 GPU smoke，不应据 CPU/Fake 测试宣称真实模型验证完成。
+此入口已完成真实 SAM → 用户确认 → TRELLIS2 → GLB smoke，以及完成后的服务重启验证，见 [真实运行报告](../reports/generic-dag-real-smoke.md)。这不代表生成质量验收或完整里程碑 A 完成；多视图迁移与空间关系 validator 仍待实现。
 
 
 浏览器审查入口复用自动预览与图片点击选择：

@@ -53,6 +53,8 @@
 
 ## 评测报告 · reports
 
+- [真实 TRELLIS2 推理中断验收](reports/generic-dag-interruption.md)
+
 - [单图 YAML DAG 真实模型 smoke](reports/generic-dag-real-smoke.md)
 
 - [Generic DAG 进程执行与单图迁移切片](reports/generic-dag-a3.md)
