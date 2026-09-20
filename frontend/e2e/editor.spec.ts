@@ -1525,3 +1525,62 @@ test("compile diagnostics locate known nodes without changing the graph", async 
   await expect.poll(() => compiled.length).toBe(2);
   expect(compiled[0]).toEqual(compiled[1]);
 });
+
+test("current failure is visible while old successful-retry errors remain in history", async ({
+  page,
+}) => {
+  let mutations = 0;
+  const failure = {
+    attempt: 1,
+    status: "failed",
+    error_code: "BACKEND_TIMEOUT",
+    error_detail: "Backend exceeded the configured deadline",
+  };
+  await page.route("**/api/**", async (route) => {
+    if (route.request().method() !== "GET") mutations++;
+    const path = new URL(route.request().url()).pathname;
+    await route.fulfill({
+      json:
+        path === "/api/catalog"
+          ? {
+              operators: {},
+              adapters: [],
+              templates: [],
+              execution_enabled: true,
+            }
+          : path === "/api/drafts"
+            ? { drafts: [] }
+            : path === "/api/runs"
+              ? { runs: [{ run_id: "dag_failure", status: "failed" }] }
+              : {
+                  run: {
+                    run_id: "dag_failure",
+                    status: "failed",
+                    dag: {
+                      revision: 3,
+                      node_states: {
+                        broken: { status: "failed", attempts: [failure] },
+                        recovered: {
+                          status: "succeeded",
+                          attempts: [
+                            failure,
+                            { attempt: 2, status: "succeeded" },
+                          ],
+                        },
+                      },
+                    },
+                  },
+                },
+    });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "运行", exact: true }).click();
+  await page.getByLabel("选择运行").selectOption("dag_failure");
+  const alert = page.getByRole("alert", { name: "执行错误 · broken" });
+  await expect(alert).toContainText("BACKEND_TIMEOUT");
+  await expect(alert).toContainText("configured deadline");
+  await expect(
+    page.getByRole("alert", { name: "执行错误 · recovered" }),
+  ).toHaveCount(0);
+  expect(mutations).toBe(0);
+});

@@ -643,6 +643,14 @@ export function ExecutionPanel({
                     </label>
                   </div>
                 )}
+              {["failed", "interrupted"].includes(state.status) &&
+                (state.attempts?.at(-1)?.error_code ||
+                  state.attempts?.at(-1)?.error_detail) && (
+                  <div role="alert" aria-label={`执行错误 · ${id}`}>
+                    <p>{state.attempts?.at(-1)?.error_code}</p>
+                    <p>{state.attempts?.at(-1)?.error_detail}</p>
+                  </div>
+                )}
               {state.recovery_blocked_reason && (
                 <p>{state.recovery_blocked_reason}</p>
               )}
