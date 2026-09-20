@@ -516,6 +516,23 @@ test("parameter form sends typed values and preserves other instances", async ({
     .click();
   await expect(page.getByLabel("参数 seed", { exact: true })).toHaveValue("42");
   await expect(page.getByRole("alert")).toHaveCount(0);
+  await page.getByLabel("参数 matrix JSON", { exact: true }).fill("{}");
+  await page
+    .getByRole("button", { name: "应用字段 · matrix", exact: true })
+    .click();
+  await page.getByLabel("参数 seed", { exact: true }).fill("1.5");
+  await page.getByLabel("参数 seed", { exact: true }).press("Tab");
+  await expect(page.getByRole("alert")).toHaveCount(2);
+  await page
+    .getByRole("button", { name: "放弃字段编辑 · seed", exact: true })
+    .click();
+  await expect(
+    page.getByRole("alert", { name: "参数错误 · matrix", exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "放弃字段编辑 · matrix", exact: true })
+    .click();
+  await expect(page.getByRole("alert")).toHaveCount(0);
   await page.getByLabel("参数 seed", { exact: true }).fill("99");
   await page.getByLabel("参数 seed", { exact: true }).press("Tab");
   await page.getByLabel("参数 size", { exact: true }).selectOption("1");

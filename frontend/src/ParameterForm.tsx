@@ -17,16 +17,25 @@ export function ParameterForm({
   onChange: (value: Record<string, unknown>) => void;
 }) {
   const [draft, setDraft] = useState<Record<string, string>>({});
-  const [error, setError] = useState<{ field: string; message: string }>();
+  const [errors, setErrors] = useState<Record<string, string>>({});
   const previous = useRef({ adapter, parameters });
   useEffect(() => {
     const old = previous.current;
     previous.current = { adapter, parameters };
     if (old.adapter !== adapter) {
       setDraft({});
-      setError(undefined);
+      setErrors({});
       return;
     }
+    setErrors((pending) =>
+      Object.fromEntries(
+        Object.entries(pending).filter(
+          ([name]) =>
+            JSON.stringify(old.parameters[name]) ===
+            JSON.stringify(parameters[name]),
+        ),
+      ),
+    );
     setDraft((pending) =>
       Object.fromEntries(
         Object.entries(pending).filter(
@@ -38,6 +47,11 @@ export function ParameterForm({
     );
   }, [adapter, parameters]);
   const clearDraft = (name: string) => {
+    setErrors((pending) => {
+      const next = { ...pending };
+      delete next[name];
+      return next;
+    });
     setDraft((pending) => {
       const next = { ...pending };
       delete next[name];
@@ -122,14 +136,13 @@ export function ParameterForm({
                             Array.isArray(parsed)))
                       )
                         throw Error(`需要 ${field.type}`);
-                      setError(undefined);
                       clearDraft(name);
                       onChange({ ...parameters, [name]: parsed });
                     } catch {
-                      setError({
-                        field: name,
-                        message: `${name} 需要有效的 ${field.type} JSON，尚未应用`,
-                      });
+                      setErrors((pending) => ({
+                        ...pending,
+                        [name]: `${name} 需要有效的 ${field.type} JSON，尚未应用`,
+                      }));
                     }
                   }}
                 >
@@ -174,13 +187,12 @@ export function ParameterForm({
                       (field.maximum !== undefined &&
                         Number(parsed) > field.maximum))
                   ) {
-                    setError({
-                      field: name,
-                      message: `${name} 不符合 ${field.type} 范围要求，尚未应用`,
-                    });
+                    setErrors((pending) => ({
+                      ...pending,
+                      [name]: `${name} 不符合 ${field.type} 范围要求，尚未应用`,
+                    }));
                     return;
                   }
-                  setError(undefined);
                   clearDraft(name);
                   onChange({ ...parameters, [name]: parsed });
                 }}
@@ -193,9 +205,6 @@ export function ParameterForm({
                   type="button"
                   onClick={() => {
                     clearDraft(name);
-                    setError((previous) =>
-                      previous?.field === name ? undefined : previous,
-                    );
                   }}
                 >
                   放弃字段编辑 · {name}
@@ -232,7 +241,13 @@ export function ParameterForm({
           </label>
         );
       })}
-      {error && <p role="alert">{error.message}</p>}
+      {Object.entries(errors)
+        .filter(([name]) => name in draft)
+        .map(([name, message]) => (
+          <p key={name} role="alert" aria-label={`参数错误 · ${name}`}>
+            {message}
+          </p>
+        ))}
       <p>
         对象和数组按字段显式应用；嵌套内容由后端编译校验。也可在下方编辑完整
         JSON。
