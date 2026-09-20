@@ -165,19 +165,40 @@ def start_owned_image(
         raise ValueError("ComfyUI start requires a claimed running job")
     if set(images) != set(workflow.image_targets):
         raise ValueError("ComfyUI images differ from declared inputs")
-    workflow.spec.normalize_parameters(parameters)
-    receipts = {name: upload_image(client, store, ref) for name, ref in images.items()}
-    bound = workflow.bind(parameters, images=receipts, endpoint=client.endpoint)
-    return submit_owned_prompt(
-        owner,
-        request,
-        journal_path,
-        client,
-        deployment={
-            "endpoint": client.endpoint,
-            "workflow": bound,
-            "claims": deployment_claims,
-            "internal_verification": "unverified",
-        },
-        prompt=bound["prompt"],
-    )
+    actual = workflow.spec.normalize_parameters(parameters)
+    for ref in images.values():
+        if not store.verify_digest(ref):
+            raise ValueError("ComfyUI input missing or corrupt before start")
+    intent = {
+        "endpoint": client.endpoint,
+        "store": str(store.root),
+        "journal_path": str(journal_path.expanduser().absolute()),
+        "prompt_template": workflow.prompt,
+        "targets": workflow.targets,
+        "image_targets": workflow.image_targets,
+        "parameter_schema": workflow.spec.parameter_schema,
+        "defaults": workflow.spec.defaults,
+        "parameters": actual,
+        "inputs": images,
+        "deployment_claims": deployment_claims,
+    }
+    try:
+        if not owner.authorize_comfy_start(request, intent):
+            raise ComfySubmissionUnknown("ComfyUI start already authorized; never repeat uploads")
+        receipts = {name: upload_image(client, store, ref) for name, ref in images.items()}
+        bound = workflow.bind(parameters, images=receipts, endpoint=client.endpoint)
+        return submit_owned_prompt(
+            owner,
+            request,
+            journal_path,
+            client,
+            deployment={
+                "endpoint": client.endpoint,
+                "workflow": bound,
+                "claims": deployment_claims,
+                "internal_verification": "unverified",
+            },
+            prompt=bound["prompt"],
+        )
+    except Exception as error:
+        raise ComfySubmissionUnknown("ComfyUI start interrupted or uncertain; no replay") from error

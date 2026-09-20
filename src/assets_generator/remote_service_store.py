@@ -45,6 +45,8 @@ class RemoteServiceStore:
                 self.db.execute("ALTER TABLE jobs ADD COLUMN comfy_result BLOB")
             if "comfy_import" not in {row[1] for row in self.db.execute("PRAGMA table_info(jobs)")}:
                 self.db.execute("ALTER TABLE jobs ADD COLUMN comfy_import BLOB")
+            if "comfy_start" not in {row[1] for row in self.db.execute("PRAGMA table_info(jobs)")}:
+                self.db.execute("ALTER TABLE jobs ADD COLUMN comfy_start BLOB")
             self.db.execute(
                 "CREATE TABLE IF NOT EXISTS blobs (digest TEXT PRIMARY KEY, body BLOB NOT NULL)"
             )
@@ -249,6 +251,31 @@ class RemoteServiceStore:
                     )
                 self.db.execute("COMMIT")
                 return previous is None
+            except BaseException:
+                self.db.execute("ROLLBACK")
+                raise
+
+    def authorize_comfy_start(self, request: RemoteRequest, intent: dict[str, Any]) -> bool:
+        """Reserve the first execution before uploads; never reauthorize on restart."""
+        body = canonical_json_bytes(intent)
+        with self._lock:
+            self.db.execute("BEGIN IMMEDIATE")
+            try:
+                job = self.lookup(request)
+                if job is None or job.state != "running":
+                    raise ValueError("ComfyUI start requires running job")
+                previous = self.db.execute(
+                    "SELECT comfy_start FROM jobs WHERE key=?", (request.submission_key,)
+                ).fetchone()[0]
+                if previous is not None and previous != body:
+                    raise ValueError("ComfyUI start intent conflict")
+                fresh = previous is None
+                if fresh:
+                    self.db.execute(
+                        "UPDATE jobs SET comfy_start=? WHERE key=?", (body, request.submission_key)
+                    )
+                self.db.execute("COMMIT")
+                return fresh
             except BaseException:
                 self.db.execute("ROLLBACK")
                 raise
