@@ -60,6 +60,8 @@
 
 ## 评测报告 · reports
 
+- [工作台完整回归 2026-09-21](reports/workbench-regression-20260921.md)
+
 - [节点编辑器 B1 首版](reports/node-editor-b1.md)
 - [节点编辑器 B2 单图执行首片](reports/node-editor-b2.md)
 - [B2 画布单图真实运行验收](reports/node-editor-b2-real-smoke.md)

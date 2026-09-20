@@ -78,3 +78,14 @@ acknowledged 只代表收到对应提交回执，不代表 workflow 成功。
 5 项 CPU 单元回归通过，Ruff/mypy 通过。当前未接 HTTP、队列/历史查询、输出
 导入或 DAG；调用者还须保证部署内容已验证、HTTP 无自动重试，并将日志归属
 固定在外层作业。数据库丢失后的外层阻塞尚需接入，不能自行重建日志恢复提交。
+
+### HTTP 提交与原作业查询
+
+新增 ComfyClient，将 POST /prompt 接入单次提交日志；先核对日志固定 endpoint，
+提交不自动重试、不跟随重定向，响应限长且严格解析 JSON。history 仅 GET 原 UUID，
+返回未经信任的历史对象；空对象不修改 sending，也不授权重发。
+
+使用本机真实 HTTP 服务覆盖正常响应、服务收包后断连接、307、超大响应及重复
+JSON key，重开 SQLite 后均不产生第二次 POST。日志与 HTTP 合跑 10 项通过，
+Ruff/mypy 通过。历史内容关联、结果固定、上传下载及 DAG 仍未接入；没有运行
+真实 ComfyUI，不能声明复合节点可用。
