@@ -581,6 +581,17 @@ export function ExecutionPanel({
                     预览模型 · {output.node_id}
                   </button>
                 ))}
+              {envelope.outputs
+                .filter((output) => output.kind === "asset_release")
+                .map((output) => (
+                  <a
+                    key={`archive:${output.node_id}:${output.port}`}
+                    href={`/api/runs/${encodeURIComponent(run.run_id)}/archives/${encodeURIComponent(output.node_id)}/${encodeURIComponent(output.port)}`}
+                    download={`${run.run_id}-${output.node_id}.zip`}
+                  >
+                    下载发布包 · {output.node_id}
+                  </a>
+                ))}
               {envelope.outputs.map((output) => (
                 <a
                   key={`${output.node_id}:${output.port}`}

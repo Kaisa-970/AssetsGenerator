@@ -178,7 +178,10 @@ def create_editor_server(editor: DraftEditor, port: int = 8767) -> ThreadingHTTP
                     self.respond(200, {"runs": editor.execution.list_runs()})
                 elif path.startswith("/api/runs/") and editor.execution:
                     parts = path.removeprefix("/api/runs/").split("/")
-                    if len(parts) == 4 and parts[1] == "outputs":
+                    if len(parts) == 4 and parts[1] == "archives":
+                        output = editor.execution.release_archive(parts[0], parts[2], parts[3])
+                        self.send(200, output.data, output.media_type)
+                    elif len(parts) == 4 and parts[1] == "outputs":
                         output = editor.execution.output(parts[0], parts[2], parts[3])
                         self.send(200, output.data, output.media_type)
                     elif len(parts) == 2 and parts[1] == "draft":

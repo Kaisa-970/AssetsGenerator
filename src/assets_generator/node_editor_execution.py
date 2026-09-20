@@ -10,6 +10,7 @@ import io
 import re
 import threading
 import uuid
+import zipfile
 from collections.abc import Callable
 from http.server import ThreadingHTTPServer
 from pathlib import Path
@@ -187,6 +188,36 @@ class NodeEditorExecution:
             "media_type", "application/octet-stream"
         )
         return OutputPayload(self.engine.store.blob_path(ref).read_bytes(), str(media))
+
+    def release_archive(self, run_id: str, node_id: str, port: str) -> OutputPayload:
+        """Download declared release files; never re-export or regenerate evidence."""
+        from .scene_workflow import _release_files
+
+        self._owned(run_id)
+        run = self.engine.repository.load(run_id)
+        if run.dag is None or run.dag.node_states[node_id].status != "succeeded":
+            raise ContractError("archive requires a successful release node")
+        ref = run.dag.node_states[node_id].current().outputs[port]
+        store = self.engine.store
+        if (
+            not isinstance(ref, ArtifactRef)
+            or store.get_manifest(ref.artifact_id).identity.kind != "asset_release"
+        ):
+            raise ContractError("archive requires an AssetRelease")
+        self.engine.repository.verify_reference_closure(ref)
+        release = store.read_structured(ref)
+        files = _release_files(store, ref)
+        files["asset.json"] = ArtifactRef(**release["asset_definition"])
+        files["release.json"] = ref
+        # Bound the in-memory download independently of compression ratio.
+        limit = 512 * 1024 * 1024
+        if sum(store.blob_path(item).stat().st_size for item in files.values()) > limit:
+            raise ContractError("release archive exceeds 512 MiB download limit")
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_STORED) as archive:
+            for name, item in sorted(files.items()):
+                archive.writestr(zipfile.ZipInfo(name), store.blob_path(item).read_bytes())
+        return OutputPayload(buffer.getvalue(), "application/zip")
 
     def list_runs(self) -> list[dict[str, Any]]:
         rows: list[dict[str, Any]] = []

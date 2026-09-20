@@ -5,6 +5,7 @@ import json
 import sys
 import threading
 import time
+import zipfile
 from pathlib import Path
 from urllib.request import Request, urlopen
 
@@ -208,7 +209,34 @@ def test_remote_asset_chain_through_editor_http(tmp_path, abandon_first):
                     ]
                 release = get(f"/api/runs/{run_id}/outputs/publish/release")
                 assert release["export_profile"] == "gltf2-v1"
+                archive_url = base + f"/api/runs/{run_id}/archives/publish/release"
+                with urlopen(archive_url) as response:
+                    assert response.headers["Content-Type"] == "application/zip"
+                    archived_bytes = response.read()
+                with zipfile.ZipFile(io.BytesIO(archived_bytes)) as archive:
+                    assert set(archive.namelist()) == {
+                        "asset.json",
+                        "release.json",
+                        *release["files"],
+                    }
+                    assert json.loads(archive.read("release.json")) == release
+                    for name, reference in release["files"].items():
+                        from assets_generator.models import ArtifactRef
+
+                        assert (
+                            archive.read(name)
+                            == repo.store.blob_path(ArtifactRef(**reference)).read_bytes()
+                        )
+                assert get(f"/api/runs/{run_id}")["run"]["dag"] == completed["run"]["dag"]
                 assert post("/api/runs", creation)["run"]["dag"] == completed["run"]["dag"]
+                from urllib.error import HTTPError
+
+                missing = repo.store.blob_path(ArtifactRef(**next(iter(release["files"].values()))))
+                missing.unlink()
+                with pytest.raises(HTTPError) as rejected:
+                    urlopen(archive_url)
+                assert rejected.value.code == 400
+                assert not missing.exists()
             finally:
                 server.shutdown()
                 server.server_close()
