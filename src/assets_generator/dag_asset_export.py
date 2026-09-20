@@ -1,5 +1,6 @@
 """Export a self-contained visual AssetDefinition without replacing mesh appearance."""
 
+from dataclasses import replace
 from pathlib import Path
 
 from .contracts import ContractError
@@ -132,6 +133,26 @@ class AssetExportAdapter:
             quality,
             appearance_mode="preserve_mesh",
         )
+        # Carry the exact assembly evidence into the release. Observation IDs in
+        # AssetDefinition are semantic IDs, not dereferenceable ArtifactRefs.
+        assembly_evidence = {}
+        for reference in store.find_artifacts("provenance_record"):
+            if not store.verify_digest(reference):
+                continue
+            record = store.read_structured(reference)
+            if (
+                record.get("run_id") == context.run_id
+                and record.get("operator") == "shape_asset_assembly"
+                and record.get("output_artifact_id") == asset_ref.artifact_id
+            ):
+                from .dag_persistence import DagRepository
+
+                # Read-only verification: do not repair historical evidence.
+                DagRepository(store, store.root).verify_reference_closure(reference)
+                assembly_evidence[
+                    "provenance/assembly-" + reference.artifact_id.split(":")[1] + ".json"
+                ] = reference
+        release = replace(release, files={**release.files, **assembly_evidence})
         release_ref = store.persist_structured(
             StructuredValue("asset_release", "AssetRelease", "1.0", to_primitive(release))
         )

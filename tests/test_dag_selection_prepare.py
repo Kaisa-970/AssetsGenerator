@@ -122,9 +122,28 @@ def test_confirmed_rgb_selection_connects_to_remote_shape_and_release(tmp_path):
             assert not rgba_path.exists()
             rgba_path.write_bytes(rgba_bytes)
 
-            repo.verify_reference_closure(
-                completed.dag.node_states["publish"].current().outputs["release"]
-            )
+            release_ref = completed.dag.node_states["publish"].current().outputs["release"]
+            repo.verify_reference_closure(release_ref)
+            release = store.read_structured(release_ref)
+            evidence_files = [
+                value
+                for name, value in release["files"].items()
+                if name.startswith("provenance/assembly-")
+            ]
+            assert len(evidence_files) == 1
+            from assets_generator.models import ArtifactRef
+
+            evidence = store.read_structured(ArtifactRef(**evidence_files[0]))
+            assert evidence["output_artifact_id"] == assembled.outputs["asset"].artifact_id
+            assert observation.artifact_id in evidence["derived_from_artifact_ids"]
+            # A release-only verifier must detect loss of the original observation.
+            observation_blob = store.blob_path(observation)
+            observation_bytes = observation_blob.read_bytes()
+            observation_blob.unlink()
+            with pytest.raises(ValueError, match="missing/corrupt dependency"):
+                repo.verify_reference_closure(release_ref)
+            observation_blob.write_bytes(observation_bytes)
+
     with DagRepository(store, tmp_path / "core") as repo:
         assert (
             DagEngine(repo, registry).recover(run.run_id).dag.node_states

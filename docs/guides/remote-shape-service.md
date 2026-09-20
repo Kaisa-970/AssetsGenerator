@@ -168,3 +168,8 @@ PYTHONPATH=src python -m assets_generator.cli node-editor \
 选区节点等待；完成人工选择后才创建远程 shape 作业。服务端可用 `drain` 消费队列，
 然后在画布点击“恢复 / 继续此运行”。发布结果和 `quality.report` 会出现在运行输出中。
 本地 image profile 目前会加载其声明的资源摘要；首次启动可能较慢。
+
+模块化发布会在 `release.files` 中加入当前运行、对应精确资产的组装 provenance。
+因此从 Release 的 Artifact 引用闭包可以追溯组装输入中的 ObservationBundle，
+而不是把 `source_observation_ids` 中的语义 ID 当作 Artifact ID。
+这一行为已有 Release 单独校验与观测 Blob 丢失回归；不追溯修改旧发布。
