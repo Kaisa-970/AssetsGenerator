@@ -37,9 +37,12 @@ SAM-only 配置的[真实浏览器完整链](sam-only-browser-real-complete.md)�
 
 双真实模型的画布配置、RGBA 上传、发布下载和重复恢复也已通过[浏览器验收](dual-shape-browser-real.md)。
 
+真实 TRELLIS.2 执行期间的 HTTP 监听服务 SIGKILL、重连及原作业发布
+已通过[独立 API 验收](http-listener-crash-real.md)，不等于模型或主机宕机验收。
+
 接下来的真实验收按以下顺序推进，沿用隔离目录与串行 GPU：
 
-1. HTTP 服务异常退出及多视图推理中断的独立验收。
+1. 多视图推理中断的独立验收。
 2. 具备真实 ComfyUI 部署后，验证 profile 预检、提交与图片输出；仍明确内部身份边界。
 
 上述是待执行验收，不是已完成事实。不能通过降低身份校验或修改旧运行来复用不匹配的证据。

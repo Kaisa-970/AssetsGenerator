@@ -19,7 +19,8 @@
 全链已通过 [正常执行验收](../reports/sam-only-browser-real-complete.md)；
 真实 TRELLIS.2 执行器中断与孤儿门控已完成[独立验收](../reports/trellis-executor-interruption.md)；
 父 DAG 显式重试到成功发布已通过[真实 API 脚本验收](../reports/parent-dag-retry-real.md)。
-HTTP 服务异常退出及采样阶段中断仍未独立验收，不能据此声称任意中断均可恢复。
+真实 HTTP 监听服务异常退出、原作业重连发布和离线恢复已通过[独立验收](../reports/http-listener-crash-real.md)。
+采样阶段中断、主机宕机和网络分区仍未独立验收，不能据此声称任意中断均可恢复。
 验证与使用见 [服务指南](../guides/remote-shape-service.md)、
 [真实 shape](../reports/remote-shape-real-smoke.md)、
 [选区发布链](../reports/remote-selected-trellis-fallback-real-smoke.md) 和

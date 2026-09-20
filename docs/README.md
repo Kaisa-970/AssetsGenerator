@@ -137,3 +137,5 @@
 - [双真实 Shape Backend 浏览器全链验收](reports/dual-shape-browser-real.md)
 
 - [HTTP 监听进程 SIGKILL 回归](reports/http-listener-crash-cpu.md)
+
+- [真实模型执行期间 HTTP 监听服务中断验收](reports/http-listener-crash-real.md)
