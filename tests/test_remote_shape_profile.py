@@ -43,3 +43,22 @@ def test_profile_changes_rejected_before_factory(tmp_path, monkeypatch):
     Path(config["profiles"]["local-triposr"]["model"], "model.ckpt").write_bytes(b"changed")
     with pytest.raises(ValueError, match="changed"):
         handler.verify_identity()
+
+
+def test_shape_only_loader_never_constructs_sam(tmp_path, monkeypatch):
+    from assets_generator import workbench_profiles
+
+    config = _config(tmp_path, monkeypatch)
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("SAM must not be loaded")
+
+    monkeypatch.setattr(workbench_profiles, "SAMInstanceProposer", forbidden)
+    profile = workbench_profiles.load_shape_profiles({"profiles": config["profiles"]})[
+        "local-triposr"
+    ]
+    handler = shape_handler_from_profile(profile, service_id="shape", workspace=tmp_path)
+    assert handler.verify_identity() == handler.identity
+    assert not hasattr(profile, "proposer")
+    with pytest.raises(ValueError):
+        workbench_profiles.load_shape_profiles(config)

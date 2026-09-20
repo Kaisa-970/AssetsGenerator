@@ -11,12 +11,12 @@ import subprocess
 import time
 from collections.abc import Callable
 from contextvars import ContextVar
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from functools import partial
 from pathlib import Path
 from typing import Any, TypeVar
 
-from .backend_registry import BackendRegistry, resolve_plan
+from .backend_registry import BackendRegistry, ResolvedPlan, resolve_plan
 from .backends.environment_identity import backend_environment_identity
 from .backends.model_identity import snapshot_digest, snapshot_state
 from .backends.sam_instances import SAMInstanceProposer
@@ -333,7 +333,30 @@ def _load_profiles(config: dict[str, Any]) -> dict[str, BackendProfile]:
         "parameters": proposer.parameters,
         "timeout_seconds": proposer.timeout_seconds,
     }
-    definitions = root["profiles"]
+    shapes = _load_shape_profiles(root["profiles"])
+    return {
+        name: BackendProfile(
+            name,
+            proposer,
+            shape.shape_plan,
+            proposal_identity,
+            shape.shape_identity,
+            test_only=False,
+        )
+        for name, shape in shapes.items()
+    }
+
+
+@dataclass(frozen=True)
+class ShapeProfile:
+    name: str
+    shape_plan: ResolvedPlan
+    shape_identity: dict[str, Any]
+    test_only: bool = False
+    identity_check: Callable[[], None] | None = None
+
+
+def _load_shape_profiles(definitions: Any) -> dict[str, ShapeProfile]:
     if not isinstance(definitions, dict) or not definitions:
         raise ValueError("at least one named backend profile is required")
     profiles = {}
@@ -421,9 +444,7 @@ def _load_profiles(config: dict[str, Any]) -> dict[str, BackendProfile]:
             operator_specs=load_default_operator_specs(),
             backend_overrides={"generate_shape": backend},
         )
-        profiles[name] = BackendProfile(
-            name, proposer, plan, proposal_identity, identity, test_only=False
-        )
+        profiles[name] = ShapeProfile(name, plan, identity)
     return profiles
 
 
@@ -441,6 +462,31 @@ def load_profiles(
                 check()
 
         _step("profile resource consistency", identity_check)
+        return {
+            name: replace(profile, identity_check=identity_check)
+            for name, profile in profiles.items()
+        }
+    finally:
+        _CHECKS.reset(token)
+        _PROGRESS.reset(progress_token)
+
+
+def load_shape_profiles(
+    config: dict[str, Any], *, progress: Callable[[str], None] | None = None
+) -> dict[str, ShapeProfile]:
+    """Load only shape resources; SAM is neither configured nor inspected."""
+    root = _object(config, {"profiles"}, {"profiles"})
+    checks: list[Callable[[], None]] = []
+    token = _CHECKS.set(checks)
+    progress_token = _PROGRESS.set(progress)
+    try:
+        profiles = _load_shape_profiles(root["profiles"])
+
+        def identity_check() -> None:
+            for check in checks:
+                check()
+
+        _step("shape profile resource consistency", identity_check)
         return {
             name: replace(profile, identity_check=identity_check)
             for name, profile in profiles.items()

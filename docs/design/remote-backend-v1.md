@@ -293,3 +293,9 @@ DAG→耐久 HTTP 服务→ShapeServiceHandler→门控 CPU 测试 Backend→sha
 shape_handler_from_profile 仅接受非 test_only 且带 identity_check 的已加载 profile，从既有 ResolvedPlan 取 generate_shape，限制为 TripoSR/TRELLIS2。RemoteIdentity.backend_digest 绑定 shape_identity、Operator 和 Backend 版本；复用 loader 的模型/代码/环境资源 guard，并检查 Backend 配置未变。factory 复制 Backend 后注入 ServiceProcessWorker，不改变原 profile worker。
 
 目前入口接收已加载 BackendProfile，未提供独立 shape-only 配置加载或 CLI；现有 workbench loader 仍同时核验 SAM，后续用户启动入口应避免无关模型依赖。profile/factory/DAG shape 合跑 25 项通过，测试使用模拟环境身份，不是实际模型资源验收。Ruff/mypy（103 文件）通过，无 GPU 推理。
+
+## Shape-only profile 加载
+
+workbench_profiles.load_shape_profiles 接受仅含 profiles 的配置，返回 ShapeProfile（无 proposer/SAM 身份）。从原 workbench loader 提取共用 shape 构造与资源核验，原 load_profiles 继续组合 SAM 和 shape，避免复制模型参数/摘要实现。shape_handler_from_profile 同时接受两种已验证 profile。
+
+profile/原 workbench loader/DAG shape 合跑 26 项通过；新增测试将 SAM 构造器替换为必定抛错的函数，验证 shape-only 路径不调用它，并拒绝混入 sam 配置。Ruff/mypy（103 文件）通过。下一步提供服务启动/显式执行命令与真实资源验收，未运行 GPU。

@@ -13,10 +13,11 @@ from .remote_service_process import ServiceProcessWorker
 from .remote_shape_service import ShapeServiceHandler
 from .serialization import canonical_json_bytes
 from .workbench_engine import BackendProfile
+from .workbench_profiles import ShapeProfile
 
 
 def shape_handler_from_profile(
-    profile: BackendProfile, *, service_id: str, workspace: Path
+    profile: BackendProfile | ShapeProfile, *, service_id: str, workspace: Path
 ) -> ShapeServiceHandler:
     """Reuse profile resource guards; caller must use the real profile loader first."""
     if profile.test_only or profile.identity_check is None:
