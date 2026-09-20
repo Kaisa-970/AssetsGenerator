@@ -547,6 +547,8 @@ test("parameter form sends typed values and preserves other instances", async ({
     options: { label: "example" },
   });
   expect(submitted.nodes.second.parameters).toEqual({ seed: 7 });
+  await page.getByRole("button", { name: "配置", exact: true }).click();
+  await page.locator('.react-flow__node[data-id="first"]').click();
   await page
     .getByRole("button", { name: "移除覆盖 · matrix", exact: true })
     .click();
