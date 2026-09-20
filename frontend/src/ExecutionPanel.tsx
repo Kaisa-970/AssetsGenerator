@@ -11,6 +11,7 @@ const GlbPreview = lazy(() =>
 type NodeState = {
   status: string;
   recovery_blocked_reason?: string | null;
+  dispatch_block_reason?: string | null;
   attempts?: {
     error_code?: string;
     error_detail?: string;
@@ -651,6 +652,15 @@ export function ExecutionPanel({
                     <p>{state.attempts?.at(-1)?.error_detail}</p>
                   </div>
                 )}
+              {state.dispatch_block_reason && (
+                <div role="status" aria-label={`派发受阻 · ${id}`}>
+                  <p>当前节点暂不能派发：{state.dispatch_block_reason}</p>
+                  <p>
+                    这是已保存的检查结果。核实原因后，点击“恢复 /
+                    继续此运行”重新检查。
+                  </p>
+                </div>
+              )}
               {state.recovery_blocked_reason && (
                 <p>{state.recovery_blocked_reason}</p>
               )}

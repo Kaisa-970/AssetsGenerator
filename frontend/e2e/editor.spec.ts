@@ -1722,3 +1722,54 @@ test("new nodes do not choose between ambiguous adapters by catalog order", asyn
   await page.getByRole("button", { name: "编译校验", exact: true }).click();
   await expect.poll(() => compiled.nodes.generate.adapter).toBe("second@1");
 });
+
+test("pending dispatch blockers are visible without inventing attempts or polling processes", async ({
+  page,
+}) => {
+  let mutations = 0;
+  await page.route("**/api/**", async (route) => {
+    if (route.request().method() !== "GET") mutations++;
+    const path = new URL(route.request().url()).pathname;
+    await route.fulfill({
+      json:
+        path === "/api/catalog"
+          ? {
+              operators: {},
+              adapters: [],
+              templates: [],
+              execution_enabled: true,
+            }
+          : path === "/api/drafts"
+            ? { drafts: [] }
+            : path === "/api/runs"
+              ? { runs: [{ run_id: "dag_gated", status: "recovery_blocked" }] }
+              : {
+                  run: {
+                    run_id: "dag_gated",
+                    status: "recovery_blocked",
+                    dag: {
+                      revision: 1,
+                      node_states: {
+                        generate: {
+                          status: "pending",
+                          dispatch_block_reason:
+                            "old worker process still alive",
+                          attempts: [],
+                        },
+                      },
+                    },
+                  },
+                },
+    });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "运行", exact: true }).click();
+  await page.getByLabel("选择运行").selectOption("dag_gated");
+  const status = page.getByRole("status", { name: "派发受阻 · generate" });
+  await expect(status).toContainText("old worker process still alive");
+  await expect(status).toContainText("已保存的检查结果");
+  await expect(
+    page.getByRole("button", { name: "显式重试 · generate", exact: true }),
+  ).toHaveCount(0);
+  expect(mutations).toBe(0);
+});
