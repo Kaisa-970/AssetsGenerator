@@ -23,6 +23,9 @@ def _parser() -> argparse.ArgumentParser:
     from .dag_cli import add_parser
 
     add_parser(subparsers)
+    from .comfy_cli import add_parser as add_comfy_parser
+
+    add_comfy_parser(subparsers)
     editor = subparsers.add_parser(
         "node-editor", help="Local DAG editor with optional image or multi-view execution"
     )
@@ -261,6 +264,10 @@ def main() -> int:
 
 
 def _execute(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
+    if args.command == "comfy-image":
+        from .comfy_cli import execute as execute_comfy
+
+        return execute_comfy(args)
     if args.command == "node-editor":
         from .node_editor import serve_editor
 

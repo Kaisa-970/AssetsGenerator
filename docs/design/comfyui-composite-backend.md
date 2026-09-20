@@ -333,3 +333,15 @@ profile.request 固定输入 ArtifactRef 和规范化参数；start 验证请求
 96 项 ComfyUI 测试及 Ruff 格式/检查、mypy 通过。新 profile 测试覆盖配置往返、
 身份变化、非法配置拒绝及调用转发；组合 HTTP 测试仍走已有函数入口。尚无 CLI、
 profile HTTP 联调或 DAG/画布接入，部署声明仍非实际模型身份验收。
+
+### 实验 CLI
+
+新增 comfy-image validate/start/resume/status，复用受信 profile 和服务数据库。
+start 显式领取 queued 任务并调用一次首次入口/完成入口；resume 只查询原任务，
+不存在的服务数据库拒绝重建；status 不派发模型。不确定结果以 JSON 和退出码 3
+报告，终态 result/error 解码为 JSON。请求文件只引用已有 Store ArtifactRef。
+
+98 项 ComfyUI 测试及 Ruff 格式/检查、mypy 通过。CLI 回归使用替代 profile 执行
+方法验证动作与恢复路由；带图片 HTTP 测试仍不经过 CLI。使用说明见
+[图像 profile 实验入口](../guides/comfy-image-profile.md)。没有真实服务验收，
+也未实现结果文件下载命令、失败历史终态发布或 DAG/画布节点。
