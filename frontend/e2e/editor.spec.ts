@@ -2220,3 +2220,115 @@ test("recovery evidence diagnostics expose exact references without dispatch", a
   ).toEqual(bad);
   expect(mutations).toBe(0);
 });
+
+test("multi-input editor uploads RGB and mask and submits complete bindings", async ({
+  page,
+}) => {
+  const starts: any[] = [];
+  const template = {
+    pipeline: "mask_shape",
+    version: "1",
+    inputs: {
+      image: { kind: "rgb_image", carriers: ["artifact_ref"] },
+      mask: {
+        kind: "binary_mask",
+        carriers: ["artifact_ref"],
+        schema_name: "png",
+        schema_version: "1.0",
+      },
+    },
+    nodes: {
+      composite: {
+        operator: "apply_binary_mask@1",
+        inputs: {
+          image: "pipeline.inputs.image",
+          mask: "pipeline.inputs.mask",
+        },
+      },
+    },
+  };
+  await page.route("**/api/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    let body: unknown = {};
+    if (path === "/api/catalog")
+      body = {
+        operators: {
+          "apply_binary_mask@1": {
+            name: "apply_binary_mask",
+            version: "1",
+            inputs: {
+              image: { kinds: ["rgb_image"], carriers: ["artifact_ref"] },
+              mask: {
+                kinds: ["binary_mask"],
+                carriers: ["artifact_ref"],
+                schema_name: "png",
+                schema_version: "1.0",
+              },
+            },
+            outputs: {
+              rgba: {
+                kinds: ["rgba_image"],
+                carriers: ["artifact_ref"],
+              },
+            },
+          },
+        },
+        adapters: [
+          {
+            name: "apply_binary_mask",
+            version: "1",
+            operators: ["apply_binary_mask@1"],
+          },
+        ],
+        templates: [{ id: "mask", label: "RGB + mask", pipeline: template }],
+        execution_enabled: true,
+      };
+    else if (path === "/api/drafts") body = { drafts: [] };
+    else if (path === "/api/inputs/image")
+      body = { image_ref: { artifact_id: "image_ref" } };
+    else if (path === "/api/inputs/mask")
+      body = { mask_ref: { artifact_id: "mask_ref" } };
+    else if (path === "/api/runs" && route.request().method() === "POST") {
+      starts.push(route.request().postDataJSON());
+      body = {
+        run: {
+          run_id: "dag_mask",
+          status: "running",
+          dag: { revision: 1, node_states: {} },
+        },
+      };
+    } else if (path === "/api/runs") body = { runs: [] };
+    else
+      body = {
+        run: {
+          run_id: "dag_mask",
+          status: "running",
+          dag: { revision: 1, node_states: {} },
+        },
+      };
+    await route.fulfill({ json: body });
+  });
+  await page.goto("/");
+  page.on("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "RGB + mask", exact: true }).click();
+  await page.getByRole("button", { name: "运行", exact: true }).click();
+  await page.getByLabel("上传输入 image").setInputFiles({
+    name: "image.png",
+    mimeType: "image/png",
+    buffer: Buffer.from("rgb"),
+  });
+  await page.getByLabel("上传输入 mask").setInputFiles({
+    name: "mask.png",
+    mimeType: "image/png",
+    buffer: Buffer.from("mask"),
+  });
+  const start = page.getByRole("button", { name: "启动新运行", exact: true });
+  await expect(start).toBeEnabled();
+  await start.click();
+  await expect.poll(() => starts.length).toBe(1);
+  expect(starts[0].input_refs).toEqual({
+    image: { artifact_id: "image_ref" },
+    mask: { artifact_id: "mask_ref" },
+  });
+  expect(starts[0]).not.toHaveProperty("image_ref");
+});
