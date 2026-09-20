@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import json
 
+from .dag_models import DagAttempt
 from .models import ArtifactRef, BuildRun
 from .serialization import canonical_json_bytes
+from .workbench_models import ChildRegistration
 from .workbench_persistence import WorkbenchRepository, _references
 
 
@@ -21,6 +23,58 @@ class DagRepository(WorkbenchRepository):
     The exemption affects fsync of an already missing/corrupt historical artifact only.
     It never exempts the plan or permits a new corrupt dependency to enter a snapshot.
     """
+
+    def child_reference(self, attempt: DagAttempt) -> ArtifactRef:
+        """Pinned evidence takes precedence over the mutable child run index."""
+        if attempt.child_result is not None:
+            return attempt.child_result
+        if attempt.child_registration is None:
+            raise ValueError("child registration required")
+        child_id = attempt.child_registration.child_run_id
+        try:
+            raw = json.loads((self.store.root / "runs" / f"{child_id}.json").read_bytes())
+            return ArtifactRef(**raw)
+        except (OSError, ValueError, TypeError) as error:
+            raise ValueError(f"child run index missing/corrupt: {child_id}") from error
+
+    def _sync_registered_child(self, run: BuildRun, registration: ChildRegistration) -> None:
+        if run.dag is None:
+            return super()._sync_registered_child(run, registration)
+        for node in run.dag.node_states.values():
+            for attempt in node.attempts:
+                if attempt.child_registration != registration:
+                    continue
+                try:
+                    reference = self.child_reference(attempt)
+                except ValueError:
+                    previous = self.load(run.run_id)
+                    if (
+                        node.status != "recovery_blocked"
+                        or not node.recovery_blocked_reason
+                        or previous.dag is None
+                        or not any(
+                            old.child_registration == registration
+                            for old in previous.dag.node_states[node.node_id].attempts
+                        )
+                    ):
+                        raise
+                    # Persist the block, never recreate the lost index or grant
+                    # exemptions to evidence that cannot be reached.
+                    return
+                if self.store.verify_digest(reference):
+                    child = self.store.read_structured(reference)
+                    if (
+                        child.get("run_id") != registration.child_run_id
+                        or child.get("parent_run_id") != run.run_id
+                    ):
+                        raise ValueError("child result parent mismatch")
+                self._sync_reference(reference, set())
+                if attempt.child_result is None:
+                    self.io.sync_existing(
+                        self.store.root / "runs" / f"{registration.child_run_id}.json"
+                    )
+                return
+        raise ValueError("child registration not found in DAG")
 
     def verify_reference_closure(self, reference: ArtifactRef) -> None:
         visited: set[str] = set()
@@ -114,14 +168,12 @@ class DagRepository(WorkbenchRepository):
                 for node in previous.dag.node_states.values():
                     for attempt in node.attempts:
                         if attempt.child_registration is not None:
-                            child_id = attempt.child_registration.child_run_id
-                            pending.append(
-                                ArtifactRef(
-                                    **json.loads(
-                                        (self.store.root / "runs" / f"{child_id}.json").read_bytes()
-                                    )
-                                )
-                            )
+                            try:
+                                pending.append(self.child_reference(attempt))
+                            except ValueError:
+                                # An unreadable index grants no artifact exemption.
+                                # Pinned and previously admitted evidence still count.
+                                pass
                 while pending:
                     ref = pending.pop()
                     if ref.artifact_id in reachable:

@@ -155,7 +155,12 @@ class ChildCopy:
         return NodeExecutionResult({"image": context.inputs["image"]})
 
 
-def test_child_workflow_registration_and_result_roundtrip(tmp_path):
+@pytest.mark.parametrize("index_damage", [None, "missing", "corrupt"])
+@pytest.mark.parametrize("pinned", [True, False])
+@pytest.mark.parametrize("damaged_evidence", [False, True])
+def test_child_workflow_registration_and_result_roundtrip(
+    tmp_path, monkeypatch, index_damage, pinned, damaged_evidence
+):
     store, registry, _, source = setup(tmp_path)
     registry.register(ChildCopy())
     port = PortSpec(("rgb_image",))
@@ -179,15 +184,62 @@ def test_child_workflow_registration_and_result_roundtrip(tmp_path):
     )
     with DagRepository(store, tmp_path / "repo") as repo:
         engine = DagEngine(repo, registry)
-        run = engine.drain(engine.create(plan, {"source": source}).run_id)
-        assert run.status == "succeeded"
+        run = engine.create(plan, {"source": source})
+        if pinned:
+            run = engine.drain(run.run_id)
+            assert run.status == "succeeded"
+        else:
+            save = engine._save
+
+            def crash(current):
+                if current.dag.node_states["A"].status == "succeeded":
+                    raise KeyboardInterrupt("parent result not saved")
+                save(current)
+
+            monkeypatch.setattr(engine, "_save", crash)
+            with pytest.raises(KeyboardInterrupt):
+                engine.drain(run.run_id)
+            run = repo.load(run.run_id)
         attempt = run.dag.node_states["A"].current()
         assert attempt.child_registration == attempt.child_reservation
         child = repo.load(attempt.child_registration.child_run_id)
         assert child.pipeline_name == "real_child_pipeline"
         assert child.parent_run_id == run.run_id
-        assert store.read_structured(attempt.child_result)["status"] == "succeeded"
-        assert engine.recover(run.run_id).status == "succeeded"
+        if pinned:
+            assert store.read_structured(attempt.child_result)["status"] == "succeeded"
+        else:
+            assert attempt.child_result is None
+        index = store.root / "runs" / f"{child.run_id}.json"
+        if index_damage == "missing":
+            index.unlink()
+        elif index_damage == "corrupt":
+            index.write_text("{broken json")
+        if damaged_evidence:
+            store.blob_path(source).unlink()
+        engine = DagEngine(repo, registry)
+        expected = (
+            "recovery_blocked"
+            if damaged_evidence or (index_damage and not pinned)
+            else "succeeded"
+            if pinned
+            else "interrupted"
+        )
+        for _ in range(2):
+            restored = engine.recover(run.run_id)
+            assert restored.status == expected
+            durable = repo.load(run.run_id)
+            assert durable.status == expected
+            assert len(durable.dag.node_states["A"].attempts) == 1
+            if index_damage and not pinned and not damaged_evidence:
+                assert "child run index missing/corrupt" in (
+                    durable.dag.node_states["A"].recovery_blocked_reason
+                )
+            if damaged_evidence:
+                assert source.artifact_id in durable.dag.invalid_evidence
+            if index_damage == "missing":
+                assert not index.exists()
+            elif index_damage == "corrupt":
+                assert index.read_text() == "{broken json"
 
 
 def test_process_authorization_crash_retains_attempt_and_blocks_retry(tmp_path, monkeypatch):

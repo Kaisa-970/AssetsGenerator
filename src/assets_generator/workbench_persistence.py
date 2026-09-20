@@ -316,13 +316,7 @@ class WorkbenchRepository:
                 if decode_record(ChildRegistration, read_json(owner_path)) != registration:
                     raise ValueError("child registration does not match durable ownership")
                 self.io.sync_existing(owner_path)
-                child = self.load(registration.child_run_id)
-                if child.parent_run_id != run.run_id:
-                    raise ValueError("child index parent mismatch")
-                child_index = self.store.root / "runs" / f"{registration.child_run_id}.json"
-                child_ref = ArtifactRef(**read_json(child_index))
-                self._sync_reference(child_ref, set())
-                self.io.sync_existing(child_index)
+                self._sync_registered_child(run, registration)
             visited: set[str] = set()
             raw = json.loads(canonical_json_bytes(run))
             for reference in _references(raw):
@@ -350,6 +344,15 @@ class WorkbenchRepository:
         result = self._mutate(write_snapshot)
         assert isinstance(result, ArtifactRef)
         return result
+
+    def _sync_registered_child(self, run: BuildRun, registration: ChildRegistration) -> None:
+        child = self.load(registration.child_run_id)
+        if child.parent_run_id != run.run_id:
+            raise ValueError("child index parent mismatch")
+        child_index = self.store.root / "runs" / f"{registration.child_run_id}.json"
+        child_ref = ArtifactRef(**read_json(child_index))
+        self._sync_reference(child_ref, set())
+        self.io.sync_existing(child_index)
 
     def apply(
         self,

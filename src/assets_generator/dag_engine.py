@@ -309,18 +309,17 @@ class DagEngine:
         # Detect every missing historical reference before publishing a block. The
         # exemption is an audit fact, never permission to consume that evidence.
         pending = _references(to_primitive(run))
+        invalid_child_nodes: set[str] = set()
         for state in run.dag.node_states.values():
             for attempt in state.attempts:
                 if attempt.child_registration is not None:
-                    child_id = attempt.child_registration.child_run_id
-                    reference = ArtifactRef(
-                        **read_json(self.store.root / "runs" / f"{child_id}.json")
-                    )
-                    pending.append(reference)
                     try:
+                        reference = self.repository.child_reference(attempt)
+                        pending.append(reference)
                         self.repository.verify_reference_closure(reference)
-                    except EvidenceError as error:
+                    except (OSError, ValueError, KeyError) as error:
                         self._block(run, state, "recovery_child_invalid", error)
+                        invalid_child_nodes.add(state.node_id)
         seen: set[str] = set()
         while pending:
             ref = pending.pop()
@@ -364,6 +363,8 @@ class DagEngine:
                     self._block(run, state, "recovery_dependency_invalid", error)
         for node_id in plan.static_plan.topological_order:
             state = run.dag.node_states[node_id]
+            if node_id in invalid_child_nodes:
+                continue
             if state.dispatch_block_reason:
                 try:
                     admit_compute(self.repository, self.probe)
@@ -456,10 +457,7 @@ class DagEngine:
                     raise ContractError("recorded implementation identity differs from plan")
                 self._human_evidence(run, plan, node, attempt)
                 if attempt.child_registration is not None:
-                    child_id = attempt.child_registration.child_run_id
-                    child_reference = ArtifactRef(
-                        **read_json(self.store.root / "runs" / f"{child_id}.json")
-                    )
+                    child_reference = self.repository.child_reference(attempt)
                     self.repository.verify_reference_closure(child_reference)
                 if attempt.status == "succeeded" and binding.spec.get("uses_child_run"):
                     registration = attempt.child_registration

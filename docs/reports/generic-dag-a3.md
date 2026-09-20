@@ -45,3 +45,13 @@
 - 回归覆盖 selection/generation 子发布后父保存中断并删除证据、连续 P→Q 损坏，以及所有单图适配器恢复时禁止 Artifact 写事务。已更新操作指南的本地进程支持说明。
 
 本轮最终全量：836 passed，211.58 秒；Ruff 格式/lint、mypy（81 个源文件）、sdist/wheel 构建和 `git diff --check` 均通过。未运行 GPU。
+
+## 子运行索引恢复边界修正
+
+- 恢复、历史损坏证据归属检查和父快照提交统一优先使用已固定的 child_result，不再要求可变 runs 索引仍然存在。
+- 尚无固定结果时，索引缺失或 JSON 损坏会形成可持久化的节点 recovery_blocked；不会重建索引或触发子运行。
+- 子运行 ownership 检查仍保留。保存阻塞时，只允许跳过已登记历史子运行的不可读索引，不由此引入新的 Artifact 豁免。
+- 参数化回归覆盖索引正常/缺失/损坏、父结果已固定/保存前中断、Artifact 同时损坏，并重复恢复确认状态可持续保存。
+- 真实模型推理中异常退出仍未验收；已完成的真实单图及完成后重启验证见 [真实 smoke 报告](generic-dag-real-smoke.md)。
+
+本轮全量：847 passed，320.50 秒；Ruff 格式/lint、mypy（81 个源文件）、sdist/wheel 构建和 `git diff --check` 通过。
