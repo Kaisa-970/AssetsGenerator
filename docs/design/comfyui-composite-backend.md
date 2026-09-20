@@ -276,3 +276,18 @@ start_owned_image 接受受信 workflow、输入 Artifact、实际参数和部�
 把带图片的 HTTP 链完全迁到新首次入口。入口尚未接 profile/CLI、job 终态发布或
 DAG/画布；上游失败历史当前由 completion 阻塞返回，明确失败发布也待接入。
 真实 ComfyUI 验收未完成，不能称完整服务 Backend 已可用。
+
+### 已固定结果的服务发布
+
+publish_image_result 离线复核预分配证据与依赖闭包，解码输出 PNG，并将 image 和
+ComfyImageBoundary JSON 作为服务可下载输出发布。服务数据库用同一事务写入两个
+Blob 和 succeeded 状态；发布入口再次核对证据 Artifact 身份、提交绑定及图片内容
+对应的 Artifact 身份。已成功记录只能读取验证，不能通过再次发布修复缺失 Blob。
+
+108 项 ComfyUI/服务测试、Ruff 格式/检查和 mypy 通过。组合入口回归用 SQL trigger
+模拟写入 Blob 后终态提交失败，验证状态保持 running、Blob 插入回滚；随后成功
+发布、重开服务、下载原图片与证据、删除已发布 Blob 后拒绝补写。
+
+发布成功表示复合图像边界已导入与校验，不代表内部模型来源全部已验证，也不是
+3D AssetRelease。首次入口的图片 HTTP 端到端迁移、上传中断恢复、失败历史发布、
+受信配置入口及 DAG/画布接入仍待完成，尚无真实 ComfyUI 验收。

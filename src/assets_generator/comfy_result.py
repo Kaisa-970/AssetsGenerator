@@ -6,7 +6,7 @@ from .artifact_store import LocalArtifactStore
 from .comfy_evidence import image_boundary_evidence
 from .comfy_submission import ComfySubmissionJournal, ComfySubmissionUnknown
 from .models import ArtifactRef
-from .remote_protocol import RemoteRequest
+from .remote_protocol import RemoteJob, RemoteRequest
 from .remote_service_store import RemoteServiceStore
 from .serialization import canonical_json_bytes, sha256_bytes
 from .workbench_persistence import _references
@@ -99,3 +99,38 @@ def fix_image_result(
         return recover_image_result(owner, request, store)
     except Exception as error:
         raise ComfySubmissionUnknown("ComfyUI result commit uncertain; no repair") from error
+
+
+def publish_image_result(
+    owner: RemoteServiceStore, request: RemoteRequest, store: LocalArtifactStore
+) -> RemoteJob:
+    """Publish the pinned image/evidence as downloadable service outputs, offline."""
+    try:
+        ref = recover_image_result(owner, request, store)
+        value = store.read_structured(ref)
+        output = ArtifactRef(value["outputs"]["image"]["artifact_id"])
+        mapping = value["output_mapping"]
+        identity = store.get_manifest(output.artifact_id).identity
+        if (
+            mapping["mode"] not in {"RGB", "RGBA"}
+            or identity.kind != {"RGB": "rgb_image", "RGBA": "rgba_image"}[mapping["mode"]]
+            or identity.schema_name != "png"
+        ):
+            raise ValueError("ComfyUI output image contract mismatch")
+        from .comfy_output import validate_png
+
+        image = store.blob_path(output).read_bytes()
+        evidence = store.blob_path(ref).read_bytes()
+        if (
+            sha256_bytes(image) != identity.blob_digest
+            or sha256_bytes(evidence) != store.get_manifest(ref.artifact_id).identity.blob_digest
+        ):
+            raise ValueError("ComfyUI evidence changed during publication")
+        validate_png(image, mode=mapping["mode"])
+        return owner.publish_comfy_outputs(
+            request,
+            evidence_artifact_id=ref.artifact_id,
+            outputs={"image": (image, "image/png"), "evidence": (evidence, "application/json")},
+        )
+    except Exception as error:
+        raise ComfySubmissionUnknown("ComfyUI publication blocked; no replay") from error

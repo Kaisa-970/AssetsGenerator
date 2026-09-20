@@ -283,6 +283,101 @@ class RemoteServiceStore:
                 self.db.execute("ROLLBACK")
                 raise
 
+    def publish_comfy_outputs(
+        self,
+        request: RemoteRequest,
+        *,
+        evidence_artifact_id: str,
+        outputs: dict[str, tuple[bytes, str]],
+    ) -> RemoteJob:
+        """Atomically publish copies of fixed local evidence and its image.
+
+        The caller verifies the Artifact closure. Repeated publication only reads
+        existing service blobs, so missing published bytes are never repaired.
+        """
+        if set(outputs) != {"image", "evidence"}:
+            raise ValueError("ComfyUI publication requires image and evidence")
+        evidence, evidence_media = outputs["evidence"]
+        image, image_media = outputs["image"]
+        evidence_identity = {
+            "kind": "remote_job_result",
+            "schema_name": "ComfyImageBoundary",
+            "schema_version": "1.0",
+            "blob_digest": sha256_bytes(evidence),
+            "identity_metadata": {"media_type": "application/json"},
+        }
+        if (
+            evidence_media != "application/json"
+            or image_media != "image/png"
+            or sha256_bytes(canonical_json_bytes(evidence_identity)) != evidence_artifact_id
+        ):
+            raise ValueError("ComfyUI publication evidence identity mismatch")
+        boundary = json.loads(evidence)
+        mode = boundary["output_mapping"]["mode"]
+        if mode not in {"RGB", "RGBA"}:
+            raise ValueError("ComfyUI publication image mode invalid")
+        image_identity = {
+            "kind": "rgb_image" if mode == "RGB" else "rgba_image",
+            "schema_name": "png",
+            "schema_version": "1.0",
+            "blob_digest": sha256_bytes(image),
+            "identity_metadata": {"media_type": "image/png", "channel_layout": mode},
+        }
+        if (
+            sha256_bytes(canonical_json_bytes(image_identity))
+            != boundary["outputs"]["image"]["artifact_id"]
+        ):
+            raise ValueError("ComfyUI publication image differs from evidence")
+        if sum(len(data) for data, _ in outputs.values()) > 128 * 1024 * 1024:
+            raise ValueError("ComfyUI publication exceeds aggregate byte limit")
+        descriptors = [
+            RemoteOutput(name, sha256_bytes(data), len(data), media)
+            for name, (data, media) in outputs.items()
+        ]
+        result = {
+            "outputs": [
+                {
+                    "output_id": item.output_id,
+                    "blob_digest": item.blob_digest,
+                    "byte_length": item.byte_length,
+                    "media_type": item.media_type,
+                }
+                for item in descriptors
+            ]
+        }
+        with self._lock:
+            self.db.execute("BEGIN IMMEDIATE")
+            try:
+                reservation = self.comfy_result(request)
+                if reservation is None or reservation["artifact_id"] != evidence_artifact_id:
+                    raise ValueError("ComfyUI publication differs from reserved evidence")
+                if boundary["submission"] != self.comfy_binding(request):
+                    raise ValueError("ComfyUI publication submission mismatch")
+                previous = self.lookup(request)
+                if previous is None or previous.state not in {"running", "succeeded"}:
+                    raise ValueError("ComfyUI publication requires running or succeeded job")
+                wire = self._wire(request)
+                wire.update(state="succeeded", result=result)
+                job = RemoteJob.parse(wire, request)
+                if previous.state == "succeeded":
+                    if previous != job:
+                        raise ValueError("ComfyUI published result conflict")
+                else:
+                    self._validate_worker_terminal(request, "succeeded")
+                    for item in descriptors:
+                        self.put_blob(outputs[item.output_id][0], item.blob_digest)
+                self._validate_outputs(job)
+                if previous.state == "running":
+                    self.db.execute(
+                        "UPDATE jobs SET job=? WHERE key=?",
+                        (canonical_json_bytes(wire), request.submission_key),
+                    )
+                self.db.execute("COMMIT")
+                return job
+            except BaseException:
+                self.db.execute("ROLLBACK")
+                raise
+
     def transition(
         self,
         request: RemoteRequest,
