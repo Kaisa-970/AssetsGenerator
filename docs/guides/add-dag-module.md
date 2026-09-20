@@ -103,3 +103,20 @@ RGBA、灰度和动画图片不属于这个 RGB 示例的输入范围。
 节点目录仍展示完整 Operator 契约，但本示例只注册 encode_png 的执行实现，
 其他显示“仅契约”的节点不能直接运行。这个示例不需要 PyTorch、GPU 或模型
 profile；它证明 CPU 数据流和恢复路径，不代表任何模型已验收。
+
+也可以从空画布搭建：选择 image 输入，将 schema_name/schema_version 设为
+raster_image/1.0，点击“应用输入契约”；在目录点击 encode_png 添加节点，
+拖到输入右侧避免重叠，将 image 的输出端口连到 encode_png 的 image 输入。
+编译通过后按上述步骤上传并运行。
+
+开发者可重复真实 HTTP 浏览器 smoke（先启动上面的 CPU 服务，安装 frontend
+依赖并构建，提供自己的 RGB 图片路径）：
+
+```bash
+node frontend/smoke/cpu-image-run.cjs http://127.0.0.1:8770 /path/to/rgb.png manual
+```
+
+manual 模式不加载模板：在画布修改输入契约、添加节点、拖动和连接，调用真实
+后端编译并创建运行，再检查图片预览与刷新后恢复时的 attempt 不变。
+省略 manual 则使用预置模板。脚本会在所连接的 CPU 示例目录新增运行记录，
+不会派发模型；不要用其他生产服务代替此示例服务。
