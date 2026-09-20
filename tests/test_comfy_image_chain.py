@@ -12,6 +12,7 @@ import pytest
 from PIL import Image
 
 from assets_generator.artifact_store import LocalArtifactStore
+from assets_generator.comfy_evidence import image_boundary_evidence
 from assets_generator.comfy_http import ComfyClient
 from assets_generator.comfy_import import import_image
 from assets_generator.comfy_submission import ComfySubmissionJournal, ComfySubmissionUnknown
@@ -136,6 +137,7 @@ def test_image_chain_recovers_without_reupload_resubmit_or_redownload(tmp_path, 
             "one",
             deployment={
                 "endpoint": client.endpoint,
+                "workflow": bound,
                 "input": upload,
                 "workflow_digest": bound["workflow_digest"],
                 "mapping_digest": bound["mapping_digest"],
@@ -154,6 +156,15 @@ def test_image_chain_recovers_without_reupload_resubmit_or_redownload(tmp_path, 
         result = import_image(client, journal, store, "one", node="3", index=0, mode="RGB")
         assert store.blob_path(result).read_bytes() == output_bytes
         assert source != result
+        evidence = image_boundary_evidence(journal, store, "one", node="3", index=0, mode="RGB")
+        evidence_ref = store.persist_structured(evidence)
+        loaded = store.read_structured(evidence_ref)
+        assert loaded["inputs"]["image"] == {"artifact_id": source.artifact_id}
+        assert loaded["outputs"]["image"] == {"artifact_id": result.artifact_id}
+        assert set(loaded["internal_verification"].values()) == {"unverified"}
+        from assets_generator.workbench_persistence import _references
+
+        assert set(_references(loaded)) == {source, result}
         assert calls.count(("POST", "/upload/image")) == 1
         assert calls.count(("POST", "/prompt")) == 1
     finally:
@@ -167,7 +178,13 @@ def test_image_chain_recovers_without_reupload_resubmit_or_redownload(tmp_path, 
         assert client.observe(journal, "one") == observed
         assert import_image(client, journal, store, "one", node="3", index=0, mode="RGB") == result
         assert calls == before
+        assert (
+            image_boundary_evidence(journal, store, "one", node="3", index=0, mode="RGB")
+            == evidence
+        )
         store.blob_path(result).unlink()
+        with pytest.raises(ValueError, match="missing or corrupt"):
+            image_boundary_evidence(journal, store, "one", node="3", index=0, mode="RGB")
         with pytest.raises(ValueError, match="missing or corrupt"):
             import_image(client, journal, store, "one", node="3", index=0, mode="RGB")
         assert not store.blob_path(result).exists()

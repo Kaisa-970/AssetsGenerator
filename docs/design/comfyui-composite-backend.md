@@ -233,3 +233,16 @@ Blob 摘要格式。图片槽位不能覆盖普通参数或内部连线，缺少
 的真实回执绑定图片，同时保留普通 seed 参数。回执字段校验不等于认证：生产调用者
 必须由受信上传路径获得回执，不能将用户提交的 JSON 当作已验证上传证据。本步仍
 未开放 DAG/画布节点，也没有完成生产复合 handler 或真实 ComfyUI 验收。
+
+### 复合边界证据值
+
+image_boundary_evidence 从已固定的成功观察、完整 workflow 绑定和已有图片导入回执
+组装 ComfyImageBoundary@1.0，沿用 remote_job_result kind。记录输入输出 ArtifactRef、
+提交身份、实际 workflow/参数/映射、输出槽位及观察/导入摘要；部署声明与内部验证
+状态分开，Comfy revision、自定义节点和模型身份均明确 unverified。
+
+该函数只读取，不联网、不导入、不修复。输入输出缺失或摘要不符时拒绝。77 项
+ComfyUI 测试及 Ruff/mypy 通过，HTTP 链覆盖结构化 Artifact 持久化往返、标准引用
+遍历发现输入输出、离线重建证据值和删除输入/输出后阻塞。此处只组装证据值，
+调用者仍需在外层完成结果引用的预分配和耐久固定；不能反复持久化来补回丢失证据。
+尚未接生产复合 handler、DAG 或画布，也没有真实 ComfyUI 验收。
