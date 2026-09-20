@@ -245,3 +245,9 @@ ServiceProcessWorker 复用 run_gated_process，将 prepared、identity_recorded
 RemoteServiceStore.observe_worker 使用 LinuxProcessProbe 重新观察已保存的完整进程身份，确认 exited 后单独持久化 process_exits（绑定原 WorkerExecution bytes 和完整观察）。不改写原启动阶段、不编造 exit_code、不改变原作业状态，也不授权原作业重放。新作业准入可使用该固定退出证据释放同数据库进程槽；alive/unknown 保持占用。没有已记录身份的 prepared 窗口仍保守阻塞，尚无显式处置入口。
 
 服务进程/存储合跑 12 项通过：实际授权失败后 launcher 退出的重新探测允许新作业执行；模拟 alive/unknown 均不写退出记录且仍阻塞。Ruff/mypy 通过，无真实模型/GPU 验证。尚未提供用户命令，也未将这些规则接入模型 handler 的终态分类。
+
+### 进程证据约束服务终态
+
+服务数据库在 running→succeeded/failed 事务中检查已登记 WorkerExecution：需要 exit_observed 且观察结果为 exited，或绑定原记录的独立 process_exits 证据。缺失退出确认时拒绝终态并回滚为 running，不允许通过普通 handler 异常把不确定模型进程变成可重试失败。没有登记进程的 CPU handler 保持原行为；受信模型 handler 必须使用 ServiceProcessWorker，不能私自启动未登记进程。
+
+execute_service_job 对 PipelineError 保留原 code（如 backend_failed/backend_timeout），其他 handler 异常仍为 SERVICE_HANDLER_FAILED。实际独立 Python 非零退出验证错误码和退出码；额外覆盖成功/失败两种未确认进程终态均被拒绝。服务进程/worker/存储/DAG 耐久服务合跑 19 项通过，Ruff/mypy（98 文件）通过。仍未接真实模型或用户恢复命令。

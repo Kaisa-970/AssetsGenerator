@@ -164,6 +164,8 @@ class RemoteServiceStore:
                 previous = self.lookup(request)
                 if previous is None or previous.state != expected:
                     raise ValueError("service job state conflict")
+                if state in {"succeeded", "failed"}:
+                    self._validate_worker_terminal(request)
                 wire = self._wire(request)
                 wire.update(state=state, result=result, error=error)
                 job = RemoteJob.parse(wire, request)
@@ -321,3 +323,18 @@ class RemoteServiceStore:
             except BaseException:
                 self.db.execute("ROLLBACK")
                 raise
+
+    def _validate_worker_terminal(self, request: RemoteRequest) -> None:
+        from .workbench_models import WorkerExecution, _decode
+
+        raw = self.worker_record(request)
+        if raw is None:
+            return  # CPU-only handler, with no registered process.
+        worker = _decode(WorkerExecution, json.loads(raw))
+        if worker.launch_phase == "exit_observed":
+            if worker.last_probe is None or worker.last_probe.result != "exited":
+                raise ValueError("service worker exit evidence invalid")
+            return
+        if self._released_worker(request.submission_key, raw):
+            return
+        raise ValueError("service process outcome uncertain; terminal transition blocked")

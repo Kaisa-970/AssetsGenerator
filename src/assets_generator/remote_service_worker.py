@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
+from .errors import PipelineError
 from .remote_protocol import RemoteJob, RemoteOutput, RemoteRequest
 from .remote_service_store import RemoteServiceStore
 from .serialization import sha256_bytes
@@ -47,7 +48,12 @@ def execute_service_job(
             request,
             expected="running",
             state="failed",
-            error={"code": "SERVICE_HANDLER_FAILED", "detail": str(error) or type(error).__name__},
+            error={
+                "code": error.code.value
+                if isinstance(error, PipelineError)
+                else "SERVICE_HANDLER_FAILED",
+                "detail": str(error) or type(error).__name__,
+            },
         )
     for descriptor in descriptors:
         store.put_blob(outputs[descriptor.output_id].data, descriptor.blob_digest)
