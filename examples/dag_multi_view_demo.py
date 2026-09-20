@@ -10,141 +10,33 @@ from __future__ import annotations
 import argparse
 import json
 import os
-from collections.abc import Callable
-from functools import partial
+from dataclasses import fields
 from pathlib import Path
 
 from assets_generator.artifact_store import LocalArtifactStore
-from assets_generator.backend_registry import BackendRegistry, resolve_plan
-from assets_generator.backends.da3 import DA3GeometryFrontend
-from assets_generator.backends.open3d_tsdf import Open3DReconstruction
-from assets_generator.backends.source_identity import backend_source_identity
 from assets_generator.dag_adapters import AdapterRegistry
 from assets_generator.dag_engine import DagEngine
-from assets_generator.dag_multi_view import (
-    GeometryAdapter,
-    MultiViewProfile,
-    ReconstructionAdapter,
-    ReleaseAdapter,
-)
+from assets_generator.dag_multi_view import MultiViewProfile
 from assets_generator.dag_persistence import DagRepository
+from assets_generator.dag_profiles import register_multi_view_profiles
 from assets_generator.models import ArtifactRef
+from assets_generator.multi_view_profiles import MultiViewProfileConfig, load_multi_view_profile
 from assets_generator.multi_view_relations import register_multi_view_relations
 from assets_generator.pipeline import (
     compile_pipeline,
-    load_default_operator_specs,
-    load_multi_view_pipeline,
     load_operator_specs,
     load_pipeline,
 )
 from assets_generator.relations import default_relation_registry
 from assets_generator.serialization import to_primitive
-from assets_generator.workbench_profiles import (
-    _CHECKS,
-    _digest,
-    _environment_identity,
-    _guard,
-    _path,
-    _signature,
-    _snapshot_digest,
-)
 
 
 def profile(args: argparse.Namespace) -> MultiViewProfile:
-    checks: list[Callable[[], None]] = []
-    token = _CHECKS.set(checks)
-    try:
-        da3_python = _path(args.da3_python, executable=True)
-        da3_repo = _path(args.da3_repo, directory=True)
-        da3_model = _path(args.da3_model, directory=True)
-        open3d_python = _path(args.open3d_python, executable=True)
-        for python in (da3_python, open3d_python):
-            _guard(partial(_signature, python), _signature(python))
-        _path(str(da3_model / "config.json"))
-        _path(str(da3_model / "model.safetensors"))
-        geometry = DA3GeometryFrontend(
-            da3_python,
-            da3_repo,
-            da3_model,
-            process_res=args.process_res,
-            timeout_seconds=args.da3_timeout,
+    return load_multi_view_profile(
+        MultiViewProfileConfig(
+            **{field.name: getattr(args, field.name) for field in fields(MultiViewProfileConfig)}
         )
-        reconstruction = Open3DReconstruction(
-            open3d_python,
-            voxel_size_ratio=args.voxel_size_ratio,
-            sdf_trunc_ratio=args.sdf_trunc_ratio,
-            depth_trunc_ratio=args.depth_trunc_ratio,
-            up_axis=args.up_axis,
-            timeout_seconds=args.open3d_timeout,
-        )
-        source = backend_source_identity(da3_repo)
-        _guard(partial(backend_source_identity, da3_repo), source)
-        backends = Path(__file__).resolve().parents[1] / "src/assets_generator/backends"
-        identity = {
-            "geometry": {
-                "backend": "da3",
-                "source": {key: value for key, value in source.items() if key != "path"},
-                "model_digest": _snapshot_digest(da3_model),
-                "runner_digest": _digest(backends / "da3_runner.py"),
-                "adapter_digest": _digest(backends / "da3.py"),
-                "environment": _environment_identity(
-                    da3_python,
-                    (
-                        "torch",
-                        "torchvision",
-                        "numpy",
-                        "Pillow",
-                        "transformers",
-                        "safetensors",
-                        "huggingface-hub",
-                        "omegaconf",
-                        "einops",
-                    ),
-                ),
-                "parameters": {
-                    "process_res": args.process_res,
-                    "timeout_seconds": args.da3_timeout,
-                },
-            },
-            "reconstruction": {
-                "backend": "open3d-tsdf",
-                "runner_digest": _digest(backends / "open3d_runner.py"),
-                "adapter_digest": _digest(backends / "open3d_tsdf.py"),
-                "environment": _environment_identity(open3d_python, ("open3d", "numpy", "Pillow")),
-                "parameters": {
-                    "voxel_size_ratio": args.voxel_size_ratio,
-                    "sdf_trunc_ratio": args.sdf_trunc_ratio,
-                    "depth_trunc_ratio": args.depth_trunc_ratio,
-                    "up_axis": args.up_axis,
-                    "timeout_seconds": args.open3d_timeout,
-                },
-            },
-        }
-        registry = BackendRegistry()
-        registry.register(
-            name="geometry_frontend",
-            operator="geometry_frontend@1",
-            backend_version="da3-base",
-            implementation=geometry,
-        )
-        registry.register(
-            name="reconstruction",
-            operator="reconstruction@1",
-            backend_version="open3d-tsdf",
-            implementation=reconstruction,
-        )
-        plan = resolve_plan(
-            load_multi_view_pipeline(), registry, operator_specs=load_default_operator_specs()
-        )
-
-        def check() -> None:
-            for callback in checks:
-                callback()
-
-        check()
-        return MultiViewProfile(plan, identity, check, test_only=False)
-    finally:
-        _CHECKS.reset(token)
+    )
 
 
 def parser() -> argparse.ArgumentParser:
@@ -184,8 +76,7 @@ def main() -> None:
     os.environ["TRANSFORMERS_OFFLINE"] = "1"
     local_profile = profile(args)
     adapters = AdapterRegistry()
-    for adapter in (GeometryAdapter, ReconstructionAdapter, ReleaseAdapter):
-        adapters.register(adapter(local_profile))
+    register_multi_view_profiles(adapters, {"local-multiview": local_profile}, "local-multiview")
     relations = default_relation_registry()
     register_multi_view_relations(relations)
     base = Path(__file__).resolve().parent

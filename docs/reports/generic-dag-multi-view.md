@@ -49,3 +49,11 @@
 此前真实 smoke 证据是在此字段加入前生成的，保留为历史事实；本次未重新执行 GPU 验证。旧证据不能直接用于新的 prepared 发布入口，既有 DAG 的实现摘要变化也会阻止按新代码认领旧计划；不修改历史 Artifact 来绕过身份检查。
 
 本修正验证：prepared/owned/DAG 恢复/CLI 42 passed；既有多视图 workflow 与关系校验 73 passed。Ruff 格式/lint、mypy（83 个源文件）、git diff --check 通过；未重复全量测试。
+
+## 画布多视图接入准备：本地配置模块与具名目录
+
+将示例中的 DA3/Open3D 资源绑定提取为正式模块 `multi_view_profiles.py`。`MultiViewProfileConfig` 为不可变配置，可由严格 Mapping 解析；未知字段、缺失路径字段、非有限/非正参数、非法 process_res/up_axis 和 TSDF truncation 关系在资源读取前拒绝。原 source/model/runner/adapter/environment 身份与资源变化 guard 保留，Backend 文件定位改为包内路径，示例通过兼容 wrapper 调用新模块。
+
+`register_multi_view_profiles()` 为 geometry、reconstruction、release 注册默认及具名实现；示例 CLI 已使用该目录，默认 YAML 保持无显式 Backend 的旧绑定方式。具名配置不解除已有 profile 指纹与证据关系校验。本轮只是画布入口的基础模块，画布仍只接受单图输入，多视图配置文件/API/UI 尚未接通。
+
+验证：配置/目录/demo 合跑 22 项通过；多视图目录/demo/执行/恢复审计合跑 14 项通过（两轮重叠，不相加）。Ruff 格式/lint、mypy（87 文件）通过。覆盖资源 guard、虚拟环境符号链接路径、非法配置提前失败、具名绑定及三个节点发布后恢复不新增 attempt。未下载模型或运行 GPU。
