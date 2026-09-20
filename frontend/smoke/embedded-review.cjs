@@ -10,7 +10,8 @@ const { chromium, expect } = require("@playwright/test");
   p.on("pageerror", (e) => errors.push(String(e)));
   p.on("dialog", (d) => d.accept());
   await p.goto(config.url);
-  await p.getByRole("button", { name: "dag-image-asset", exact: true }).click();
+  const remoteSubmit = process.argv.includes("--remote-submit");
+  await p.getByRole("button", { name: config.template || "dag-image-asset", exact: true }).click();
   await p.getByRole("button", { name: "运行", exact: true }).click();
   let created;
   let uploaded;
@@ -72,9 +73,37 @@ const { chromium, expect } = require("@playwright/test");
   await f.locator("#confirm:not([disabled])").waitFor();
   await f
     .locator("#reviewer")
-    .fill("Codex embedded CPU smoke (not user approval)");
+    .fill("Codex automated browser smoke (not user approval)");
   await f.locator("#confirm").click();
   await p.getByRole("button", { name: "收起审查", exact: true }).click();
+  if (remoteSubmit) {
+    const job = p.getByLabel("远程作业标识 · shape", { exact: true });
+    await expect(job).toHaveValue(/.+/);
+    const response = await p.request.get(config.url + "/api/runs/" + runId);
+    assert.equal(response.status(), 200);
+    const result = await response.json();
+    const nodes = result.run.dag.node_states;
+    for (const name of ["candidates", "choose_object", "prepare"]) {
+      assert.equal(nodes[name].status, "succeeded");
+      assert.equal(nodes[name].attempts.length, 1);
+    }
+    assert.equal(nodes.shape.status, "running");
+    assert.equal(nodes.shape.attempts.length, 1);
+    assert.equal(Object.keys(result.run.dag.receipts).length, 1);
+    assert.deepEqual(errors, []);
+    assert.equal(nodes.shape.attempts[0].remote_binding.submission_key, await job.inputValue());
+    // Save the exact parent and job before any separate service execution command.
+    fs.writeFileSync(config.root + "/browser-submitted.json", JSON.stringify({
+      result, errors, uploaded, originalRequest,
+      submission_key: await job.inputValue(),
+      reviewer: "Codex automated browser smoke (not user approval)",
+      acceptance: "submitted only; remote inference and release not verified",
+    }, null, 2), { flag: "wx" });
+    await p.screenshot({ path: config.root + "/browser-submitted.png" });
+    console.log(runId, "submitted", await job.inputValue());
+    await b.close();
+    return;
+  }
   await p
     .getByRole("link", { name: "generate_asset · glb ↗", exact: true })
     .waitFor();

@@ -202,3 +202,22 @@ PYTHONPATH=src python -m assets_generator.cli node-editor \
 另已直接执行对比模板的 10 个节点，验证两份独立 AssetDefinition/Release、各自组装
 provenance 和服务关闭后的离线恢复；每节点一次 attempt。测试 Backend 使用小型 CPU
 几何输出，尚未对两个真实模型运行此对比模板，不构成质量排名。
+
+### 可复用浏览器提交验收
+
+先使用 `frontend/smoke/editor_server.py --root <EMPTY_CPU_ROOT> --remote-submit`
+启动 CPU HTTP fixture（`PYTHONPATH=src:tests`），再执行：
+
+```bash
+node frontend/smoke/embedded-review.cjs <EMPTY_CPU_ROOT>/browser-config.json --remote-submit
+```
+
+真实编辑器可使用同样脚本，但需自己提供 JSON 中的 `url`、`image`、`root`、
+`template: "remote_selected_image_asset_v1"`。脚本会创建运行并执行分割、自动选择第一个候选，
+以 `Codex automated browser smoke (not user approval)` 提交决定。仅供自动化验收，不能当作
+用户选区批准。默认输入为本地路径；`--upload-retry` 另外覆盖上传和创建响应丢失重试。
+
+`--remote-submit` 模式在远程作业登记后结束，独占写入 `browser-submitted.json`，
+保留精确父运行和作业标识及截图。脚本不会调用服务 execute，不宣称生成或发布成功。
+本轮 CPU 路径已实际通过，证据位于 `<DATASET_ROOT>/browser-remote-submit-cpu-v1/`；
+未加 upload-retry，未执行 GPU。真实推理及发布恢复需后续单独验证。
