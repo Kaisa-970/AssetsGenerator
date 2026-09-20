@@ -67,3 +67,14 @@ provenance 记录实际 workflow 摘要、部署 ComfyUI revision、custom node 
    Core Artifact 边界。复用已有环境；当前未发现现成部署，不自动安装模型。
 3. 将复合节点接入 registry/画布，用同一 Operator 的本地与服务节点比较；
    最后验证真实 shape workflow 和发布。没有真实验收前保持实验性状态。
+
+## 首个实现：单次提交日志
+
+已新增独立 SQLite ComfySubmissionJournal。它将外层键、部署声明、实际 API 图和
+预分配 UUID 固定，并在调用传输前耐久标为 sending。不同连接不能重复领取；
+响应丢失、KeyboardInterrupt 或错误 prompt_id 后重开仍禁止再次 POST。
+acknowledged 只代表收到对应提交回执，不代表 workflow 成功。
+
+5 项 CPU 单元回归通过，Ruff/mypy 通过。当前未接 HTTP、队列/历史查询、输出
+导入或 DAG；调用者还须保证部署内容已验证、HTTP 无自动重试，并将日志归属
+固定在外层作业。数据库丢失后的外层阻塞尚需接入，不能自行重建日志恢复提交。
