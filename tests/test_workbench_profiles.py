@@ -358,3 +358,33 @@ def test_proposal_profile_guards_are_independent_and_failures_restore_context(
         with pytest.raises(ValueError):
             profiles.load_proposal_profiles(raw)
         assert profiles._CHECKS.get() is None and profiles._PROGRESS.get() is None
+
+
+@pytest.mark.parametrize("field", ["python", "checkpoint", "parameters", "timeout", "identity"])
+@pytest.mark.parametrize("proposal_only", [False, True])
+def test_sam_execution_configuration_drift_is_rejected(tmp_path, monkeypatch, field, proposal_only):
+    config = _config(tmp_path, monkeypatch)
+    if proposal_only:
+        loaded = profiles.load_proposal_profiles({"profiles": {"sam": config["sam"]}})["sam"]
+    else:
+        loaded = profiles.load_profiles(config)["local-triposr"]
+    loaded.identity_check()
+    if field == "python":
+        loaded.proposer.python = Path("/another/environment/python")
+    elif field == "checkpoint":
+        loaded.proposer.checkpoint = Path("/another/checkpoint.pth")
+    elif field == "parameters":
+        loaded.proposer.parameters["points_per_side"] = 7
+    elif field == "timeout":
+        loaded.proposer.timeout_seconds += 1
+    else:
+        loaded.proposal_identity["checkpoint_digest"] = "sha256:" + "f" * 64
+    with pytest.raises(ValueError, match="resources changed"):
+        loaded.identity_check()
+
+
+def test_sam_worker_injection_does_not_change_deployment_identity(tmp_path, monkeypatch):
+    config = _config(tmp_path, monkeypatch)
+    loaded = profiles.load_proposal_profiles({"profiles": {"sam": config["sam"]}})["sam"]
+    loaded.proposer.worker = object()
+    loaded.identity_check()

@@ -23,6 +23,7 @@ from .backends.sam_instances import SAMInstanceProposer
 from .backends.source_identity import backend_source_identity
 from .operators import Trellis2Backend, TripoSRBackend
 from .pipeline import load_default_operator_specs, load_default_pipeline
+from .serialization import canonical_json_bytes
 from .workbench_engine import BackendProfile
 
 _BACKENDS = Path(__file__).parent / "backends"
@@ -341,6 +342,19 @@ def _load_proposal_profile(name: str, definition: Any) -> ProposalProfile:
         "parameters": proposer.parameters,
         "timeout_seconds": proposer.timeout_seconds,
     }
+
+    def execution_configuration() -> bytes:
+        return canonical_json_bytes(
+            {
+                "python": str(proposer.python),
+                "checkpoint": str(proposer.checkpoint),
+                "parameters": proposer.parameters,
+                "timeout_seconds": proposer.timeout_seconds,
+                "declared_identity": proposal_identity,
+            }
+        )
+
+    _guard(execution_configuration, execution_configuration())
     return ProposalProfile(name, proposer, proposal_identity)
 
 
