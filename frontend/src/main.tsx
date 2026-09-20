@@ -209,14 +209,21 @@ function App() {
     });
     setLayout({
       ...layout,
-      [id]:
-        position ||
-        flow.screenToFlowPosition({
-          x: window.innerWidth / 2,
-          y: window.innerHeight / 2,
-        }),
+      [id]: position || {
+        x: Math.max(
+          30,
+          ...flow
+            .getNodes()
+            .map(
+              (node) => node.position.x + (node.measured?.width || 300) + 80,
+            ),
+        ),
+        y: 80,
+      },
     });
     setSelected(id);
+    if (!position)
+      setTimeout(() => flow.fitView({ padding: 0.18, maxZoom: 1 }), 50);
   };
   const connect = (c: Connection) => {
     if (!c.sourceHandle || !c.targetHandle) return;

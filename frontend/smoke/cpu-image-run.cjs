@@ -31,25 +31,14 @@ const { chromium, expect } = require("@playwright/test");
         .locator(".catalog-item")
         .filter({ has: page.getByText("encode_png", { exact: true }) })
         .click();
-      const nodeHeader = page.locator(
-        '.react-flow__node[data-id="encode_png"] .node-top',
-      );
-      const box = await nodeHeader.boundingBox();
-      assert.ok(box);
-      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-      await page.mouse.down();
-      await page.mouse.move(
-        box.x + box.width / 2 + 260,
-        box.y + box.height / 2 + 220,
-        { steps: 15 },
-      );
-      await page.mouse.up();
       const source = page.locator(
         '.react-flow__node[data-id="input:image"] .react-flow__handle.source',
       );
       const target = page.locator(
         '.react-flow__node[data-id="encode_png"] .react-flow__handle.target',
       );
+      // Wait for automatic viewport fitting to finish before moving between handles.
+      await page.waitForTimeout(250);
       await source.dragTo(target);
       await expect(page.locator(".react-flow__edge")).toHaveCount(1);
       await page.getByRole("button", { name: "编译校验", exact: true }).click();

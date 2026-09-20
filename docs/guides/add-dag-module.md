@@ -106,7 +106,8 @@ profile；它证明 CPU 数据流和恢复路径，不代表任何模型已验�
 
 也可以从空画布搭建：选择 image 输入，将 schema_name/schema_version 设为
 raster_image/1.0，点击“应用输入契约”；在目录点击 encode_png 添加节点，
-拖到输入右侧避免重叠，将 image 的输出端口连到 encode_png 的 image 输入。
+点击添加会自动放在已有节点右侧，并调整视口；将 image 的输出端口连到
+encode_png 的 image 输入。拖放添加仍使用用户指定的位置。
 编译通过后按上述步骤上传并运行。
 
 开发者可重复真实 HTTP 浏览器 smoke（先启动上面的 CPU 服务，安装 frontend
@@ -116,7 +117,7 @@ raster_image/1.0，点击“应用输入契约”；在目录点击 encode_png �
 node frontend/smoke/cpu-image-run.cjs http://127.0.0.1:8770 /path/to/rgb.png manual
 ```
 
-manual 模式不加载模板：在画布修改输入契约、添加节点、拖动和连接，调用真实
+manual 模式不加载模板：在画布修改输入契约、添加节点和连接，调用真实
 后端编译并创建运行，再检查图片预览与刷新后恢复时的 attempt 不变。
 省略 manual 则使用预置模板。脚本会在所连接的 CPU 示例目录新增运行记录，
 不会派发模型；不要用其他生产服务代替此示例服务。
