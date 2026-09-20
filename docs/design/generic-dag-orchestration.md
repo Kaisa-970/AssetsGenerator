@@ -609,3 +609,15 @@ Milestone A 前允许独立的纯前端技术 spike，但它不得触发真实�
 ## 实现补充：本地节点 Backend 绑定
 
 编辑器本地 profile 目录映射为 `(backend_name, adapter_key)` 的受信实现。节点显式 `backend` 必须匹配兼容的注册项；省略时沿用默认 AdapterRegistry 项。BoundAdapter 仅在显式绑定时序列化 backend 名，参数 schema/defaults 固定该 profile 的身份摘要；provenance 的 adapter_identity 保留完整绑定。此目录不复制 Operator 端口，不接受浏览器提交可执行代码或模型路径。当前范围仅本地 profiles，远程服务按 Milestone C 单独实施。
+
+### 从固定运行加载配置草稿
+
+编辑器新增只读 `GET /api/runs/<id>/draft`，沿用运行归属与持久化计划校验，
+返回 source_run_id/source_plan_id 和可重新编译的 Pipeline 配置。
+节点实例、端口引用（包括 optional）、Operator/Adapter、Backend 及实际规范化参数
+来自固定计划；不复制运行证据、输入或人工决定。前端确认覆盖草稿并核对来源身份，
+加载本身不创建运行。后端仍负责保存后重编译与启动授权。
+
+Python 执行服务 13 项、前端单元 16 项及新增浏览器用例通过；构建、Ruff、mypy
+通过。浏览器用例核实取消和确认行为，且整个加载过程无 POST。固定模板旧工作台
+不在此入口范围内，跨运行决定复用仍未实现。

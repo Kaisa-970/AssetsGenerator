@@ -90,10 +90,12 @@ export function ExecutionPanel({
   pipeline,
   profile,
   executionReason,
+  onLoadDraft,
 }: {
   pipeline: Pipeline;
   profile?: string;
   executionReason?: string;
+  onLoadDraft: (pipeline: Pipeline) => void;
 }) {
   const [creation, setCreation] = useState(restoreCreation);
   const [preview, setPreview] = useState<{
@@ -234,11 +236,14 @@ export function ExecutionPanel({
     uploadPending.current = true;
     setUploading(true);
     try {
-      const response = await fetch(rgbaInput ? "/api/inputs/rgba" : "/api/inputs/image", {
-        method: "POST",
-        headers: { "Content-Type": "application/octet-stream" },
-        body: file,
-      });
+      const response = await fetch(
+        rgbaInput ? "/api/inputs/rgba" : "/api/inputs/image",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/octet-stream" },
+          body: file,
+        },
+      );
       const value = await response.json();
       if (!response.ok) throw Error(value.error || `HTTP ${response.status}`);
       if (!value.image_ref || typeof value.image_ref.artifact_id !== "string")
@@ -337,7 +342,9 @@ export function ExecutionPanel({
         </div>
       ) : (
         <>
-          {rgbaInput && <p>请提供已处理好的 RGBA PNG，透明区域为背景；此流程不自动抠图。</p>}
+          {rgbaInput && (
+            <p>请提供已处理好的 RGBA PNG，透明区域为背景；此流程不自动抠图。</p>
+          )}
           <label>
             图片来源
             <select
@@ -487,6 +494,33 @@ export function ExecutionPanel({
       {run && (
         <>
           <p className="run-identity">{run.run_id}</p>
+          <button
+            disabled={pending || !!creation.request}
+            onClick={() => {
+              if (
+                !window.confirm(
+                  "将原运行配置载入画布，覆盖当前未保存草稿？不会启动运行或复用人工决定。",
+                )
+              )
+                return;
+              void mutate(async () => {
+                const draft = await request(
+                  `/api/runs/${encodeURIComponent(run.run_id)}/draft`,
+                );
+                if (
+                  draft.source_run_id !== run.run_id ||
+                  draft.source_plan_id !== run.dag?.plan_id
+                )
+                  throw Error("原运行计划身份不匹配");
+                onLoadDraft(draft.pipeline);
+                setMessage(
+                  "已载入原运行配置。请重新编译，提供输入并明确启动新运行；人工节点需要重新确认。",
+                );
+              });
+            }}
+          >
+            将配置载入画布
+          </button>
           {run.dag?.plan_id && (
             <button onClick={() => setShowGraph(true)}>查看固定运行图</button>
           )}
@@ -528,7 +562,11 @@ export function ExecutionPanel({
             <div className="run-node">
               <strong>可查看的节点输出</strong>
               {envelope.outputs
-                .filter((output) => output.kind === "gltf_asset" || (!output.kind && output.port === "glb"))
+                .filter(
+                  (output) =>
+                    output.kind === "gltf_asset" ||
+                    (!output.kind && output.port === "glb"),
+                )
                 .map((output) => (
                   <button
                     key={`preview:${output.node_id}`}
@@ -559,17 +597,27 @@ export function ExecutionPanel({
             <div className="run-node" key={id}>
               <strong>{id}</strong>
               <span>{state.status}</span>
-              {state.status === "running" && state.attempts?.at(-1)?.remote_binding && (
-                <div>
-                  <p>{remoteStatusMessage(state.attempts.at(-1)?.error_code)}</p>
-                  <p>页面轮询只读取已保存状态，不主动查询服务或执行模型。</p>
-                  <p>服务：{state.attempts.at(-1)!.remote_binding!.service_id}</p>
-                  <label>
-                    远程作业标识 · {id}
-                    <input readOnly value={state.attempts.at(-1)!.remote_binding!.submission_key} />
-                  </label>
-                </div>
-              )}
+              {state.status === "running" &&
+                state.attempts?.at(-1)?.remote_binding && (
+                  <div>
+                    <p>
+                      {remoteStatusMessage(state.attempts.at(-1)?.error_code)}
+                    </p>
+                    <p>页面轮询只读取已保存状态，不主动查询服务或执行模型。</p>
+                    <p>
+                      服务：{state.attempts.at(-1)!.remote_binding!.service_id}
+                    </p>
+                    <label>
+                      远程作业标识 · {id}
+                      <input
+                        readOnly
+                        value={
+                          state.attempts.at(-1)!.remote_binding!.submission_key
+                        }
+                      />
+                    </label>
+                  </div>
+                )}
               {state.recovery_blocked_reason && (
                 <p>{state.recovery_blocked_reason}</p>
               )}

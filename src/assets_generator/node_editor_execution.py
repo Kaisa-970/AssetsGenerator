@@ -89,6 +89,46 @@ class NodeEditorExecution:
         run = self.engine.repository.load(run_id)
         return self.engine._plan(run).to_dict()
 
+    def draft_from_run(self, run_id: str) -> dict[str, Any]:
+        """Project verified execution configuration into a new, unexecuted draft."""
+        plan = self.plan(run_id)
+        static = plan["static_plan"]
+        nodes = {}
+        for node in static["nodes"]:
+            bound = plan["bindings"][node["node_id"]]
+            inputs = {}
+            for name, binding in node["inputs"].items():
+                prefix = (
+                    "pipeline.inputs"
+                    if binding["source"] == "pipeline_input"
+                    else f"{binding['node_id']}.outputs"
+                )
+                inputs[name] = f"{prefix}.{binding['port']}" + ("?" if binding["optional"] else "")
+            nodes[node["node_id"]] = {
+                "operator": node["operator"],
+                "adapter": bound["adapter"],
+                "inputs": inputs,
+                "parameters": bound["parameters"],
+                **({"backend": bound["backend"]} if bound.get("backend") else {}),
+            }
+        pipeline_inputs = {}
+        for name, contract in static["inputs"].items():
+            port = dict(contract)
+            # The canvas uses kind for its supported single-kind pipeline inputs.
+            if len(port["kinds"]) == 1:
+                port["kind"] = port.pop("kinds")[0]
+            pipeline_inputs[name] = port
+        return {
+            "source_run_id": run_id,
+            "source_plan_id": plan["plan_id"],
+            "pipeline": {
+                "pipeline": static["pipeline_name"],
+                "version": static["pipeline_version"],
+                "inputs": pipeline_inputs,
+                "nodes": nodes,
+            },
+        }
+
     def _viewable_output(self, ref: object) -> bool:
         if not isinstance(ref, ArtifactRef):
             return False

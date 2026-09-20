@@ -54,6 +54,32 @@ def test_async_start_frozen_plan_readonly_snapshots_and_review(tmp_path, monkeyp
             persisted = service.plan(run_id)
             assert persisted["plan_id"] == started["run"]["dag"]["plan_id"]
             assert persisted["bindings"]["generate_asset"]["parameters"]["seed"] == 42
+            draft = service.draft_from_run(run_id)
+            assert draft["source_run_id"] == run_id
+            assert draft["source_plan_id"] == persisted["plan_id"]
+            assert draft["pipeline"]["inputs"]["image"]["kind"] == "rgb_image"
+            assert draft["pipeline"]["nodes"]["generate_asset"]["parameters"]["seed"] == 42
+            from assets_generator.pipeline import (
+                _pipeline_from_raw,
+                compile_pipeline,
+                load_default_operator_specs,
+            )
+
+            cloned_plan = registry.bind_plan(
+                compile_pipeline(
+                    _pipeline_from_raw(draft["pipeline"]),
+                    load_default_operator_specs(),
+                    require_explicit_joins=True,
+                )
+            )
+            assert cloned_plan.bindings == engine._plan(repo.load(run_id)).bindings
+            draft["pipeline"]["nodes"]["generate_asset"]["parameters"]["seed"] = 123
+            assert (
+                service.draft_from_run(run_id)["pipeline"]["nodes"]["generate_asset"]["parameters"][
+                    "seed"
+                ]
+                == 42
+            )
             before = store.blob_path(repo.load(run_id).dag.plan).read_bytes()
             assert service.snapshot(run_id)["run"]["dag"]["revision"] == 0
             assert store.blob_path(repo.load(run_id).dag.plan).read_bytes() == before

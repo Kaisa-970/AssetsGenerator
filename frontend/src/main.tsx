@@ -531,6 +531,10 @@ function App() {
             <div hidden={tab !== "run"}>
               <ExecutionPanel
                 pipeline={pipeline}
+                onLoadDraft={(draft) => {
+                  loadPipeline(draft);
+                  setTab("plan");
+                }}
                 profile={catalog.execution_profile}
                 executionReason={
                   (result as { execution_reason?: string } | undefined)

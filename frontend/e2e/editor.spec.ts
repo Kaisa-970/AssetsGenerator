@@ -1117,46 +1117,194 @@ test("published GLB preview loads geometry and closes without mutation", async (
   expect(mutations).toBe(0);
 });
 
-
-test("RGBA canvas upload uses the explicit endpoint and preserves returned reference", async ({ page }) => {
+test("RGBA canvas upload uses the explicit endpoint and preserves returned reference", async ({
+  page,
+}) => {
   const imageRef = { artifact_id: "prepared_rgba_exact" };
   const starts: any[] = [];
   const uploads: string[] = [];
-  const pipeline = { pipeline: "remote_rgba", version: "1", inputs: { image: { kind: "rgba_image", carriers: ["artifact_ref"] } }, nodes: {} };
-  await page.route("**/api/**", async route => {
+  const pipeline = {
+    pipeline: "remote_rgba",
+    version: "1",
+    inputs: { image: { kind: "rgba_image", carriers: ["artifact_ref"] } },
+    nodes: {},
+  };
+  await page.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
     let body: any = {};
-    if (path === "/api/catalog") body = { operators: {}, adapters: [], execution_enabled: true, templates: [{ id: "remote", label: "远程 RGBA", pipeline }, { id: "rgb", label: "普通 RGB", pipeline: { ...pipeline, inputs: { image: { kind: "rgb_image", carriers: ["artifact_ref"] } } } }] };
+    if (path === "/api/catalog")
+      body = {
+        operators: {},
+        adapters: [],
+        execution_enabled: true,
+        templates: [
+          { id: "remote", label: "远程 RGBA", pipeline },
+          {
+            id: "rgb",
+            label: "普通 RGB",
+            pipeline: {
+              ...pipeline,
+              inputs: {
+                image: { kind: "rgb_image", carriers: ["artifact_ref"] },
+              },
+            },
+          },
+        ],
+      };
     else if (path === "/api/drafts") body = { drafts: [] };
     else if (path.startsWith("/api/inputs/")) {
       uploads.push(path);
       body = { image_ref: imageRef };
     } else if (path === "/api/runs" && route.request().method() === "POST") {
       starts.push(route.request().postDataJSON());
-      body = { run: { run_id: "dag_remote", status: "running", dag: { revision: 1, node_states: { shape: { status: "running", attempts: [{ status: "running", error_code: "remote_queued", remote_binding: { service_id: "test-service", submission_key: "job-exact-one" } }] } } } }, busy: false };
+      body = {
+        run: {
+          run_id: "dag_remote",
+          status: "running",
+          dag: {
+            revision: 1,
+            node_states: {
+              shape: {
+                status: "running",
+                attempts: [
+                  {
+                    status: "running",
+                    error_code: "remote_queued",
+                    remote_binding: {
+                      service_id: "test-service",
+                      submission_key: "job-exact-one",
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        },
+        busy: false,
+      };
     } else if (path === "/api/runs") body = { runs: [] };
-    else body = { run: { run_id: "dag_remote", status: "running", dag: { revision: 1, node_states: { shape: { status: "running", attempts: [{ status: "running", error_code: "remote_queued", remote_binding: { service_id: "test-service", submission_key: "job-exact-one" } }] } } } }, busy: false };
+    else
+      body = {
+        run: {
+          run_id: "dag_remote",
+          status: "running",
+          dag: {
+            revision: 1,
+            node_states: {
+              shape: {
+                status: "running",
+                attempts: [
+                  {
+                    status: "running",
+                    error_code: "remote_queued",
+                    remote_binding: {
+                      service_id: "test-service",
+                      submission_key: "job-exact-one",
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        },
+        busy: false,
+      };
     await route.fulfill({ json: body });
   });
   await page.goto("/");
-  page.on("dialog", dialog => dialog.accept());
+  page.on("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "远程 RGBA", exact: true }).click();
   await page.getByRole("button", { name: "运行", exact: true }).click();
   await expect(page.getByText(/此流程不自动抠图/)).toBeVisible();
   await page.getByLabel("图片来源", { exact: true }).selectOption("upload");
-  await expect(page.getByLabel("上传运行图片")).toHaveAttribute("accept", "image/png");
-  await page.getByLabel("上传运行图片").setInputFiles({ name: "prepared.png", mimeType: "image/png", buffer: Buffer.from("rgba transport fixture") });
-  await expect(page.getByText("图片已上传；点击启动新运行才会执行模型。")).toBeVisible();
+  await expect(page.getByLabel("上传运行图片")).toHaveAttribute(
+    "accept",
+    "image/png",
+  );
+  await page
+    .getByLabel("上传运行图片")
+    .setInputFiles({
+      name: "prepared.png",
+      mimeType: "image/png",
+      buffer: Buffer.from("rgba transport fixture"),
+    });
+  await expect(
+    page.getByText("图片已上传；点击启动新运行才会执行模型。"),
+  ).toBeVisible();
   expect(uploads).toEqual(["/api/inputs/rgba"]);
   expect(starts).toEqual([]);
   await page.getByRole("button", { name: "启动新运行", exact: true }).click();
   await expect.poll(() => starts.length).toBe(1);
   await expect(page.getByText(/上次报告作业已排队/)).toBeVisible();
-  await expect(page.getByLabel("远程作业标识 · shape")).toHaveValue("job-exact-one");
+  await expect(page.getByLabel("远程作业标识 · shape")).toHaveValue(
+    "job-exact-one",
+  );
   expect(starts[0].image_ref).toEqual(imageRef);
   expect(starts[0].pipeline.inputs.image.kind).toBe("rgba_image");
   await page.getByRole("button", { name: "普通 RGB", exact: true }).click();
   await page.getByRole("button", { name: "运行", exact: true }).click();
-  await expect(page.getByRole("button", { name: "启动新运行", exact: true })).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "启动新运行", exact: true }),
+  ).toBeDisabled();
   expect(starts).toHaveLength(1);
+});
+
+test("loading a saved run configuration only changes the draft", async ({
+  page,
+}) => {
+  let writes = 0;
+  const pipeline = {
+    pipeline: "original_run",
+    version: "1",
+    inputs: { image: { kind: "rgb_image" } },
+    nodes: {},
+  };
+  await page.route("**/api/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (route.request().method() === "POST") writes++;
+    let body: unknown = {};
+    if (path === "/api/catalog")
+      body = {
+        operators: {},
+        adapters: [],
+        templates: [],
+        execution_enabled: true,
+      };
+    else if (path === "/api/drafts") body = { drafts: [] };
+    else if (path === "/api/runs")
+      body = { runs: [{ run_id: "dag_original", status: "succeeded" }] };
+    else if (path.endsWith("/draft"))
+      body = {
+        source_run_id: "dag_original",
+        source_plan_id: "original-plan",
+        pipeline,
+      };
+    else
+      body = {
+        run: {
+          run_id: "dag_original",
+          status: "succeeded",
+          dag: { plan_id: "original-plan", revision: 1, node_states: {} },
+        },
+      };
+    await route.fulfill({ json: body });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "运行", exact: true }).click();
+  await page
+    .getByLabel("选择运行", { exact: true })
+    .selectOption("dag_original");
+  page.once("dialog", (dialog) => dialog.dismiss());
+  await page
+    .getByRole("button", { name: "将配置载入画布", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "将配置载入画布", exact: true }),
+  ).toBeVisible();
+  page.once("dialog", (dialog) => dialog.accept());
+  await page
+    .getByRole("button", { name: "将配置载入画布", exact: true })
+    .click();
+  await expect(page.locator('input[value="original_run"]')).toBeVisible();
+  expect(writes).toBe(0);
 });
