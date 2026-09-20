@@ -388,3 +388,7 @@ CPU 子进程，等待 Backend 开始后 SIGKILL 执行器，并重新打开服�
 
 相关进程、执行器和队列测试合跑 17 项通过。这补齐实际孤儿子进程的 CPU
 恢复回归，不等同于真实 TRELLIS.2 推理中断验收，后者仍待执行。
+
+真实 TRELLIS.2 执行器 SIGKILL 后的存活门控、自然退出核实和显式放弃已通过
+[独立验收](../reports/trellis-executor-interruption.md)。中断发生于 runner 启动后的
+加载/执行窗口，不证明 GPU sampling 时刻；父 DAG 故障重试全链仍未验收。
