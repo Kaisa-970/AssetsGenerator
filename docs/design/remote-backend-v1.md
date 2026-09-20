@@ -263,3 +263,11 @@ execute_service_job 对 PipelineError 保留原 code（如 backend_failed/backen
 import_shape_rgba 按现有 prepare_observation 的 rgba_image/png@1.0 契约读取唯一 rgba 上传描述：核对完整 Artifact 身份摘要、Blob 摘要、RGBA 元数据，再实际解码有界 PNG 并拒绝空前景。导入服务侧 LocalArtifactStore 后必须保持原 Artifact ID，不接受请求中的本地路径。该函数尚未注册为生产 handler，不启动模型。
 
 三项图像回归覆盖合法 RGBA 精确身份往返、全透明输入拒绝、以 RGBA 元数据伪装 RGB 编码拒绝；Ruff/mypy（99 文件）通过。下一步接固定模型配置与 shape 输出封装，未做 GPU 验证。
+
+## Shape 输出传输首片
+
+新增 export_shape_output/import_shape_output，将现有 ShapeOutput 封装为 mesh GLB 和 shape_metadata JSON 两个输出。导入核对 mesh 摘要与契约、NativeFrame/mesh frame-unit 一致性、材质颜色与 alpha、实际 GLB 有限非空几何，随后持久化 mesh；原 mesh Artifact 身份可往返保持。当前独立材质纹理引用拒绝，不能带着远端 ArtifactRef 直接进入本地 Store；GLB 内嵌外观仍随原字节保存。
+
+此模块未注册进 DAG 或模型服务 handler；后续还需自包含 GLB 资源边界、Backend 身份与响应一致性校验，以及真实模型输出验收。输入/输出测试合跑覆盖小型 GLB 往返、frame 冲突、摘要损坏、非法颜色和悬空纹理引用；不宣称真实模型接入已完成。
+
+本轮输入/输出合跑 8 项通过，Ruff 与 mypy（100 源文件）通过，无真实模型/GPU 验证。
