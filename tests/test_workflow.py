@@ -238,6 +238,54 @@ def test_workflow_uses_backend_name_from_resolved_plan(tmp_path) -> None:
     assert shape_record["backend"] == "contract_shape"
 
 
+def test_workflow_preserves_shape_postprocess_mode_in_provenance(tmp_path) -> None:
+    image_path = tmp_path / "image.png"
+    mask_path = tmp_path / "mask.png"
+    Image.new("RGB", (8, 8), (200, 100, 50)).save(image_path)
+    Image.new("L", (8, 8), 255).save(mask_path)
+
+    class FallbackBackend(ContractBackend):
+        def generate(self, store, rgba, *, seed, pipeline_type):
+            value = super().generate(store, rgba, seed=seed, pipeline_type=pipeline_type)
+            return ShapeOutput(
+                value.mesh,
+                value.material,
+                value.native_frame,
+                {**value.backend_metadata, "postprocess_mode": "geometry_fallback_no_texture"},
+                value.cache_hit,
+            )
+
+    registry = BackendRegistry()
+    registry.register(
+        name="fallback_shape",
+        operator="shape_generation@1",
+        backend_version="test",
+        implementation=FallbackBackend(),
+    )
+    from assets_generator.pipeline import load_default_operator_specs, load_default_pipeline
+
+    plan = resolve_plan(
+        load_default_pipeline(),
+        registry,
+        operator_specs=load_default_operator_specs(),
+        backend_overrides={"generate_shape": "fallback_shape"},
+    )
+    output = tmp_path / "release"
+    build_image_asset(
+        image_path=image_path,
+        mask_path=mask_path,
+        store_path=tmp_path / "store",
+        output_path=output,
+        resolved_plan=plan,
+    )
+    records = [
+        json.loads(path.read_text(encoding="utf-8"))
+        for path in sorted((output / "provenance").glob("*.json"))
+    ]
+    shape_record = next(item for item in records if item["node_id"] == "generate_shape")
+    assert shape_record["parameters"]["postprocess_mode"] == "geometry_fallback_no_texture"
+
+
 def test_workflow_rejects_ambiguous_backend_configuration(tmp_path) -> None:
     image_path = tmp_path / "image.png"
     mask_path = tmp_path / "mask.png"

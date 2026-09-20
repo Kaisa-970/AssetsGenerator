@@ -428,6 +428,7 @@ def build_image_asset(
                     **{
                         key: generated.backend_metadata[key]
                         for key in (
+                            "postprocess_mode",
                             "seed_effective",
                             "pipeline_type_effective",
                             "chunk_size",
