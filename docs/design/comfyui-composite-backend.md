@@ -404,3 +404,14 @@ payload 字段、输入/binding 摘要、唯一 image 描述、Artifact identity
 5 项输入回归、Ruff 格式/检查和 mypy 通过，覆盖身份/kind/编码错误、Blob 缺失、
 往返及恢复禁写。本步仅提供服务输入桥接函数，未连接 profile.start、远程 Adapter
 或画布；不能将其描述为已经支持 DAG 执行。
+
+### Profile 的 DAG 首次执行入口
+
+ComfyImageProfile.start_dag 接受远程调度的 image_transform@1 payload，要求 profile
+具有唯一 image 图片输入和 RGB 输出，固定配置身份，先校验参数规范化与作业
+running 状态，再导入上传图片并调用既有首次执行入口。DAG input/binding 摘要
+进入部署证据。已有 start/submission 授权时在导入前拒绝，恢复继续使用 finish。
+
+16 项 profile/输入桥接测试、Ruff 与 mypy 通过。新增测试核对上传身份、参数、
+DAG 摘要转发，并证明已启动后删除输入再次调用不会修复。此处尚未实现 DAG
+客户端 Adapter 和服务循环，因此仍不构成已可运行的 DAG Backend。

@@ -255,6 +255,18 @@ class RemoteServiceStore:
                 self.db.execute("ROLLBACK")
                 raise
 
+    def comfy_start_authorized(self, request: RemoteRequest) -> bool:
+        with self._lock:
+            if self.lookup(request) is None:
+                raise ValueError("ComfyUI owner job missing")
+            return bool(
+                self.db.execute(
+                    "SELECT comfy_start IS NOT NULL FROM jobs WHERE key=?",
+                    (request.submission_key,),
+                ).fetchone()[0]
+                == 1
+            )
+
     def authorize_comfy_start(self, request: RemoteRequest, intent: dict[str, Any]) -> bool:
         """Reserve the first execution before uploads; never reauthorize on restart."""
         body = canonical_json_bytes(intent)

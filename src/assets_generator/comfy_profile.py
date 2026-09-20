@@ -195,3 +195,56 @@ class ComfyImageProfile:
             owner, request, journal_path, ComfyClient(raw["endpoint"]), store, **raw["output"]
         )
         return publish_image_result(owner, request, store)
+
+    def start_dag(
+        self,
+        owner: RemoteServiceStore,
+        request: RemoteRequest,
+        journal_path: Path,
+        store: LocalArtifactStore,
+    ) -> dict[str, Any]:
+        """First execution of a claimed image_transform@1 remote DAG request.
+
+        Recovery uses finish, never this method. Parameters are checked before
+        importing inputs. Existing start/submission ownership forbids reimport.
+        """
+        from .comfy_remote_input import import_remote_image
+        from .comfy_service import start_owned_image
+        from .comfy_submission import ComfySubmissionUnknown
+        from .compiled_plan import thaw
+
+        if request.identity != self.identity:
+            raise ValueError("ComfyUI DAG request targets another profile")
+        raw = self.to_dict()
+        workflow = self.workflow()
+        if set(workflow.image_targets) != {"image"} or raw["output"]["mode"] != "RGB":
+            raise ValueError("image_transform@1 requires one image input and RGB output")
+        if owner.comfy_start_authorized(request) or owner.comfy_binding(request) is not None:
+            raise ComfySubmissionUnknown("ComfyUI DAG already started; use finish only")
+        job = owner.lookup(request)
+        if job is None or job.state != "running":
+            raise ValueError("ComfyUI DAG start requires claimed running job")
+        payload = decode_remote_json(request.payload_json)
+        parameters = payload.get("parameters")
+        if (
+            not isinstance(parameters, dict)
+            or thaw(workflow.spec.normalize_parameters(parameters)) != parameters
+        ):
+            raise ValueError("ComfyUI DAG parameters must be normalized")
+        image = import_remote_image(request, owner, store)
+        return start_owned_image(
+            owner,
+            request,
+            journal_path,
+            ComfyClient(raw["endpoint"]),
+            store,
+            workflow,
+            images={"image": image},
+            parameters=parameters,
+            deployment_claims={
+                "profile_digest": self.identity.backend_digest,
+                "declared": raw["deployment_claims"],
+                "dag_input_digest": payload["input_digest"],
+                "dag_binding_digest": payload["binding_digest"],
+            },
+        )

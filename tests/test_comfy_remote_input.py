@@ -58,3 +58,62 @@ def test_dag_image_import_identity_and_read_only_recovery(tmp_path, monkeypatch,
             import_remote_image(req, owner, store, recovery_only=True)
     finally:
         owner.close()
+
+
+def test_profile_dag_start_uses_uploaded_artifact_and_blocks_reimport(tmp_path, monkeypatch):
+    import json
+
+    from test_comfy_profile import profile
+
+    import assets_generator.comfy_service as service
+    from assets_generator.comfy_profile import ComfyImageProfile
+    from assets_generator.comfy_submission import ComfySubmissionUnknown
+
+    configured = ComfyImageProfile(json.dumps(profile()).encode())
+    png = io.BytesIO()
+    Image.new("RGB", (2, 2), "red").save(png, format="PNG")
+    data = png.getvalue()
+    identity = {
+        "kind": "rgb_image",
+        "schema_name": "png",
+        "schema_version": "1.0",
+        "blob_digest": sha256_bytes(data),
+        "identity_metadata": {"media_type": "image/png"},
+    }
+    artifact_id = sha256_bytes(canonical_json_bytes(identity))
+    payload = {
+        "operation": "image_transform@1",
+        "parameters": {"seed": 7},
+        "input_digest": "sha256:" + "1" * 64,
+        "binding_digest": "sha256:" + "2" * 64,
+        "input_blobs": {"image": {"artifact_id": artifact_id, "identity": identity}},
+    }
+    req = RemoteRequest.create(configured.identity, "one", payload)
+    owner = RemoteServiceStore(tmp_path / "service.sqlite", configured.identity)
+    store = LocalArtifactStore(tmp_path / "store")
+    calls = []
+
+    def start(*args, **kwargs):
+        calls.append(kwargs)
+        owner.authorize_comfy_start(req, {"fixture": True})
+        return {"phase": "acknowledged"}
+
+    monkeypatch.setattr(service, "start_owned_image", start)
+    try:
+        owner.submit(req)
+        owner.transition(req, expected="queued", state="running")
+        owner.put_blob(data, identity["blob_digest"])
+        assert (
+            configured.start_dag(owner, req, tmp_path / "journal", store)["phase"] == "acknowledged"
+        )
+        ref = calls[0]["images"]["image"]
+        assert ref.artifact_id == artifact_id
+        assert calls[0]["parameters"] == {"seed": 7}
+        assert calls[0]["deployment_claims"]["dag_binding_digest"] == payload["binding_digest"]
+        store.blob_path(ref).unlink()
+        with pytest.raises(ComfySubmissionUnknown):
+            configured.start_dag(owner, req, tmp_path / "journal", store)
+        assert not store.blob_path(ref).exists()
+        assert len(calls) == 1
+    finally:
+        owner.close()
