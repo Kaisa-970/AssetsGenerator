@@ -1,4 +1,12 @@
 operators:
+  - name: image_transform
+    version: 1
+    inputs:
+      image: {kind: rgb_image, carriers: [artifact_ref], schema_name: png, schema_version: "1.0"}
+    outputs:
+      image: {kind: rgb_image, carriers: [artifact_ref], schema_name: png, schema_version: "1.0"}
+      evidence: {kind: remote_job_result, carriers: [artifact_ref], schema_name: ComfyImageBoundary, schema_version: "1.0"}
+
   - name: segmentation
     version: 1
     inputs:

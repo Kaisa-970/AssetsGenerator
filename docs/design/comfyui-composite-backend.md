@@ -380,3 +380,16 @@ workflow 的终态历史，不证明不透明自定义节点没有另外创建�
 103 项 ComfyUI 测试及 Ruff 格式/检查、mypy 通过。新增回归覆盖正常失败、错误
 workflow 历史保持 running、删除内部日志后的离线失败复核及失败 Blob 缺失阻塞。
 这仍是协议 fixture 验证，没有真实 ComfyUI 验收。DAG/画布接入尚未完成。
+
+### DAG 图片端口契约与静态示例
+
+OperatorSpec 新增 image_transform@1：单 RGB PNG Artifact 输入、RGB PNG 输出及
+ComfyImageBoundary 证据 Artifact 输出。仓库/打包两份 OperatorSpec 同步更新。
+首版仅开放明确 RGB→RGB 边界，RGBA 必须另有显式转换，不做隐式通道转换。
+
+pipelines/comfy_image_chain_v1.yaml 展示同一 Operator 的 first/second 两个实例、
+各自 Backend 绑定及图片串联。它目前只可静态编译，尚无对应注册 Adapter 或
+服务执行桥接，不是可运行示例。CLI 的多图片/RGBA profile 不因此自动适用于此契约。
+
+35 项契约相关测试通过，包含编译计划往返、依赖/独立 Backend 绑定和 RGBA 拒绝；
+Ruff 与 git diff --check 通过。没有执行 DAG 推理或真实 ComfyUI。
