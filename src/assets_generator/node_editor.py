@@ -334,16 +334,24 @@ def serve_editor(
     store: Path | None = None,
     profile: str | None = None,
     multi_view_config: Path | None = None,
+    remote_config: Path | None = None,
 ) -> None:
     from contextlib import ExitStack
 
     with ExitStack() as stack:
         execution = None
         editor = DraftEditor(directory, operators, templates)
-        if any(value is not None for value in (config, store, profile, multi_view_config)):
-            if store is None or (multi_view_config is None and (config is None or profile is None)):
+        if any(
+            value is not None
+            for value in (config, store, profile, multi_view_config, remote_config)
+        ):
+            if store is None or (
+                remote_config is None
+                and multi_view_config is None
+                and (config is None or profile is None)
+            ):
                 raise ValueError(
-                    "execution requires --store and an image or multi-view configuration"
+                    "execution requires --store and an image, multi-view or remote configuration"
                 )
             if (config is None) != (profile is None):
                 raise ValueError("image execution requires --config and --profile together")
@@ -374,6 +382,10 @@ def serve_editor(
                     name: load_multi_view_profile(value) for name, value in raw["profiles"].items()
                 }
                 register_multi_view_profiles(registry, configured, raw["default_profile"])
+            if remote_config is not None:
+                from .dag_remote_profiles import register_remote_shape_profiles
+
+                register_remote_shape_profiles(registry, read_json(remote_config))
             repository = DagRepository(LocalArtifactStore(store), directory / "runtime")
             stack.enter_context(repository)
             execution = NodeEditorExecution(

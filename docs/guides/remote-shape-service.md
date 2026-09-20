@@ -31,3 +31,30 @@ PYTHONPATH=src python -m assets_generator.remote_shape_cli serve \
 规范化、QA、组装和导出。`publish.outputs.release` 是 Store 内 AssetRelease，
 `publish.outputs.glb` 是可读取的 GLB Artifact；尚未自动生成下载目录。
 关闭 HTTP 服务后，对已成功运行调用 recover 应仅核验本地证据，不重新推理。
+
+## 编辑器中的可信服务目录
+
+`node-editor --remote-config <REMOTE_JSON> --store <STORE> --directory <EDITOR_DIR>`
+可独立启动远程节点目录，也可与已有 image/multi-view 配置同时使用。
+该配置由启动者提供，加载时不连接服务、不加载本地模型环境：
+
+```json
+{
+  "default_profile": "shape-local",
+  "profiles": {
+    "shape-local": {
+      "endpoint": "http://127.0.0.1:8770",
+      "service_id": "shape-local",
+      "backend_digest": "sha256:<服务启动时输出的64位摘要>"
+    }
+  }
+}
+```
+
+服务身份使用 `serve` 输出的实际值；每个 profile 注册为可选 Backend。
+节点 `backend: <profile-name>` 选择服务，不指定则使用 default_profile。
+endpoint/service_id/backend_digest 固定在参数 enum 中，草稿不能任意改写。
+规范化、QA、组装、导出四个 Core Adapter 同时进入目录。
+
+本次只开放目录和编译绑定；编辑器输入入口仍只接受 RGB 或 ObservationBundle。
+因此 prepared RGBA 五节点图当前应显示编译通过但不可启动，不能据此宣称画布远程链验收。
