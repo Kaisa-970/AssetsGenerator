@@ -32,6 +32,8 @@ from .workbench_persistence import CreationReceipt
 
 def validate_editor_inputs(plan: CompiledPlan) -> str:
     """Return the supported input name; compilation and creation share this gate."""
+    if not plan.nodes:
+        raise ContractError("canvas execution requires at least one processing node")
     if set(plan.inputs) == {"image"}:
         name = "image"
         kinds = tuple(plan.inputs[name].contract["kinds"])

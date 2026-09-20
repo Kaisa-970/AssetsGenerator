@@ -99,6 +99,7 @@ RGBA、灰度和动画图片不属于这个 RGB 示例的输入范围。
 草稿都保存在指定目录，不放入仓库。需要替换端口时使用 --port。
 
 启动器在 examples/cpu_image_editor.py；接线在 examples/cpu-image-editor.yaml。
+空画布可以保存、编辑和静态编译，但不能启动运行；至少添加一个处理节点后再启动。
 节点目录仍展示完整 Operator 契约，但本示例只注册 encode_png 的执行实现，
 其他显示“仅契约”的节点不能直接运行。这个示例不需要 PyTorch、GPU 或模型
 profile；它证明 CPU 数据流和恢复路径，不代表任何模型已验收。

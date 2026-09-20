@@ -1,11 +1,13 @@
 from io import BytesIO
 from pathlib import Path
 
+import pytest
 import yaml
 from PIL import Image
 from test_node_editor_execution import wait
 
 from assets_generator.artifact_store import LocalArtifactStore
+from assets_generator.contracts import ContractError
 from assets_generator.dag_adapters import AdapterRegistry
 from assets_generator.dag_engine import DagEngine
 from assets_generator.dag_image_encoding import EncodePngAdapter
@@ -48,3 +50,27 @@ def test_cpu_example_upload_execute_and_reopen(tmp_path):
             assert image.format == "PNG"
             assert image.size == (3, 2)
             assert image.getpixel((0, 0)) == (25, 90, 140)
+
+
+def test_empty_canvas_can_compile_but_cannot_create_a_successful_run(tmp_path):
+    registry = AdapterRegistry()
+    registry.register(EncodePngAdapter())
+    store = LocalArtifactStore(tmp_path / "store")
+    graph = {
+        "pipeline": "empty_canvas",
+        "version": "1",
+        "inputs": {"image": {"kind": "rgb_image", "carriers": ["artifact_ref"]}},
+        "nodes": {},
+    }
+    with DagRepository(store, tmp_path / "runtime") as repo:
+        service = NodeEditorExecution(DagEngine(repo, registry))
+        try:
+            compiled = DraftEditor(tmp_path / "drafts", execution=service).compile(graph)
+            assert compiled["ok"] and compiled["bound_plan"]
+            assert not compiled["execution_ready"]
+            assert "at least one processing node" in compiled["execution_reason"]
+            with pytest.raises(ContractError, match="at least one processing node"):
+                service.start(graph, "/must-not-import.png")
+            assert service.list_runs() == []
+        finally:
+            service.close()
