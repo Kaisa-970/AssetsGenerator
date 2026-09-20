@@ -79,6 +79,7 @@ def test_editor_starts_with_comfy_only_catalog(tmp_path, monkeypatch):
             "comfy_image",
             "encode_png",
             "resize_image",
+            "apply_binary_mask",
         }
         assert editor.execution is not None
         return Server()
