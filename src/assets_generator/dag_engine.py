@@ -42,12 +42,10 @@ class DagEngine:
 
     def _plan(self, run: BuildRun) -> BoundDagPlan:
         assert run.dag is not None
-        if any(
-            attempt.remote_binding is not None
-            for node in run.dag.node_states.values()
-            for attempt in node.attempts
-        ):
-            raise ContractError("remote attempt scheduling is not enabled")
+        for state in run.dag.node_states.values():
+            for attempt in state.attempts:
+                if attempt.remote_binding is not None and not attempt.adapter:
+                    raise ContractError("remote attempt scheduling is not enabled without adapter")
         self.repository.verify_reference_closure(run.dag.plan)
         manifest = self.store.get_manifest(run.dag.plan.artifact_id)
         if (
@@ -68,6 +66,12 @@ class DagEngine:
             or run.pipeline_version != plan.static_plan.pipeline_version
         ):
             raise ContractError("run plan or node set mismatch")
+        for node_id, state in run.dag.node_states.items():
+            if any(attempt.remote_binding is not None for attempt in state.attempts):
+                if plan.bindings[node_id].spec["execution_kind"] != "remote":
+                    raise ContractError(
+                        "remote attempt scheduling is not enabled for local adapters"
+                    )
         return plan
 
     def create(self, plan: BoundDagPlan, inputs: PortMap, run_id: str | None = None) -> BuildRun:
@@ -389,6 +393,12 @@ class DagEngine:
                     state.dispatch_block_reason = str(error)
                 else:
                     state.dispatch_block_reason = None
+            if plan.bindings[node_id].spec["execution_kind"] == "remote" and state.attempts:
+                if state.status in {"running", "interrupted", "recovery_blocked"}:
+                    from .dag_remote_execution import execute_remote
+
+                    execute_remote(self, run, plan, nodes[node_id], recover=True)
+                    continue
             if state.status == "running":
                 state.status = "interrupted"
                 state.current().status = "interrupted"
@@ -479,6 +489,10 @@ class DagEngine:
                         raise ContractError("child result binding mismatch")
                 code = "recovery_output_invalid"
                 if attempt.status == "succeeded":
+                    if binding.spec["execution_kind"] == "remote":
+                        from .dag_remote_execution import validate_remote_success
+
+                        validate_remote_success(self, run, node)
                     self._validate_outputs(node, attempt.outputs)
                     self._verify_values(attempt.provenance)
                     expected = expected_node_provenance_records(
@@ -492,6 +506,7 @@ class DagEngine:
                         inputs=inputs,
                         outputs=attempt.outputs,
                         decision_ref=attempt.decision,
+                        execution_evidence=attempt.remote_result,
                     )
                     actual = {
                         port: [self.store.read_structured(ref) for ref in refs]
@@ -689,6 +704,11 @@ class DagEngine:
         self, run: BuildRun, plan: BoundDagPlan, node: CompiledNode, *, recover_child: bool = False
     ) -> None:
         assert run.dag is not None
+        if plan.bindings[node.node_id].spec["execution_kind"] == "remote":
+            from .dag_remote_execution import execute_remote
+
+            execute_remote(self, run, plan, node, recover=False)
+            return
         state = run.dag.node_states[node.node_id]
         attempt = state.current()
         binding = plan.bindings[node.node_id]
@@ -840,6 +860,10 @@ class DagEngine:
                     if child not in affected:
                         affected.add(child)
                         pending.append(child)
+            from .dag_remote_execution import validate_remote_retry
+
+            for key in affected:
+                validate_remote_retry(self, run, key)
             for key in affected:
                 run.dag.node_states[key].status = "pending"
                 run.dag.node_states[key].recovery_blocked_reason = None

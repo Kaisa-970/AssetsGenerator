@@ -1,7 +1,7 @@
-"""Trusted CPU/human/gated-process adapters with immutable execution bindings.
+"""Trusted adapters with immutable execution bindings.
 
-HTTP and arbitrary unresolved Backend bindings remain unsupported. Process
-adapters receive a worker with durable authorization and cross-run admission.
+Remote adapters require explicit trusted registration and fixed service identity.
+Process adapters receive durable authorization and cross-run admission.
 """
 
 from __future__ import annotations
@@ -125,8 +125,10 @@ class AdapterSpec:
             for v in self.operators
         ):
             raise ContractError("adapter requires versioned operators")
-        if self.execution_kind not in {"cpu", "human", "process"}:
-            raise ContractError("supports CPU, human and gated process adapters only")
+        if self.execution_kind not in {"cpu", "human", "process", "remote"}:
+            raise ContractError("unsupported adapter execution kind")
+        if self.execution_kind == "remote" and self.uses_child_run:
+            raise ContractError("remote adapters cannot own local child workflows")
         if type(self.uses_child_run) is not bool:
             raise ContractError("uses_child_run must be boolean")
         _check_schema(self.parameter_schema)
@@ -310,6 +312,20 @@ class AdapterRegistry:
         self._adapters: dict[str, NodeAdapter] = {}
         self._backend_adapters: dict[tuple[str, str], NodeAdapter] = {}
 
+    @staticmethod
+    def _validate_remote(adapter: NodeAdapter) -> None:
+        if adapter.spec.execution_kind != "remote":
+            return
+        from .dag_remote_adapter import RemoteNodeAdapter
+
+        if not isinstance(adapter, RemoteNodeAdapter):
+            raise ContractError("remote execution requires RemoteNodeAdapter")
+        props = adapter.spec.parameter_schema.get("properties", {})
+        for key in ("remote_endpoint", "service_id", "backend_digest"):
+            choices = props.get(key, {}).get("enum", ())
+            if len(choices) != 1 or adapter.spec.defaults.get(key) != choices[0]:
+                raise ContractError("remote identity requires a fixed enum and default")
+
     def register_backend(self, backend: str, adapter: NodeAdapter) -> None:
         """Register a trusted, identity-pinned implementation for an explicit node binding."""
         if not isinstance(backend, str) or not backend.strip():
@@ -317,6 +333,7 @@ class AdapterRegistry:
         spec = adapter.spec
         if not isinstance(spec, AdapterSpec) or not callable(getattr(adapter, "execute", None)):
             raise ContractError("adapter requires AdapterSpec and execute")
+        self._validate_remote(adapter)
         key = (backend, spec.key)
         if key in self._backend_adapters:
             raise ContractError(f"duplicate backend adapter: {backend}/{spec.key}")
@@ -327,6 +344,7 @@ class AdapterRegistry:
         spec = adapter.spec
         if not isinstance(spec, AdapterSpec) or not callable(getattr(adapter, "execute", None)):
             raise ContractError("adapter requires AdapterSpec and execute")
+        self._validate_remote(adapter)
         if spec.key in self._adapters:
             raise ContractError(f"duplicate adapter: {spec.key}")
         adapter_implementation_digest(adapter)
