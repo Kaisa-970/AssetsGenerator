@@ -130,7 +130,7 @@ alive/unknown/缺失身份一律拒绝；已有 succeeded/其他 failed 不覆�
 `pipelines/remote_selected_image_asset_v1.yaml` 使用 RGB 输入，串接已有 instance proposals、
 人工选区、`selection_prepare@1`、远程 shape 及五节点发布后半段。编辑器需同时传入本地
 `--config/--profile`（提供 SAM proposals）和 `--remote-config`，并通过 `--template` 加载示例。
-当前本地 profile 仍包含 shape 配置；尚未拆出 SAM-only 环境配置入口。
+可改用 `--proposal-config` 与 `--profile`，只加载 SAM 资源，不配置或核验本地 Shape。
 
 人工确认之前无远程提交。prepare 从 SelectionInputBinding 读取原图和最终 mask，复用
 绑定验证与 binary-mask 校验，输出 RGBA、ObservationBundle 和 SelectionImportVerification。
@@ -173,3 +173,20 @@ PYTHONPATH=src python -m assets_generator.cli node-editor \
 因此从 Release 的 Artifact 引用闭包可以追溯组装输入中的 ObservationBundle，
 而不是把 `source_observation_ids` 中的语义 ID 当作 Artifact ID。
 这一行为已有 Release 单独校验与观测 Blob 丢失回归；不追溯修改旧发布。
+
+### 只加载本地 SAM，生成交给远程服务
+
+复制 `examples/sam-proposals.json.example` 到仓库外，填写已有 SAM 环境和 checkpoint。
+配置不包含 Shape 模型；`--proposal-config` 与原 `--config` 互斥。
+
+```bash
+PYTHONPATH=src python -m assets_generator.cli node-editor \
+  --directory <RUN_ROOT>/editor --store <RUN_ROOT>/store \
+  --proposal-config <RUN_ROOT>/sam.json --profile sam-local \
+  --remote-config <RUN_ROOT>/remote.json \
+  --template pipelines/remote_selected_image_asset_v1.yaml
+```
+
+该路径注册 proposals、人工选择和远程生成所需算子，不提供本地 image_build。
+已有固定工作台和完整本地 profile 入口继续保留。SAM-only 配置和远程发布组合已有 CPU
+回归；此新配置入口尚未重复进行真实 GPU 验收。

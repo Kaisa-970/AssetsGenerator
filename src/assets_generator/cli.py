@@ -35,6 +35,7 @@ def _parser() -> argparse.ArgumentParser:
     editor.add_argument("--profile")
     editor.add_argument("--multi-view-config", type=Path)
     editor.add_argument("--remote-config", type=Path)
+    editor.add_argument("--proposal-config", type=Path)
     compile_command = subparsers.add_parser("compile-pipeline")
     compile_command.add_argument("--pipeline", type=Path)
     compile_command.add_argument("--operators", type=Path)
@@ -273,6 +274,7 @@ def _execute(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
             profile=args.profile,
             multi_view_config=args.multi_view_config,
             remote_config=args.remote_config,
+            proposal_config=args.proposal_config,
         )
         return 0
     if args.command == "dag-image":

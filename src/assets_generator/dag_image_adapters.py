@@ -6,7 +6,7 @@ import json
 from copy import copy
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from typing import Any, Generic, TypeVar
 
 from .artifact_store import LocalArtifactStore, create_manifest
 from .compiled_plan import digest
@@ -18,6 +18,7 @@ from .serialization import canonical_json_bytes, read_json, sha256_bytes, to_pri
 from .workbench_binding import create_selection_binding, verify_imported_binding
 from .workbench_engine import BackendProfile
 from .workbench_models import MaskDraft
+from .workbench_profiles import ProposalProfile
 from .workflow import build_image_asset
 
 
@@ -112,7 +113,15 @@ def _published_files(context: NodeExecutionContext, files: dict[str, ArtifactRef
             raise ContractError("child publication differs from output artifact")
 
 
-def _profile_digest(profile: BackendProfile) -> str:
+def _profile_digest(profile: BackendProfile | ProposalProfile) -> str:
+    if isinstance(profile, ProposalProfile):
+        return digest(
+            {
+                "name": profile.name,
+                "proposal": profile.proposal_identity,
+                "test_only": profile.test_only,
+            }
+        )
     return digest(
         {
             "name": profile.name,
@@ -134,8 +143,11 @@ def _profile_digest(profile: BackendProfile) -> str:
     )
 
 
-class _ProfileAdapter:
-    def __init__(self, profile: BackendProfile):
+_Profile = TypeVar("_Profile", bound=BackendProfile | ProposalProfile)
+
+
+class _ProfileAdapter(Generic[_Profile]):
+    def __init__(self, profile: _Profile):
         self.profile = profile
 
     def _spec(self, name: str, operator: str, *, generate: bool = False) -> AdapterSpec:
@@ -182,7 +194,7 @@ class _ProfileAdapter:
         return implementation
 
 
-class DagProposalAdapter(_ProfileAdapter):
+class DagProposalAdapter(_ProfileAdapter[BackendProfile | ProposalProfile]):
     child_pipeline = ("instance_proposals", "1")
 
     @property
@@ -355,7 +367,7 @@ class DagMaskSelectionAdapter:
         return NodeExecutionResult({"selection": selection, "binding": binding})
 
 
-class DagImageBuildAdapter(_ProfileAdapter):
+class DagImageBuildAdapter(_ProfileAdapter[BackendProfile]):
     @property
     def child_pipeline(self) -> tuple[str, str]:
         return self.profile.shape_plan.pipeline_name, self.profile.shape_plan.pipeline_version

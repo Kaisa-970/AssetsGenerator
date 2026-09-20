@@ -341,6 +341,7 @@ def serve_editor(
     profile: str | None = None,
     multi_view_config: Path | None = None,
     remote_config: Path | None = None,
+    proposal_config: Path | None = None,
 ) -> None:
     from contextlib import ExitStack
 
@@ -349,17 +350,20 @@ def serve_editor(
         editor = DraftEditor(directory, operators, templates)
         if any(
             value is not None
-            for value in (config, store, profile, multi_view_config, remote_config)
+            for value in (config, store, profile, multi_view_config, remote_config, proposal_config)
         ):
             if store is None or (
-                remote_config is None
+                proposal_config is None
+                and remote_config is None
                 and multi_view_config is None
                 and (config is None or profile is None)
             ):
                 raise ValueError(
                     "execution requires --store and an image, multi-view or remote configuration"
                 )
-            if (config is None) != (profile is None):
+            if proposal_config is not None and config is not None:
+                raise ValueError("choose either image config or proposal config")
+            if (config is None and proposal_config is None) != (profile is None):
                 raise ValueError("image execution requires --config and --profile together")
             from .artifact_store import LocalArtifactStore
             from .dag_engine import DagEngine
@@ -375,6 +379,16 @@ def serve_editor(
                     progress=lambda message: print(message, file=sys.stderr, flush=True),
                 )
                 registry = image_adapter_registry(profiles, profile)
+            if proposal_config is not None:
+                from .dag_profiles import proposal_adapter_registry
+                from .workbench_profiles import load_proposal_profiles
+
+                proposal_profiles = load_proposal_profiles(
+                    read_json(proposal_config),
+                    progress=lambda message: print(message, file=sys.stderr, flush=True),
+                )
+                assert profile is not None
+                registry = proposal_adapter_registry(proposal_profiles, profile)
             if multi_view_config is not None:
                 from .dag_profiles import register_multi_view_profiles
                 from .multi_view_profiles import load_multi_view_profile

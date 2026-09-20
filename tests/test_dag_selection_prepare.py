@@ -19,11 +19,22 @@ from assets_generator.remote_service_worker import execute_service_job
 from assets_generator.remote_shape_service import ShapeServiceHandler
 
 
-def test_confirmed_rgb_selection_connects_to_remote_shape_and_release(tmp_path):
+@pytest.mark.parametrize("proposal_only", [False, True])
+def test_confirmed_rgb_selection_connects_to_remote_shape_and_release(tmp_path, proposal_only):
     store, image, profile = fixture_engine(tmp_path)
     with serve(tmp_path / "service.sqlite") as (remote, client, _):
         identity = request().identity
-        registry = image_adapter_registry({"local": profile}, "local")
+        if proposal_only:
+            from assets_generator.dag_profiles import proposal_adapter_registry
+            from assets_generator.workbench_profiles import ProposalProfile
+
+            proposal = ProposalProfile(
+                "local", profile.proposer, profile.proposal_identity, test_only=True
+            )
+            registry = proposal_adapter_registry({"local": proposal}, "local")
+            assert all(item["name"] != "image_build" for item in registry.catalog())
+        else:
+            registry = image_adapter_registry({"local": profile}, "local")
         register_remote_shape_profiles(
             registry,
             {

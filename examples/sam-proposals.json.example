@@ -1,0 +1,11 @@
+{
+  "profiles": {
+    "sam-local": {
+      "python": "<SAM_ENV>/bin/python",
+      "checkpoint": "<MODEL_ROOT>/sam_vit_h_4b8939.pth",
+      "device": "cuda",
+      "points_per_side": 8,
+      "max_instances": 10
+    }
+  }
+}

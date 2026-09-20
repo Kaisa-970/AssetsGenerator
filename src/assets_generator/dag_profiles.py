@@ -4,6 +4,7 @@ from .dag_adapters import AdapterRegistry
 from .dag_image_adapters import DagImageBuildAdapter, DagMaskSelectionAdapter, DagProposalAdapter
 from .dag_multi_view import GeometryAdapter, MultiViewProfile, ReconstructionAdapter, ReleaseAdapter
 from .workbench_engine import BackendProfile
+from .workbench_profiles import ProposalProfile
 
 
 def image_adapter_registry(
@@ -43,3 +44,17 @@ def register_multi_view_profiles(
     for name, configured in profiles.items():
         for adapter in adapters:
             registry.register_backend(name, adapter(configured))
+
+
+def proposal_adapter_registry(
+    profiles: dict[str, "ProposalProfile"], default_profile: str
+) -> AdapterRegistry:
+    """Register SAM and its human review without installing a local shape adapter."""
+    if default_profile not in profiles:
+        raise ValueError(f"unknown proposal profile: {default_profile}")
+    registry = AdapterRegistry()
+    registry.register(DagProposalAdapter(profiles[default_profile]))
+    registry.register(DagMaskSelectionAdapter())
+    for name, configured in profiles.items():
+        registry.register_backend(name, DagProposalAdapter(configured))
+    return registry

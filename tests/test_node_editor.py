@@ -330,3 +330,55 @@ def test_multi_view_service_configuration(tmp_path, monkeypatch):
         multi_view_config=config,
     )
     assert loaded == [{"fixture": True}]
+
+
+def test_proposal_only_editor_registers_no_local_shape(tmp_path, monkeypatch):
+    from test_workbench_engine import fixture_engine
+
+    from assets_generator import node_editor, workbench_profiles
+    from assets_generator.workbench_profiles import ProposalProfile
+
+    _, _, combined = fixture_engine(tmp_path)
+    config = tmp_path / "sam.json"
+    config.write_text('{"profiles": {"sam": {}}}')
+    monkeypatch.setattr(
+        workbench_profiles,
+        "load_proposal_profiles",
+        lambda *args, **kwargs: {
+            "sam": ProposalProfile(
+                "sam", combined.proposer, combined.proposal_identity, test_only=True
+            )
+        },
+    )
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("local shape config must not load")
+
+    monkeypatch.setattr(workbench_profiles, "load_profiles", forbidden)
+
+    class Server:
+        server_port = 0
+
+        def serve_forever(self):
+            pass
+
+        def server_close(self):
+            pass
+
+    def create(editor, port):
+        assert {entry["name"] for entry in editor.catalog()["adapters"]} == {
+            "image_proposals",
+            "image_mask_selection",
+        }
+        return Server()
+
+    monkeypatch.setattr(node_editor, "create_editor_server", create)
+    node_editor.serve_editor(
+        tmp_path / "editor",
+        0,
+        None,
+        [],
+        proposal_config=config,
+        profile="sam",
+        store=tmp_path / "store",
+    )
