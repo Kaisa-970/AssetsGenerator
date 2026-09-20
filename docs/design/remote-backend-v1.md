@@ -39,4 +39,8 @@ DAG 集成前必须新增明确 remote execution kind 和耐久 remote job 记�
 
 `remote_protocol.py` 实现 RemoteIdentity、RemoteRequest 与严格 JobRecord 解析。请求仅保留规范化 JSON bytes，调用方修改原字典不影响身份；结果/error 也复制为 bytes，尚不导入 Artifact Store。15 项协议测试通过，覆盖键不进入内容摘要、身份串线、job ID 改变、未知状态、终态约束、错误码保留和非规范 JSON 拒绝。mypy（88 源码文件）与相关 Ruff 通过。
 
-HTTP 传输、耐久提交准备、DAG remote kind、真实服务尚未实现。此提交不开放任何联网执行，也不声称响应丢失恢复已验证；下一步用真实本机 HTTP 模拟服务验证同键查询与传输不确定性，再接持久化与调度层。
+HTTP 客户端已在 remote_http.py 实现 submit/lookup/query，禁止自动重试和重定向，限制 JSON 响应体积。真实本机 HTTP 测试在服务已创建 job 后断开连接，验证 lookup 找回同一 job 且提交次数不增加；同键异摘要返回明确冲突，5xx/重定向/超大响应/读取超时/身份不符均为状态未知。已固定 job 查询 404 不当作终态，只有 lookup 404 返回未找到。服务明确 failed 保留原 error code/detail。
+
+耐久提交准备、DAG remote kind、真实模型服务仍未实现。HTTP 客户端没有自动恢复持久化状态，也不能把模拟服务内存映射称为跨服务重启验收；下一步接耐久提交与 job ID 固定。认证、输入上传及输出下载也尚未接入；当前入口仅供受信配置的协议测试，未注册进生产 AdapterRegistry。
+
+HTTP/协议合跑最终 26 项通过；相关 Ruff、mypy（89 源码文件）通过。本轮无真实模型/GPU 验收。
