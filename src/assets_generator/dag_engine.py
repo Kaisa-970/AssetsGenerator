@@ -42,6 +42,12 @@ class DagEngine:
 
     def _plan(self, run: BuildRun) -> BoundDagPlan:
         assert run.dag is not None
+        if any(
+            attempt.remote_binding is not None
+            for node in run.dag.node_states.values()
+            for attempt in node.attempts
+        ):
+            raise ContractError("remote attempt scheduling is not enabled")
         self.repository.verify_reference_closure(run.dag.plan)
         manifest = self.store.get_manifest(run.dag.plan.artifact_id)
         if (

@@ -62,3 +62,11 @@ HTTP/协议合跑最终 26 项通过；相关 Ruff、mypy（89 源码文件）�
 独立记录不能抵御两份记录同时丢失，因此它不替代 DAG 级不可变提交归属，生产 remote kind 仍未开放。已有试验日志无预留时拒绝读取，不自动迁移/补写来掩盖缺失证据。
 
 补测日志缺失/损坏、预留缺失、预留后日志写入失败，以及服务已返回 job 但 observed 写入失败后重开客户端仓库恢复。合跑协议/HTTP/日志 35 项通过；Ruff 与 mypy（90 文件）通过。模拟服务保持存活，不声称服务端重启持久化已验收。
+
+## DAG attempt 归属模型
+
+新增不可变 `RemoteAttemptBinding`，记录 run/node/attempt、实际 input_digest、binding_digest、规范化 endpoint、服务/Backend 身份、完整规范化请求及摘要。submission_key 由 run/node/attempt 确定，不由远程服务或浏览器指定；请求 payload 必须包含对应输入与绑定摘要。此记录作为可选 DagAttempt.remote_binding 持久化，缺省字段从序列化省略，旧 attempt 身份形状保持不变。
+
+模型层核对 node/attempt/input/backend，Repository 创建与保存核对父 run；一旦存在，连活动 attempt 也不能移除或替换绑定。已保存记录可往返读取，状态变为 interrupted 不移除绑定。当前 Scheduler 明确拒绝包含远程绑定的运行，直到 remote execution kind/查询恢复/输出导入完整接通；不能让其落入旧本地恢复路径。
+
+测试：远程绑定/既有 DAG persistence/engine 合跑 50 项通过；随后新增调度拒绝且记录不变回归，绑定文件 9 项通过（两轮重叠不相加）。Ruff、mypy 通过。此步仅建立归属模型，RemoteSubmission 尚未自动由引擎注册/调用，远程执行尚不可用。

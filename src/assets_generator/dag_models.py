@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal, TypeAlias
 
 from .models import ArtifactRef, PortValue
+from .remote_binding import RemoteAttemptBinding
 from .workbench_models import ChildRegistration, WorkerExecution
 
 PortMap: TypeAlias = dict[str, PortValue | list[PortValue]]
@@ -34,6 +35,7 @@ class DagAttempt:
     child_reservation: ChildRegistration | None = None
     child_registration: ChildRegistration | None = None
     child_result: ArtifactRef | None = None
+    remote_binding: RemoteAttemptBinding | None = field(default=None, metadata={"omit_none": True})
 
     def __post_init__(self) -> None:
         if type(self.attempt) is not int or self.attempt < 1:
@@ -70,6 +72,16 @@ class DagNodeState:
             raise ValueError("invalid DAG node status")
         for attempt in self.attempts:
             attempt.__post_init__()
+            remote = attempt.remote_binding
+            if remote is not None:
+                remote.__post_init__()
+                if (
+                    remote.node_id != self.node_id
+                    or remote.attempt != attempt.attempt
+                    or remote.input_digest != attempt.input_digest
+                    or remote.binding_digest != attempt.binding_digest
+                ):
+                    raise ValueError("remote binding must match node/attempt/input/backend")
             reservation = attempt.child_reservation
             registration = attempt.child_registration
             if reservation is not None and (

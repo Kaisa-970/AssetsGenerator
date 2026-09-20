@@ -112,6 +112,14 @@ class DagRepository(WorkbenchRepository):
                 raise ValueError("new DAG run requires revision zero and valid evidence")
             if (self.store.root / "runs" / f"{run.run_id}.json").exists():
                 raise ValueError("run already exists")
+            for node in run.dag.node_states.values():
+                node.__post_init__()
+                for attempt in node.attempts:
+                    if (
+                        attempt.remote_binding is not None
+                        and attempt.remote_binding.run_id != run.run_id
+                    ):
+                        raise ValueError("remote binding parent run mismatch")
             return self.commit(run)
 
     def save(self, run: BuildRun, *, expected_revision: int) -> ArtifactRef:
@@ -149,6 +157,14 @@ class DagRepository(WorkbenchRepository):
                         new_node.attempts[len(old_node.attempts) - 1]
                     ) != canonical_json_bytes(old_node.current()):
                         raise ValueError("successful DAG attempt evidence is immutable")
+                for index, attempt in enumerate(new_node.attempts):
+                    remote = attempt.remote_binding
+                    if remote is not None and remote.run_id != run.run_id:
+                        raise ValueError("remote binding parent run mismatch")
+                    if index < len(old_node.attempts):
+                        old_remote = old_node.attempts[index].remote_binding
+                        if old_remote is not None and remote != old_remote:
+                            raise ValueError("remote attempt binding is immutable")
                 new_node.__post_init__()
             run.dag.__post_init__()
             exempt = set(run.dag.invalid_evidence)
