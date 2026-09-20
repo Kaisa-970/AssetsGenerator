@@ -147,3 +147,21 @@ node frontend/smoke/cpu-image-recover.cjs http://127.0.0.1:8770 recover /tmp/cpu
 capture 只读取成功运行并写入新的本地快照文件，拒绝覆盖已有文件。recover 通过
 浏览器对原 run_id 执行一次显式恢复，比较计划、输入、完整节点状态与输出引用，
 并重新预览图片；不创建新运行。这不覆盖计算过程中崩溃或 GPU 中断。
+
+## 显式图片缩放与分辨率扇出
+
+CPU 示例服务同时提供 `cpu-image-resize` 模板：
+`encode_png → thumbnail / model_input`。上传 RGB 图片后，两个 resize_image@1
+实例共享编码输出，分别生成 128×128 和 512×512 PNG，可从运行面板预览。
+也可在画布拖入 resize_image，连接 encode_png 或其他 RGB PNG 输出。
+ComfyUI 配置目录同样注册此 CPU 节点，可放在复合模型前后。
+
+参数 width、height 各为 1–4096 的整数；resampling 为 nearest、bilinear 或 lanczos，
+默认 512×512/lanczos。尺寸是精确目标宽高，不自动保持纵横比，不裁剪或补边；
+非方形输入缩为正方形会拉伸。节点输出仍是 RGB PNG，不接收 RGBA、mask 或深度。
+输入证据、实际编码及通道被验证，输出不携带原 EXIF/相机信息。
+
+该节点只有像素空间语义，不产生相机内参更新或 ImageWarp。不能把缩放后的图片
+直接当作与原 depth、mask、camera 对齐的观测；这种组合需要另一个带关系契约的
+显式空间转换 Operator。每个实例的参数、输入和输出由 Core 写入 provenance，
+恢复时不重做已成功缩放，也不补回损坏输出。

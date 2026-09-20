@@ -1,0 +1,16 @@
+pipeline: cpu_image_resize
+version: 1
+inputs:
+  image: {kind: rgb_image, carriers: [artifact_ref], schema_name: raster_image, schema_version: "1.0"}
+nodes:
+  encode:
+    operator: encode_png@1
+    inputs: {image: pipeline.inputs.image}
+  thumbnail:
+    operator: resize_image@1
+    parameters: {width: 128, height: 128, resampling: lanczos}
+    inputs: {image: encode.outputs.image}
+  model_input:
+    operator: resize_image@1
+    parameters: {width: 512, height: 512, resampling: bilinear}
+    inputs: {image: encode.outputs.image}

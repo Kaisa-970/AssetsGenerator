@@ -7,6 +7,7 @@ from .comfy_profile import ComfyImageProfile
 from .dag_adapters import AdapterRegistry
 from .dag_comfy_image import ComfyImageAdapter
 from .dag_image_encoding import EncodePngAdapter
+from .dag_image_resize import ResizeImageAdapter
 
 
 def register_comfy_profiles(registry: AdapterRegistry, raw: dict[str, Any], *, base: Path) -> None:
@@ -33,6 +34,7 @@ def register_comfy_profiles(registry: AdapterRegistry, raw: dict[str, Any], *, b
             path = base / path
         adapters[name] = ComfyImageAdapter(entry["endpoint"], ComfyImageProfile.load(path))
     registry.register(EncodePngAdapter())
+    registry.register(ResizeImageAdapter())
     registry.register(adapters[default])
     for name, adapter in adapters.items():
         registry.register_backend(name, adapter)

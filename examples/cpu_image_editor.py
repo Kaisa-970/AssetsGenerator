@@ -10,6 +10,7 @@ from assets_generator.artifact_store import LocalArtifactStore
 from assets_generator.dag_adapters import AdapterRegistry
 from assets_generator.dag_engine import DagEngine
 from assets_generator.dag_image_encoding import EncodePngAdapter
+from assets_generator.dag_image_resize import ResizeImageAdapter
 from assets_generator.dag_persistence import DagRepository
 from assets_generator.node_editor import DraftEditor, create_editor_server
 from assets_generator.node_editor_execution import NodeEditorExecution
@@ -22,6 +23,7 @@ def main() -> None:
     args = parser.parse_args()
     registry = AdapterRegistry()
     registry.register(EncodePngAdapter())
+    registry.register(ResizeImageAdapter())
     with ExitStack() as stack:
         repository = stack.enter_context(
             DagRepository(LocalArtifactStore(args.directory / "store"), args.directory / "runtime")
@@ -30,7 +32,10 @@ def main() -> None:
         stack.callback(execution.close)
         editor = DraftEditor(
             args.directory / "drafts",
-            templates=[Path(__file__).with_name("cpu-image-editor.yaml")],
+            templates=[
+                Path(__file__).with_name(name)
+                for name in ("cpu-image-editor.yaml", "cpu-image-resize.yaml")
+            ],
             execution=execution,
         )
         server = create_editor_server(editor, args.port)

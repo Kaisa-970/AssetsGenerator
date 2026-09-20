@@ -1,4 +1,11 @@
 operators:
+  - name: resize_image
+    version: 1
+    inputs:
+      image: {kind: rgb_image, carriers: [artifact_ref], schema_name: png, schema_version: "1.0"}
+    outputs:
+      image: {kind: rgb_image, carriers: [artifact_ref], schema_name: png, schema_version: "1.0"}
+
   - name: encode_png
     version: 1
     inputs:

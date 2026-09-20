@@ -139,3 +139,5 @@
 - [HTTP 监听进程 SIGKILL 回归](reports/http-listener-crash-cpu.md)
 
 - [真实模型执行期间 HTTP 监听服务中断验收](reports/http-listener-crash-real.md)
+
+- [可组合 RGB 图片缩放节点](reports/image-resize-module.md)
