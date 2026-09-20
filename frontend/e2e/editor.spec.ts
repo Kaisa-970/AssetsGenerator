@@ -675,6 +675,10 @@ test("fixed run graph displays persisted plan instead of edited draft", async ({
   const draftCanvas = page.locator("main.canvas");
   const draftNode = draftCanvas.locator('.react-flow__node[data-id="copy"]');
   await expect(draftNode).toBeVisible();
+  await expect(draftCanvas.locator(".react-flow__viewport")).toHaveAttribute(
+    "style",
+    /scale\(1\)/,
+  );
   const viewport = await draftCanvas
     .locator(".react-flow__viewport")
     .getAttribute("style");
@@ -2049,4 +2053,70 @@ test("input contract editing rejects malformed kinds without corrupting the canv
     page.locator('.react-flow__node[data-id="input:image"]'),
   ).toContainText("rgba_image");
   expect(errors).toEqual([]);
+});
+
+test("repeated catalog additions keep distinct instances clear of existing nodes", async ({
+  page,
+}) => {
+  let saved: any;
+  await page.route("**/api/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (route.request().method() === "PUT")
+      saved = route.request().postDataJSON();
+    await route.fulfill({
+      json:
+        path === "/api/catalog"
+          ? {
+              operators: {
+                "copy@1": {
+                  name: "copy",
+                  version: "1",
+                  inputs: { image: { kinds: ["rgb_image"] } },
+                  outputs: { image: { kinds: ["rgb_image"] } },
+                },
+              },
+              adapters: [{ name: "copy", version: "1", operators: ["copy@1"] }],
+              templates: [],
+            }
+          : { drafts: [] },
+    });
+  });
+  await page.goto("/");
+  const add = page
+    .locator(".catalog-item")
+    .filter({ has: page.getByText("copy", { exact: true }) });
+  await add.click();
+  await expect(page.locator('.react-flow__node[data-id="copy"]')).toBeVisible();
+  await add.click();
+  await expect(
+    page.locator('.react-flow__node[data-id="copy_2"]'),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "保存草稿", exact: true }).click();
+  await expect.poll(() => saved?.pipeline.nodes.copy_2).toBeTruthy();
+  expect(Object.keys(saved.pipeline.nodes)).toEqual(["copy", "copy_2"]);
+  expect(saved.layout.copy_2.x).toBeGreaterThan(saved.layout.copy.x + 200);
+  expect(saved.pipeline.nodes.copy.inputs).toEqual({});
+  expect(saved.pipeline.nodes.copy_2.inputs).toEqual({});
+  const boxes = await page.locator(".react-flow__node").evaluateAll((nodes) =>
+    nodes.map((node) => {
+      const box = node.getBoundingClientRect();
+      return {
+        left: box.left,
+        right: box.right,
+        top: box.top,
+        bottom: box.bottom,
+      };
+    }),
+  );
+  for (let i = 0; i < boxes.length; i++)
+    for (let j = i + 1; j < boxes.length; j++) {
+      const a = boxes[i],
+        b = boxes[j];
+      expect(
+        a.right <= b.left ||
+          b.right <= a.left ||
+          a.bottom <= b.top ||
+          b.bottom <= a.top,
+      ).toBe(true);
+    }
 });
