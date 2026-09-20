@@ -1,0 +1,21 @@
+pipeline: cpu_diamond_demo
+version: '1'
+inputs:
+  source: {kind: quality_evidence, carriers: [artifact_ref], schema_name: DemoText, schema_version: '1'}
+nodes:
+  A:
+    operator: demo_copy@1
+    adapter: demo_copy@1
+    inputs: {source: pipeline.inputs.source}
+  B:
+    operator: demo_copy@1
+    adapter: demo_copy@1
+    inputs: {source: A.outputs.result}
+  C:
+    operator: demo_copy@1
+    adapter: demo_copy@1
+    inputs: {source: A.outputs.result}
+  D:
+    operator: demo_join@1
+    adapter: demo_join@1
+    inputs: {left: B.outputs.result, right: C.outputs.result}

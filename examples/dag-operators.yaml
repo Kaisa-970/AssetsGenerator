@@ -1,0 +1,17 @@
+operators:
+  - name: demo_copy
+    version: '1'
+    inputs:
+      source: {kind: quality_evidence, carriers: [artifact_ref], schema_name: DemoText, schema_version: '1'}
+    outputs:
+      result: {kind: quality_evidence, carriers: [artifact_ref], schema_name: DemoText, schema_version: '1'}
+  - name: demo_join
+    version: '1'
+    inputs:
+      left: {kind: quality_evidence, carriers: [artifact_ref], schema_name: DemoText, schema_version: '1'}
+      right: {kind: quality_evidence, carriers: [artifact_ref], schema_name: DemoText, schema_version: '1'}
+    relations:
+      - validator: independent_inputs@1
+        inputs: [left, right]
+    outputs:
+      result: {kind: quality_evidence, carriers: [artifact_ref], schema_name: DemoText, schema_version: '1'}

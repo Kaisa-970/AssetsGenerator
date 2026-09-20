@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal, TypeAlias
 
 if TYPE_CHECKING:
+    from .dag_models import DagState
     from .workbench_models import WorkbenchState
 
 SCHEMA_VERSION = "1.0"
@@ -40,6 +41,9 @@ ARTIFACT_KINDS = frozenset(
         "provenance_record",
         "build_run",
         "workbench_plan",
+        "dag_plan",
+        "dag_human_request",
+        "dag_human_decision",
         "human_input_request",
         "instance_proposals",
         "instance_selection",
@@ -365,6 +369,7 @@ class BuildRun:
 
     workbench: WorkbenchState | None = None
     parent_run_id: str | None = None
+    dag: DagState | None = field(default=None, metadata={"omit_none": True})
 
     def __post_init__(self) -> None:
         if any(not key or not value for key, value in self.resolved_backends.items()):

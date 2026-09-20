@@ -7,6 +7,7 @@ import types
 from dataclasses import dataclass, field
 from typing import Any, Literal, TypeVar, Union, cast, get_args, get_origin, get_type_hints
 
+from .dag_models import DagState
 from .models import ArtifactRef, BuildRun, NodeAttempt, PortValue
 from .serialization import cache_key, to_primitive
 
@@ -322,7 +323,9 @@ def _decode(annotation: Any, value: Any) -> Any:
         if not isinstance(value, dict):
             raise ValueError("expected record")
         hints = (
-            get_type_hints(annotation, localns={"WorkbenchState": WorkbenchState})
+            get_type_hints(
+                annotation, localns={"WorkbenchState": WorkbenchState, "DagState": DagState}
+            )
             if annotation is BuildRun
             else get_type_hints(annotation)
         )
@@ -340,9 +343,14 @@ def read_build_run(value: dict[str, Any]) -> BuildRun:
     # BuildRun keeps its extension annotation lazy to avoid a models import cycle.
     raw = dict(value)
     extension = raw.pop("workbench", None)
+    dag_extension = raw.pop("dag", None)
+    if extension is not None and dag_extension is not None:
+        raise ValueError("BuildRun cannot contain both workbench and dag state")
     run = decode_record(BuildRun, raw)
     if extension is not None:
         run.workbench = decode_record(WorkbenchState, extension)
+    if dag_extension is not None:
+        run.dag = decode_record(DagState, dag_extension)
     return run
 
 

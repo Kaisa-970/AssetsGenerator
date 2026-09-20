@@ -1,8 +1,8 @@
 # 通用 DAG 编排与节点编辑器实施设计
 
-**状态**：A1 静态编译与 A2 CPU／人工执行切片已实现；完整里程碑 A 与节点编辑器尚未完成  
-**目标版本**：Generic DAG Core v1 / Node Editor v1  
-**适用范围**：本地单机执行、人工等待与恢复、独立 Backend 进程或 HTTP 服务  
+**状态**：A1 静态编译与 A2 CPU／人工执行切片已实现；完整里程碑 A 与节点编辑器尚未完成\
+**目标版本**：Generic DAG Core v1 / Node Editor v1\
+**适用范围**：本地单机执行、人工等待与恢复、独立 Backend 进程或 HTTP 服务\
 **不构成证据**：本文不表示现有 Pipeline 已由通用 DAG 执行器驱动，也不表示 React Flow、HTTP Backend 或 ComfyUI 已接入。
 
 ## 1. 目标

@@ -265,12 +265,12 @@ class WorkbenchRepository:
         self._ready()
         _identifier(run.run_id)
         parent_owner = self.store.root / "parent_run_owners" / f"{run.run_id}.json"
-        if run.workbench is not None and run.parent_run_id is None:
+        if (run.workbench is not None or run.dag is not None) and run.parent_run_id is None:
             if owner is not None:
                 raise ValueError("parent run cannot have child ownership")
             self._ensure_parent_owner(run.run_id)
         elif parent_owner.exists():
-            raise ValueError("owned parent requires workbench state")
+            raise ValueError("owned parent requires orchestration state")
         ownership_path = self.store.root / "run_owners" / f"{run.run_id}.json"
         if ownership_path.exists():
             actual = decode_record(ChildRegistration, read_json(ownership_path))

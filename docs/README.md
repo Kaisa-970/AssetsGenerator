@@ -3,6 +3,7 @@
 ## 架构与契约 · design
 
 - [固定流程节点工作台 v1（实现中）](design/node-workbench-v1.md)
+- [通用 DAG 编排与节点编辑器实施设计（部分实现）](design/generic-dag-orchestration.md)
 
 - [Phase 7 场景到资产首版契约](design/scene-to-assets.md)
 - [SAM v1 实例候选契约](design/sam-instance-proposals.md)
@@ -30,6 +31,8 @@
 
 ## 操作指南 · guides
 
+- [通用 DAG Core：CPU 开发示例](guides/generic-dag-core.md)
+
 - [固定流程节点工作台](guides/node-workbench.md)
 
 - [标准 USD 刚体导出](guides/usd-export.md)
@@ -49,6 +52,12 @@
 - [DA3 独立环境与 Python 接入](guides/da3-environment.md)
 
 ## 评测报告 · reports
+
+- [Generic DAG A2：CPU 与人工节点执行切片](reports/generic-dag-a2.md)
+
+- [Generic DAG A1：静态编译计划](reports/generic-dag-a1.md)
+
+- [2026-09-18：模块化资产 Pipeline 开源框架评估](reports/node-orchestration-framework-evaluation.md)
 
 - [2026-09-18：节点工作台真实操作与恢复 smoke](reports/node-workbench-smoke-v1.md)
 
