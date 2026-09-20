@@ -36,6 +36,7 @@ import {
   renameNode,
   duplicateNode,
   validateDocument,
+  validateInputPort,
   selectBackend,
   selectAdapter,
 } from "./graph";
@@ -912,8 +913,7 @@ function App() {
                         onClick={() => {
                           try {
                             const value = JSON.parse(inputSpec);
-                            if (!value || !portKinds(value).length)
-                              throw Error("输入契约需要 kind");
+                            validateInputPort(value, selected.slice(6));
                             update({
                               ...pipeline,
                               inputs: {

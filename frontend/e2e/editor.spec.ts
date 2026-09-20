@@ -2004,3 +2004,34 @@ test("node inspector exposes authoritative input and output port contracts", asy
     outputs,
   });
 });
+
+test("input contract editing rejects malformed kinds without corrupting the canvas", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.route("**/api/**", (route) =>
+    route.fulfill({
+      json:
+        new URL(route.request().url()).pathname === "/api/catalog"
+          ? { operators: {}, adapters: [], templates: [] }
+          : { drafts: [] },
+    }),
+  );
+  await page.goto("/");
+  await page.locator('.react-flow__node[data-id="input:image"]').click();
+  const input = page.getByLabel("输入契约 · JSON");
+  await input.fill('{"kinds":"rgb_image"}');
+  await page.getByRole("button", { name: "应用输入契约", exact: true }).click();
+  await expect(page.getByRole("status")).toContainText("无效输入：image");
+  await expect(
+    page.locator('.react-flow__node[data-id="input:image"]'),
+  ).toContainText("rgb_image");
+  await input.fill('{"kind":"rgba_image","carriers":["artifact_ref"]}');
+  await page.getByRole("button", { name: "应用输入契约", exact: true }).click();
+  await expect(page.getByRole("status")).toContainText("输入契约已更新");
+  await expect(
+    page.locator('.react-flow__node[data-id="input:image"]'),
+  ).toContainText("rgba_image");
+  expect(errors).toEqual([]);
+});
