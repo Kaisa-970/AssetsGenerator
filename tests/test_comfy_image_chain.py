@@ -10,15 +10,18 @@ from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from PIL import Image
+from test_remote_http import request
 
 from assets_generator.artifact_store import LocalArtifactStore
-from assets_generator.comfy_evidence import image_boundary_evidence
 from assets_generator.comfy_http import ComfyClient
-from assets_generator.comfy_import import import_image
-from assets_generator.comfy_submission import ComfySubmissionJournal, ComfySubmissionUnknown
-from assets_generator.comfy_upload import upload_image
+from assets_generator.comfy_result import publish_image_result
+from assets_generator.comfy_service import finish_owned_image, start_owned_image
+from assets_generator.comfy_submission import ComfySubmissionUnknown
 from assets_generator.comfy_workflow import ComfyWorkflow
 from assets_generator.dag_adapters import AdapterSpec
+from assets_generator.models import ArtifactRef
+from assets_generator.remote_protocol import RemoteRequest
+from assets_generator.remote_service_store import RemoteServiceStore
 
 
 @pytest.mark.parametrize("commit_crash", ["none", "before", "after"])
@@ -105,7 +108,12 @@ def test_image_chain_recovers_without_reupload_resubmit_or_redownload(
     thread = threading.Thread(target=server.serve_forever)
     thread.start()
     store = LocalArtifactStore(tmp_path / "store")
-    journal = ComfySubmissionJournal(tmp_path / "journal.sqlite")
+    journal_path = tmp_path / "journal.sqlite"
+    req = RemoteRequest.create(request().identity, "one", {})
+    owner_path = tmp_path / "owner.sqlite"
+    owner = RemoteServiceStore(owner_path, req.identity)
+    owner.submit(req)
+    owner.transition(req, expected="queued", state="running")
     client = ComfyClient(f"http://127.0.0.1:{server.server_port}")
     try:
         source = store.persist_bytes(
@@ -115,7 +123,6 @@ def test_image_chain_recovers_without_reupload_resubmit_or_redownload(
             schema_version="1.0",
             identity_metadata={"media_type": "image/png", "channel_layout": "RGB"},
         )
-        upload = upload_image(client, store, source)
         workflow = ComfyWorkflow(
             {
                 "1": {"class_type": "LoadImage", "inputs": {"image": "placeholder"}},
@@ -135,42 +142,27 @@ def test_image_chain_recovers_without_reupload_resubmit_or_redownload(
             {"seed": ("2", "seed")},
             image_targets={"image": ("1", "image")},
         )
-        bound = workflow.bind({"seed": 7}, images={"image": upload}, endpoint=client.endpoint)
-        journal.prepare(
-            "one",
-            deployment={
-                "endpoint": client.endpoint,
-                "workflow": bound,
-                "input": upload,
-                "workflow_digest": bound["workflow_digest"],
-                "mapping_digest": bound["mapping_digest"],
-                "internal_identity": "unverified",
-            },
-            prompt=bound["prompt"],
-        )
+
+        def start():
+            return start_owned_image(
+                owner,
+                req,
+                journal_path,
+                client,
+                store,
+                workflow,
+                images={"image": source},
+                parameters={"seed": 7},
+                deployment_claims={"fixture": True},
+            )
+
         if lose_ack:
             with pytest.raises(ComfySubmissionUnknown):
-                client.submit(journal, "one")
+                start()
         else:
-            client.submit(journal, "one")
-        journal.close()
-        journal = ComfySubmissionJournal(tmp_path / "journal.sqlite")
-        observed = client.observe(journal, "one")
-        result = import_image(client, journal, store, "one", node="3", index=0, mode="RGB")
-        assert store.blob_path(result).read_bytes() == output_bytes
-        assert source != result
-        from test_remote_http import request
-
-        from assets_generator.comfy_result import fix_image_result, recover_image_result
-        from assets_generator.remote_protocol import RemoteRequest
-        from assets_generator.remote_service_store import RemoteServiceStore
-
-        req = RemoteRequest.create(request().identity, "one", {})
-        owner_path = tmp_path / "owner.sqlite"
+            start()
+        owner.close()
         owner = RemoteServiceStore(owner_path, req.identity)
-        owner.submit(req)
-        owner.transition(req, expected="queued", state="running")
-        owner.authorize_comfy_submission(req, journal.submission_binding("one"))
         persist = store.persist_structured
 
         def interrupted(value):
@@ -178,65 +170,79 @@ def test_image_chain_recovers_without_reupload_resubmit_or_redownload(
                 persist(value)
             raise OSError("injected result commit crash")
 
-        try:
-            if commit_crash != "none":
-                monkeypatch.setattr(store, "persist_structured", interrupted)
-                with pytest.raises(ComfySubmissionUnknown):
-                    fix_image_result(owner, req, journal, store, node="3", index=0, mode="RGB")
-            else:
-                fixed = fix_image_result(owner, req, journal, store, node="3", index=0, mode="RGB")
-        finally:
-            owner.close()
+        if commit_crash != "none":
+            monkeypatch.setattr(store, "persist_structured", interrupted)
+            with pytest.raises(ComfySubmissionUnknown):
+                finish_owned_image(
+                    owner, req, journal_path, client, store, node="3", index=0, mode="RGB"
+                )
+        else:
+            fixed = finish_owned_image(
+                owner, req, journal_path, client, store, node="3", index=0, mode="RGB"
+            )
+        owner.close()
         owner = RemoteServiceStore(owner_path, req.identity)
         monkeypatch.setattr(store, "persist_structured", lambda *_: pytest.fail("repaired result"))
-        try:
-            if commit_crash == "before":
-                with pytest.raises(ComfySubmissionUnknown):
-                    fix_image_result(owner, req, journal, store, node="3", index=0, mode="RGB")
-            else:
-                fixed = recover_image_result(owner, req, store)
-                assert (
-                    fix_image_result(owner, req, journal, store, node="3", index=0, mode="RGB")
-                    == fixed
+        if commit_crash == "before":
+            with pytest.raises(ComfySubmissionUnknown):
+                finish_owned_image(
+                    owner, req, journal_path, client, store, node="3", index=0, mode="RGB"
                 )
-                store.blob_path(fixed).unlink()
-                with pytest.raises(ComfySubmissionUnknown):
-                    fix_image_result(owner, req, journal, store, node="3", index=0, mode="RGB")
-                assert not store.blob_path(fixed).exists()
-        finally:
-            owner.close()
-            monkeypatch.setattr(store, "persist_structured", persist)
-        evidence = image_boundary_evidence(journal, store, "one", node="3", index=0, mode="RGB")
-        evidence_ref = store.persist_structured(evidence)
-        loaded = store.read_structured(evidence_ref)
-        assert loaded["inputs"]["image"] == {"artifact_id": source.artifact_id}
-        assert loaded["outputs"]["image"] == {"artifact_id": result.artifact_id}
-        assert set(loaded["internal_verification"].values()) == {"unverified"}
-        from assets_generator.workbench_persistence import _references
+            assert owner.lookup(req).state == "running"
+        else:
+            fixed = finish_owned_image(
+                owner, req, journal_path, client, store, node="3", index=0, mode="RGB"
+            )
+            loaded = store.read_structured(fixed)
+            result = ArtifactRef(loaded["outputs"]["image"]["artifact_id"])
+            assert result != source
+            assert store.blob_path(result).read_bytes() == output_bytes
+            assert loaded["inputs"]["image"] == {"artifact_id": source.artifact_id}
+            assert set(loaded["internal_verification"].values()) == {"unverified"}
+            from assets_generator.workbench_persistence import _references
 
-        assert set(_references(loaded)) == {source, result}
+            assert set(_references(loaded)) == {source, result}
+            terminal = publish_image_result(owner, req, store)
+            assert terminal.state == "succeeded"
         assert calls.count(("POST", "/upload/image")) == 1
         assert calls.count(("POST", "/prompt")) == 1
+        assert sum(method == "GET" and "type=output" in path for method, path in calls) == 1
     finally:
-        journal.close()
+        owner.close()
         server.shutdown()
         server.server_close()
         thread.join()
+
     before = list(calls)
-    journal = ComfySubmissionJournal(tmp_path / "journal.sqlite")
+    # Completed results must remain usable after the internal journal disappears.
+    if commit_crash != "before":
+        journal_path.unlink()
+        journal_path.with_name(journal_path.name + ".identity.json").unlink()
+    owner = RemoteServiceStore(owner_path, req.identity)
     try:
-        assert client.observe(journal, "one") == observed
-        assert import_image(client, journal, store, "one", node="3", index=0, mode="RGB") == result
+        if commit_crash == "before":
+            with pytest.raises(ComfySubmissionUnknown):
+                finish_owned_image(
+                    owner, req, journal_path, client, store, node="3", index=0, mode="RGB"
+                )
+        else:
+            assert (
+                finish_owned_image(
+                    owner, req, journal_path, client, store, node="3", index=0, mode="RGB"
+                )
+                == fixed
+            )
+            with pytest.raises(ComfySubmissionUnknown):
+                finish_owned_image(
+                    owner, req, journal_path, client, store, node="different", index=0, mode="RGB"
+                )
+            assert publish_image_result(owner, req, store) == terminal
+            assert owner.download(req, "image")[1] == output_bytes
+            assert owner.download(req, "evidence")[1] == store.blob_path(fixed).read_bytes()
+            store.blob_path(result).unlink()
+            with pytest.raises(ComfySubmissionUnknown):
+                publish_image_result(owner, req, store)
+            assert not store.blob_path(result).exists()
         assert calls == before
-        assert (
-            image_boundary_evidence(journal, store, "one", node="3", index=0, mode="RGB")
-            == evidence
-        )
-        store.blob_path(result).unlink()
-        with pytest.raises(ValueError, match="missing or corrupt"):
-            image_boundary_evidence(journal, store, "one", node="3", index=0, mode="RGB")
-        with pytest.raises(ValueError, match="missing or corrupt"):
-            import_image(client, journal, store, "one", node="3", index=0, mode="RGB")
-        assert not store.blob_path(result).exists()
     finally:
-        journal.close()
+        owner.close()

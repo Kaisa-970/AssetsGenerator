@@ -291,3 +291,16 @@ Blob 和 succeeded 状态；发布入口再次核对证据 Artifact 身份、提
 发布成功表示复合图像边界已导入与校验，不代表内部模型来源全部已验证，也不是
 3D AssetRelease。首次入口的图片 HTTP 端到端迁移、上传中断恢复、失败历史发布、
 受信配置入口及 DAG/画布接入仍待完成，尚无真实 ComfyUI 验收。
+
+### 组合入口的完整 HTTP 验证
+
+图片 HTTP 链已迁移到 start_owned_image → finish_owned_image → publish_image_result，
+不再由测试直接拼接上传、提交与结果固定。6 个场景覆盖正常/丢回执与证据写入
+前/后中断；每个场景严格断言一次上传、一次 prompt POST、一次输出下载。写前
+中断保留阻塞，写后可采用结果并发布；重开外层数据库后下载图片与证据内容一致。
+
+关闭 HTTP 服务并删除内部 journal/identity 后，已完成结果仍可离线采用与发布
+校验；更换输出映射拒绝，删除输出 Artifact 后阻塞且不修复。ComfyUI/服务相关
+108 项测试及 Ruff 格式/检查通过。本轮只改测试和文档，未重跑 mypy。
+这是真实本机 HTTP 传输加协议 fixture，没有执行 ComfyUI 或模型。仍需受信启动
+配置、上传前意图固定、失败终态处理及 DAG/画布接入。
