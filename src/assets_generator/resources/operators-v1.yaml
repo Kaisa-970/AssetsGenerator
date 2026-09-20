@@ -65,6 +65,17 @@ operators:
       spatial_info: {kind: asset_spatial_info, carriers: [structured]}
       components: {kind: component_provenance, cardinality: zero_or_more, carriers: [structured], schema_name: ComponentProvenance, schema_version: "1.0"}
 
+  - name: geometry_validation
+    version: 1
+    relations:
+      - validator: canonical_mesh_source@1
+        inputs: [mesh, source_mesh]
+    inputs:
+      mesh: {kind: triangle_mesh, carriers: [artifact_ref], requires_frame: true, requires_unit: true}
+      source_mesh: {kind: triangle_mesh, carriers: [artifact_ref], requires_frame: true, requires_unit: true}
+    outputs:
+      report: {kind: quality_report, carriers: [artifact_ref], schema_name: QualityReport, schema_version: "1.0"}
+
   - name: validation
     version: 1
     inputs:

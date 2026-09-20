@@ -783,7 +783,10 @@ def validate_geometry(
     *,
     derived_from: ArtifactRef,
     run_id: str | None = None,
+    canonical_node_id: str | None = "canonicalize",
 ) -> QualityReport:
+    if canonical_node_id is None and not run_id:
+        raise ContractError("arbitrary canonical node identity requires an explicit run")
     checks: list[QualityCheck] = []
     try:
         scene = _load_scene(store.blob_path(mesh).read_bytes())
@@ -845,7 +848,7 @@ def validate_geometry(
             and record["output_artifact_id"] == mesh.artifact_id
             and derived_from.artifact_id in record["derived_from_artifact_ids"]
             and record["operator"] == "canonicalize"
-            and record["node_id"] == "canonicalize"
+            and (canonical_node_id is None or record["node_id"] == canonical_node_id)
             and (run_id is None or record["run_id"] == run_id)
         ):
             provenance_matches.append(reference)

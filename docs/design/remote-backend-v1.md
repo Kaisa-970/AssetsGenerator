@@ -319,3 +319,22 @@ profile/handler/DAG shape 合跑 6 项通过，覆盖缺失身份、Backend 不�
 新增 CanonicalizeAdapter 调用既有 canonicalize_glb，固定规则版本、阈值、tie-break、原点/尺度规则及 spatial/operators 源码摘要到 Adapter 参数身份。当前只支持空 components，不开放组件映射变换。canonicalize Operator 增加 native_mesh_frame relation，验证 mesh 元数据与 NativeFrame 一致；同时绑定非空 components 的复杂汇合仍未开放。仓库与打包 YAML 同步更新。
 
 修正 DAG 未绑定 zero_or_more/many 端口的执行缺省：依据 OperatorSpec 生成空列表，不把缺省 None 送入集合端口。远程 shape 联调现在继续运行 canonicalize，并校验 +Z 输出及 provenance 中的固定规则参数。相关远程 shape/relations/spatial/engine/workflow/compiled plan 合跑 136 项通过，Ruff/mypy（105 文件）通过；本轮未重新运行真实模型。修改 Operator 契约会使旧固定计划拒绝按新契约重新绑定，未提供历史计划迁移；此前真实 smoke 报告仍对应原代码基线。
+
+
+### 通用 DAG 的几何 QA 接口
+
+远程 shape 后可串接 `canonicalize_shape@1` 和 `geometry_validation@1` Adapter。
+后者使用新增的同名 Operator，显式输入 canonical `mesh` 和原始 `source_mesh`，
+通过 `canonical_mesh_source@1` 关系检查核对规范化来源。执行时进一步要求
+canonicalization provenance 属于当前 BuildRun；节点实例名称不限定为 `canonicalize`。
+旧 workflow 的 `validation@1` 及默认实例名检查保持原有契约。
+
+报告复用 `geometry-v1`，持久化为 `QualityReport` Artifact，覆盖可加载性、非空有限几何、
+digest、空间声明和来源记录。relative scale / estimated forward 保持 warn；
+render-back 和 collision 未执行，不推断外观质量。QA 节点成功表示报告已生成，
+下游发布仍须检查 `overall_status`，不能将节点成功等同于 QA 通过。
+
+CPU HTTP 回归覆盖远程 shape → 任意名称的 canonicalization → QA 及服务关闭后的恢复，
+并检查跨运行来源不通过、错误 source mesh 拒绝。此改动未重新执行真实 GPU 推理，
+也尚未把 assemble/export 接入这条模块化测试链。Operator 与关系实现摘要发生改变，
+旧固定计划不作隐式迁移。

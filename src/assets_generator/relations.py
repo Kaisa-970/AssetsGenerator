@@ -205,6 +205,7 @@ def default_relation_registry() -> RelationValidatorRegistry:
     registry = RelationValidatorRegistry()
     registry.register(IndependentInputsValidator())
     registry.register(NativeMeshFrameValidator())
+    registry.register(CanonicalMeshSourceValidator())
     return registry
 
 
@@ -229,3 +230,33 @@ class NativeMeshFrameValidator:
             context.store.get_manifest(mesh.artifact_id).identity.identity_metadata,
             BackendNativeFrame(**frame.value),
         )
+
+
+class CanonicalMeshSourceValidator:
+    spec = RelationValidatorSpec(
+        "canonical_mesh_source", "1", sha256_bytes(Path(__file__).read_bytes())
+    )
+
+    def validate_static(self, context: StaticRelationContext) -> None:
+        if set(context.inputs) != {"mesh", "source_mesh"}:
+            raise ContractError("canonical mesh relation requires mesh and source_mesh")
+
+    def validate_runtime(self, context: RuntimeRelationContext) -> None:
+        from .models import ArtifactRef
+
+        mesh = context.values.get("mesh")
+        source = context.values.get("source_mesh")
+        if not isinstance(mesh, ArtifactRef) or not isinstance(source, ArtifactRef):
+            raise ContractError("canonical mesh relation requires artifact references")
+        for ref in context.store.find_artifacts("provenance_record"):
+            if not context.store.verify_digest(ref):
+                continue
+            record = context.store.read_structured(ref)
+            if (
+                record.get("operator") == "canonicalize"
+                and record.get("operator_version") == "1"
+                and record.get("output_artifact_id") == mesh.artifact_id
+                and source.artifact_id in record.get("derived_from_artifact_ids", [])
+            ):
+                return
+        raise ContractError("canonical mesh does not derive from the supplied source mesh")
