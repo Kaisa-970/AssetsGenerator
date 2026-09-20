@@ -300,3 +300,59 @@ def test_nested_matrix_dimensions_validate_before_execution():
         assert location in str(error.value)
     with pytest.raises(ContractError):
         AdapterSpec("matrix", "1", ("copy@1",), parameter_schema=schema, defaults={"matrix": [[]]})
+
+
+def test_array_dimensions_are_pinned_across_plan_reload():
+    from assets_generator.compiled_plan import thaw
+
+    plan, registry = fixture()
+    adapter = registry._adapters["copy@1"]
+    schema = thaw(adapter.spec.parameter_schema)
+    labels = schema["properties"]["options"]["properties"]["labels"]
+    labels.update(minItems=1, maxItems=2)
+    adapter.spec = replace(adapter.spec, parameter_schema=schema)
+    bound = registry.bind_plan(plan)
+    restored = BoundDagPlan.from_json(bound.to_json(), registry=registry)
+    assert restored == bound
+    assert (
+        restored.bindings["instance"].spec["parameter_schema"]["properties"]["options"][
+            "properties"
+        ]["labels"]["maxItems"]
+        == 2
+    )
+
+    # A different valid bound is still a different execution contract.
+    changed = thaw(adapter.spec.parameter_schema)
+    changed["properties"]["options"]["properties"]["labels"]["maxItems"] = 3
+    adapter.spec = replace(adapter.spec, parameter_schema=changed)
+    assert registry.bind_plan(plan).plan_id != bound.plan_id
+    with pytest.raises(ContractError, match="bindings"):
+        BoundDagPlan.from_json(bound.to_json(), registry=registry)
+    with pytest.raises(ContractError, match="identity changed"):
+        registry.resolve(bound.bindings["instance"])
+
+
+def test_array_dimension_violation_rejected_during_registry_binding():
+    from assets_generator.compiled_plan import thaw
+
+    plan, registry = fixture(parameters={"options": {"labels": ["a", "b"]}})
+    adapter = registry._adapters["copy@1"]
+    schema = thaw(adapter.spec.parameter_schema)
+    schema["properties"]["options"]["properties"]["labels"]["maxItems"] = 1
+    adapter.spec = replace(adapter.spec, parameter_schema=schema)
+    with pytest.raises(ContractError, match="parameters.options.labels has more than maxItems"):
+        registry.bind_plan(plan)
+
+
+@pytest.mark.parametrize("kind", ["number", "string", "object"])
+def test_array_dimensions_cannot_be_attached_to_other_parameter_types(kind):
+    with pytest.raises(ContractError, match="do not apply"):
+        AdapterSpec(
+            "bad",
+            "1",
+            ("copy@1",),
+            parameter_schema={
+                "type": "object",
+                "properties": {"value": {"type": kind, "maxItems": 2}},
+            },
+        )
