@@ -174,3 +174,9 @@ node frontend/smoke/image-resize.cjs <EDITOR_URL> <RGB_IMAGE> <NEW_EVIDENCE_DIRE
 
 目录须预先创建且没有同名验收记录。脚本从原编码模板添加两个缩放节点、手工连线、
 修改参数，核对浏览器预览真实尺寸及恢复不增加 attempt；不用配置任何模型。
+
+使用标准 Operator 目录启动的本地模型、SAM-only、远程 Shape 或 ComfyUI 编辑器，
+均提供 encode_png 和 resize_image CPU 模块；无需额外配置模型资源。
+即使远程模型服务离线，只包含 CPU 节点的图仍可执行。
+自定义 Operator 文件只开放其中已声明契约的模块，不能靠注册 Adapter 绕过端口定义。
+这不增加隐式 RGB/RGBA 转换；连接 Shape 的 RGBA 端口仍须经过明确的选区准备节点。

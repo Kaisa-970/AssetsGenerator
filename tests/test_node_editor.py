@@ -375,6 +375,8 @@ def test_proposal_only_editor_registers_no_local_shape(tmp_path, monkeypatch):
         assert {entry["name"] for entry in editor.catalog()["adapters"]} == {
             "image_proposals",
             "image_mask_selection",
+            "encode_png",
+            "resize_image",
         }
         return Server()
 
@@ -453,3 +455,58 @@ def test_execution_editor_uses_authoritative_custom_contracts_and_relations(tmp_
                 )
         finally:
             service.close()
+
+
+def test_remote_only_editor_runs_cpu_utilities_without_contacting_service(tmp_path, monkeypatch):
+    from io import BytesIO
+
+    from PIL import Image
+    from test_node_editor_execution import wait
+
+    from assets_generator import node_editor
+
+    config = tmp_path / "remote.json"
+    config.write_text(
+        json.dumps(
+            {
+                "default_profile": "offline",
+                "profiles": {
+                    "offline": {
+                        "endpoint": "http://127.0.0.1:1",
+                        "service_id": "offline",
+                        "backend_digest": "sha256:" + "a" * 64,
+                    }
+                },
+            }
+        )
+    )
+
+    class Server:
+        server_port = 0
+
+        def serve_forever(self):
+            pass
+
+        def server_close(self):
+            pass
+
+    def create(editor, port):
+        graph = yaml.safe_load(Path("examples/cpu-image-resize.yaml").read_text())
+        assert editor.compile(graph)["execution_ready"]
+        image = BytesIO()
+        Image.new("RGB", (4, 2), "red").save(image, format="PNG")
+        service = editor.execution
+        uploaded = service.upload_image(image.getvalue())
+        created = service.start(graph, image_ref=uploaded["image_ref"])
+        completed = wait(service, created["run"]["run_id"])
+        assert completed["run"]["status"] == "succeeded"
+        assert all(len(s["attempts"]) == 1 for s in completed["run"]["dag"]["node_states"].values())
+        payload = service.output(created["run"]["run_id"], "thumbnail", "image")
+        with Image.open(BytesIO(payload.data)) as output:
+            assert output.size == (128, 128)
+        return Server()
+
+    monkeypatch.setattr(node_editor, "create_editor_server", create)
+    node_editor.serve_editor(
+        tmp_path / "editor", 0, None, [], remote_config=config, store=tmp_path / "store"
+    )

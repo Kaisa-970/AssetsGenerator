@@ -438,6 +438,15 @@ def serve_editor(
                 from .dag_comfy_profiles import register_comfy_profiles
 
                 register_comfy_profiles(registry, read_json(comfy_config), base=comfy_config.parent)
+            # Comfy profiles already register these shared CPU adapters. Custom
+            # Operator catalogs only expose utilities whose contracts they contain.
+            if comfy_config is None:
+                from .dag_image_encoding import EncodePngAdapter
+                from .dag_image_resize import ResizeImageAdapter
+
+                for utility in (EncodePngAdapter(), ResizeImageAdapter()):
+                    if utility.spec.operators[0] in editor.specs:
+                        registry.register(utility)
             repository = DagRepository(LocalArtifactStore(store), directory / "runtime")
             stack.enter_context(repository)
             execution = NodeEditorExecution(

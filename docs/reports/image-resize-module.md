@@ -33,3 +33,14 @@ naturalWidth/naturalHeight 与表单尺寸一致，两节点实际输入均指�
 外部证据位于 `<DATASET_ROOT>/resize-browser-cpu-v1/rechecked/`：browser.log、
 resize-browser.json、resize-browser.png；运行 Store 位于父目录 editor/。
 Node 语法检查、Prettier 和 git diff --check 通过。本补验不调用模型或 GPU。
+
+## 共享编辑器目录
+
+补齐普通模型配置的目录：标准 Operator 目录下，本地模型、SAM-only 和远程 Shape
+编辑器也注册编码/缩放 CPU Adapter；ComfyUI 复用其已有注册，避免重复。
+自定义 Operator 集合只注册其声明的实用模块，不向多视图专项契约强加图片端口。
+
+启动与目录相关测试 **15 passed in 3.69s**；新增远程服务不可达时仍成功执行
+encode→双 resize 的回归，并读取 128×128 输出；既有 SAM-only、ComfyUI-only 及
+多视图专项目录启动回归通过。Ruff、mypy（131 文件）、git diff --check 通过。
+此项没有运行新 GPU 推理或浏览器 smoke。
