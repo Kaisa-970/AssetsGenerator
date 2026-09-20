@@ -299,3 +299,7 @@ shape_handler_from_profile 仅接受非 test_only 且带 identity_check 的已�
 workbench_profiles.load_shape_profiles 接受仅含 profiles 的配置，返回 ShapeProfile（无 proposer/SAM 身份）。从原 workbench loader 提取共用 shape 构造与资源核验，原 load_profiles 继续组合 SAM 和 shape，避免复制模型参数/摘要实现。shape_handler_from_profile 同时接受两种已验证 profile。
 
 profile/原 workbench loader/DAG shape 合跑 26 项通过；新增测试将 SAM 构造器替换为必定抛错的函数，验证 shape-only 路径不调用它，并拒绝混入 sam 配置。Ruff/mypy（103 文件）通过。下一步提供服务启动/显式执行命令与真实资源验收，未运行 GPU。
+
+## 独立命令入口
+
+新增 python -m assets_generator.remote_shape_cli：serve 仅监听登记/查询，execute 显式执行指定 queued 作业，inspect 只读结果，observe 重新探测进程。全部使用 shape-only profile，并固定数据库服务身份；操作说明见 ../guides/remote-shape-service.md。命令/profile 合跑 5 项通过，Ruff/mypy（104 文件）通过；CLI 测试替换 profile/handler，不证明真实模型可用。尚未进行真实资源启动或 GPU 验收。

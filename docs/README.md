@@ -2,6 +2,8 @@
 
 [节点编辑器使用指南](guides/node-editor.md) · [B2 实现状态与剩余项](reports/node-editor-b2-status.md)
 
+[远程 shape 服务实验入口](guides/remote-shape-service.md)
+
 ## 架构与契约 · design
 
 - [固定流程节点工作台 v1（实现中）](design/node-workbench-v1.md)
