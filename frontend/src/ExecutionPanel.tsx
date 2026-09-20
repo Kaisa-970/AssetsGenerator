@@ -62,11 +62,16 @@ function restoreCreation(): { request?: CreationRequest; error?: string } {
       !(
         (typeof value.image_path === "string" &&
           value.image_path.length > 0 &&
-          !value.image_ref && !value.observations_ref) ||
+          !value.image_ref &&
+          !value.observations_ref) ||
         (value.image_ref &&
           typeof value.image_ref.artifact_id === "string" &&
-          !value.image_path && !value.observations_ref) ||
-        (value.observations_ref && typeof value.observations_ref.artifact_id === "string" && !value.image_path && !value.image_ref)
+          !value.image_path &&
+          !value.observations_ref) ||
+        (value.observations_ref &&
+          typeof value.observations_ref.artifact_id === "string" &&
+          !value.image_path &&
+          !value.image_ref)
       )
     )
       throw Error("保存的请求格式无效");
@@ -90,7 +95,9 @@ export function ExecutionPanel({
   const [imagePath, setImagePath] = useState("");
   const [observationsId, setObservationsId] = useState("");
   const [observationFiles, setObservationFiles] = useState<string[]>([]);
-  const multiView = Object.keys(pipeline.inputs).length === 1 && "observations" in pipeline.inputs;
+  const multiView =
+    Object.keys(pipeline.inputs).length === 1 &&
+    "observations" in pipeline.inputs;
   const [imageSource, setImageSource] = useState("path");
   const [uploaded, setUploaded] = useState<{
     name: string;
@@ -236,7 +243,11 @@ export function ExecutionPanel({
     setObservationsId("");
     setObservationFiles([]);
     setUploadMessage("");
-    if (files.length < 2 || files.length > 32 || files.some(f => !f.size || f.size > 20 * 1024 * 1024)) {
+    if (
+      files.length < 2 ||
+      files.length > 32 ||
+      files.some((f) => !f.size || f.size > 20 * 1024 * 1024)
+    ) {
       setUploadMessage("请选择 2–32 张 RGB 图片，每张不超过 20 MiB。");
       return;
     }
@@ -246,17 +257,23 @@ export function ExecutionPanel({
       const images = [];
       for (const [index, file] of files.entries()) {
         setUploadMessage(`正在上传 ${index + 1}/${files.length}：${file.name}`);
-        const response = await fetch("/api/inputs/image", {method: "POST", headers: {"Content-Type": "application/octet-stream"}, body: file});
+        const response = await fetch("/api/inputs/image", {
+          method: "POST",
+          headers: { "Content-Type": "application/octet-stream" },
+          body: file,
+        });
         const value = await response.json();
         if (!response.ok) throw Error(value.error || "上传失败");
         images.push(value.image_ref);
       }
-      const bundle = await request("/api/inputs/observations", {images});
+      const bundle = await request("/api/inputs/observations", { images });
       setObservationsId(bundle.observations_ref.artifact_id);
-      setObservationFiles(files.map(f => f.name));
+      setObservationFiles(files.map((f) => f.name));
       setUploadMessage("观测包已创建；点击启动才会执行模型。");
     } catch (error) {
-      setUploadMessage(`导入失败：${String(error)}。未创建运行，可重新选择文件。`);
+      setUploadMessage(
+        `导入失败：${String(error)}。未创建运行，可重新选择文件。`,
+      );
     } finally {
       uploadPending.current = false;
       setUploading(false);
@@ -266,70 +283,96 @@ export function ExecutionPanel({
     <section className="execution-panel">
       <div className="section-label">创建新运行</div>
       <p>已配置模型：{profile || "本地服务配置"}</p>
-      {multiView ? <div>
-        <label>选择多视图照片（RGB，2–32 张）
-          <input type="file" multiple accept="image/png,image/jpeg,image/webp" aria-label="上传多视图照片" disabled={pending || uploading}
-            onChange={e => { const files = Array.from(e.target.files || []); e.target.value = ""; if (files.length) void uploadObservations(files); }} />
-        </label>
-        <p>按选择顺序分配视图 ID；不自动补充相机、mask 或深度。</p>
-        {observationFiles.length > 0 && <ol>{observationFiles.map((name, i) => <li key={i}>{name}</li>)}</ol>}
-        {uploadMessage && <p role="status">{uploadMessage}</p>}
-        <label>
-        已导入的 ObservationBundle Artifact ID
-        <input aria-label="观测包 Artifact ID" value={observationsId}
-          placeholder="sha256:…" disabled={pending || uploading}
-          onChange={(e) => setObservationsId(e.target.value)} />
-        <p>也可使用 import-observations 导入后的已有引用。</p>
-      </label></div> : <>
-      <label>
-        图片来源
-        <select
-          aria-label="图片来源"
-          value={imageSource}
-          disabled={pending || uploading}
-          onChange={(e) => setImageSource(e.target.value)}
-        >
-          <option value="path">服务器本地路径</option>
-          <option value="upload">从浏览器上传</option>
-        </select>
-      </label>
-      {imageSource === "path" ? (
-        <label>
-          服务所在电脑的图片绝对路径
-          <input
-            aria-label="运行图片路径"
-            placeholder="/path/to/image.png"
-            value={imagePath}
-            disabled={pending}
-            onChange={(e) => setImagePath(e.target.value)}
-          />
-        </label>
-      ) : (
+      {multiView ? (
         <div>
           <label>
-            上传图片（最多 20 MiB）
+            选择多视图照片（RGB，2–32 张）
             <input
               type="file"
-              aria-label="上传运行图片"
-              accept="image/*"
+              multiple
+              accept="image/png,image/jpeg,image/webp"
+              aria-label="上传多视图照片"
               disabled={pending || uploading}
               onChange={(e) => {
-                const file = e.target.files?.[0];
+                const files = Array.from(e.target.files || []);
                 e.target.value = "";
-                void upload(file);
+                if (files.length) void uploadObservations(files);
               }}
             />
           </label>
-          {uploading && <p>正在上传并验证图片…</p>}
-          {uploaded && (
-            <p className="run-identity">
-              {uploaded.name} · {String(uploaded.ref.artifact_id)}
-            </p>
+          <p>按选择顺序分配视图 ID；不自动补充相机、mask 或深度。</p>
+          {observationFiles.length > 0 && (
+            <ol>
+              {observationFiles.map((name, i) => (
+                <li key={i}>{name}</li>
+              ))}
+            </ol>
           )}
           {uploadMessage && <p role="status">{uploadMessage}</p>}
+          <label>
+            已导入的 ObservationBundle Artifact ID
+            <input
+              aria-label="观测包 Artifact ID"
+              value={observationsId}
+              placeholder="sha256:…"
+              disabled={pending || uploading}
+              onChange={(e) => setObservationsId(e.target.value)}
+            />
+            <p>也可使用 import-observations 导入后的已有引用。</p>
+          </label>
         </div>
+      ) : (
+        <>
+          <label>
+            图片来源
+            <select
+              aria-label="图片来源"
+              value={imageSource}
+              disabled={pending || uploading}
+              onChange={(e) => setImageSource(e.target.value)}
+            >
+              <option value="path">服务器本地路径</option>
+              <option value="upload">从浏览器上传</option>
+            </select>
+          </label>
+          {imageSource === "path" ? (
+            <label>
+              服务所在电脑的图片绝对路径
+              <input
+                aria-label="运行图片路径"
+                placeholder="/path/to/image.png"
+                value={imagePath}
+                disabled={pending}
+                onChange={(e) => setImagePath(e.target.value)}
+              />
+            </label>
+          ) : (
+            <div>
+              <label>
+                上传图片（最多 20 MiB）
+                <input
+                  type="file"
+                  aria-label="上传运行图片"
+                  accept="image/*"
+                  disabled={pending || uploading}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = "";
+                    void upload(file);
+                  }}
+                />
+              </label>
+              {uploading && <p>正在上传并验证图片…</p>}
+              {uploaded && (
+                <p className="run-identity">
+                  {uploaded.name} · {String(uploaded.ref.artifact_id)}
+                </p>
+              )}
+              {uploadMessage && <p role="status">{uploadMessage}</p>}
+            </div>
+          )}
+        </>
       )}
-      </>}
       <p>启动时后端重新编译当前草稿并固定计划。修改画布只影响下一次新运行。</p>
       {executionReason && (
         <p role="alert">当前入口不可运行：{executionReason}</p>
@@ -340,7 +383,11 @@ export function ExecutionPanel({
           pending ||
           unresolvedCreation ||
           uploading ||
-          (multiView ? !observationsId.trim() : imageSource === "path" ? !imagePath.trim() : !uploaded) ||
+          (multiView
+            ? !observationsId.trim()
+            : imageSource === "path"
+              ? !imagePath.trim()
+              : !uploaded) ||
           !!executionReason
         }
         onClick={() =>
@@ -348,9 +395,11 @@ export function ExecutionPanel({
             submitCreation({
               pipeline: structuredClone(pipeline),
               idempotency_key: crypto.randomUUID(),
-              ...(multiView ? {observations_ref: {artifact_id: observationsId.trim()}} : imageSource === "path"
-                ? { image_path: imagePath.trim() }
-                : { image_ref: structuredClone(uploaded!.ref) }),
+              ...(multiView
+                ? { observations_ref: { artifact_id: observationsId.trim() } }
+                : imageSource === "path"
+                  ? { image_path: imagePath.trim() }
+                  : { image_ref: structuredClone(uploaded!.ref) }),
             }),
           )
         }
