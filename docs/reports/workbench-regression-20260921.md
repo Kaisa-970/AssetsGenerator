@@ -95,3 +95,17 @@ attempt 原样保留，原 JPEG 输入摘要仍有效，PNG 未被重建，输�
 测试同时拦截执行器，禁止恢复通过重新运行 Adapter 修复缺失证据。
 `tests/test_cpu_image_editor_example.py` 的三项测试通过；Ruff lint/format 通过。
 本次没有修改 Core 行为，没有新增 GPU 或推理中断验收结论。
+
+## 当前基线完整回归（d2fb689）
+
+单次完整 Python 套件 **1328 passed in 442.94s**。运行期间仅修改状态文档，
+没有修改实现或测试。这次覆盖此前输入校验与启动门槛拆分的修复，不再依赖
+上轮全量失败后定向测试的组合推断。
+
+前端 **27 项 Vitest、30 项 Playwright 全部通过**；TypeScript/Vite 构建通过。
+Ruff lint、format（269 文件）、mypy（130 源文件）通过；sdist/wheel 构建通过。
+检查 wheel 的编辑器执行模块、OperatorSpec 及全部编辑器静态资源与当前源码
+逐字节一致。大于 500 kB 的 main/GLB chunk 提示仍存在；构建产物未提交。
+
+本轮没有运行 GPU 或新增真实模型验收。真实父 DAG 故障重试、多图浏览器全链、
+真实双模型比较与 ComfyUI 部署仍按 [B2 状态表](node-editor-b2-status.md)推进。
