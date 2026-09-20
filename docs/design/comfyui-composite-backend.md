@@ -435,3 +435,16 @@ recover 只处理原作业。非 serve 命令拒绝重建缺失数据库，恢�
 4 项服务 CLI/执行器回归及 Ruff/mypy 通过，测试 listener 与执行路径分离、参数
 限制和缺失数据库不重建。CLI 测试替代监听器/执行器，尚未做该服务命令的 HTTP
 端到端；DAG 客户端 Adapter 与画布仍未完成。
+
+### DAG 客户端 Adapter 首片
+
+ComfyImageAdapter 实现 RemoteNodeAdapter，绑定 image_transform@1，固定网关地址、
+服务身份与 profile digest，同时暴露 profile 参数。输入只上传当前 image Artifact；
+输出导入前核对传输摘要/长度/媒体类型、RGB PNG 编码、输入输出 Artifact 身份、
+profile、实际 workflow/参数、输出映射和 DAG input digest，拒绝不可用额外引用。
+返回 image 与 ComfyImageBoundary evidence 两个 Artifact。
+
+6 项 Adapter 回归及 Ruff/mypy 通过，覆盖正常导入与输入/profile/参数/输出/传输
+不匹配拒绝且不写 Store。本步尚未注册到默认 registry/画布，未完成真实 DAG
+服务联调；完整证据 schema 与当前 attempt 的绑定检查仍需随集成补齐，不能将
+孤立 Adapter 测试当作整个 Backend 已验收。
