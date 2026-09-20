@@ -105,6 +105,14 @@ with pytest.MonkeyPatch.context() as monkeypatch:
                 for line in __import__("sys").stdin:
                     if line.strip() == "quit":
                         break
+                    if line.strip() == "damage-output":
+                        # Only this isolated fixture's final output; never user data.
+                        run_id = (args.root / "run-id").read_text().strip()
+                        run = repo.load(run_id)
+                        assert run.status == "succeeded" and run.dag is not None
+                        ref = run.dag.node_states["second"].current().outputs["image"]
+                        repo.store.blob_path(ref).write_bytes(b"damaged fixture output")
+                        print("fixture output damaged", flush=True)
                     if line.strip() == "execute":
                         job = execute_next_image(
                             configured,

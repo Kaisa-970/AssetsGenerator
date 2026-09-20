@@ -517,3 +517,12 @@ ComfyUI 边界要求 png。模板现增加显式 encode_png@1 CPU 节点，保�
 prompt 数保持 2。Core/网关 HTTP 真实运行，上游 ComfyUI/上传/生成图片为注入
 fixture，不能视为真实部署或模型验收。相关 Python 回归 139 passed，编辑器
 执行回归 15 passed；Ruff check/format、mypy 通过。未重复运行全仓测试。
+
+### 图片预览真实 HTTP 验证（2026-09-21）
+
+在隔离 CPU fixture 中重新执行三节点链，经实际编辑器静态页面和 HTTP 接口
+展开 second.image，浏览器解码尺寸为 2×2，截图保存于
+<IMAGE_PREVIEW_SMOKE_ROOT>/preview.png。随后在同一测试服务中破坏最终图片 Blob，
+只读预览收到 HTTP 400 并显示“图片读取失败”。两次预览均无变更请求，
+BuildRun 序列化内容完全不变；记录仍是历史 succeeded，不把只读错误等同于
+已执行恢复迁移。上游模型仍为注入协议，非真实 ComfyUI 验收。

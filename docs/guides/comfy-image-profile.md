@@ -150,3 +150,15 @@ node frontend/smoke/comfy-run.cjs /tmp/comfy-browser-smoke/browser-config.json f
 使用空的新目录。脚本通过浏览器创建运行、恢复运行，并检查各节点仅一次 attempt、
 输出可下载及无页面异常。Core 与网关为真实 HTTP；ComfyUI 上游、上传和图像结果为
 注入 fixture，不执行模型，不代表真实 ComfyUI 兼容性或生成质量验收。
+
+完成上述 finish 后，可执行只读图片预览验证：
+
+```bash
+node frontend/smoke/comfy-run.cjs /tmp/comfy-browser-smoke/browser-config.json preview
+# 仅在此隔离测试服务终端输入 damage-output，破坏测试生成的最终图片
+node frontend/smoke/comfy-run.cjs /tmp/comfy-browser-smoke/browser-config.json damaged
+```
+
+preview 验证图片实际解码并保存截图；damaged 验证后端拒绝损坏输出且页面显示
+读取失败。两者断言没有变更请求、BuildRun 前后完全一致，不调用恢复或模型。
+damage-output 只适用于这个脚本创建的临时 fixture，不用于实际资产目录。

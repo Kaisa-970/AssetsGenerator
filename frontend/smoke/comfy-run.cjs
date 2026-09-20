@@ -11,6 +11,12 @@ const { chromium, expect } = require("@playwright/test");
     page.on("dialog", (d) => d.accept());
     const errors = [];
     page.on("pageerror", (e) => errors.push(String(e)));
+    const mode = process.argv[3];
+    const readonly = ["preview", "damaged"].includes(mode);
+    let mutations = 0;
+    page.on("request", (request) => {
+      if (request.method() !== "GET") mutations++;
+    });
     await page.goto(config.url);
     let id;
     if (process.argv[3] === "start") {
@@ -37,8 +43,10 @@ const { chromium, expect } = require("@playwright/test");
         name: "恢复 / 继续此运行",
         exact: true,
       });
-      await expect(resume).toBeEnabled();
-      await resume.click();
+      if (!readonly) {
+        await expect(resume).toBeEnabled();
+        await resume.click();
+      }
     }
     let snapshot;
     await expect
@@ -68,6 +76,31 @@ const { chromium, expect } = require("@playwright/test");
         assert.equal(r.status(), 200);
         assert.ok((await r.body()).length);
       }
+    }
+    if (readonly) {
+      const before = JSON.stringify(snapshot.run);
+      await page
+        .getByRole("button", { name: "预览图片 · second · image", exact: true })
+        .click();
+      if (mode === "damaged") {
+        await expect(page.getByRole("alert")).toContainText("图片读取失败");
+      } else {
+        const img = page.getByRole("img", {
+          name: "节点 second 的 image 输出",
+          exact: true,
+        });
+        await expect(img).toBeVisible();
+        assert.equal(await img.evaluate((element) => element.naturalWidth), 2);
+        await page.screenshot({
+          path: config.root + "/preview.png",
+          fullPage: true,
+        });
+      }
+      const after = await (
+        await page.request.get(config.url + "/api/runs/" + id)
+      ).json();
+      assert.equal(JSON.stringify(after.run), before);
+      assert.equal(mutations, 0);
     }
     assert.deepEqual(errors, []);
     fs.writeFileSync(
