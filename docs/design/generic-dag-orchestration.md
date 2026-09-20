@@ -39,7 +39,7 @@ Artifact Store + BuildRun + Provenance + QualityReport
 - React Flow 可编辑草稿、编译、执行单图、展示固定运行图、基础参数表单及嵌入 mask 审查。
 - 本地 profile 可按节点选择，名称及身份进入绑定和 provenance；多实例共享选区的独立发布已做 CPU 验证，尚未验收同图两种真实模型。
 
-浏览器图像上传已接入，输入持久化为 Artifact 后显式启动。画布多视图已接入已有 ObservationBundle 引用的执行入口（CPU 验证）；多视图浏览器支持逐张上传 RGB 并组包（CPU 测试）；仍未接入：通用 HTTP Backend 和 ComfyUI；复杂嵌套参数仍使用 JSON。运行创建已支持耐久幂等回执及浏览器原请求显式重试；重复 POST 不自动恢复或派发已有运行。完整 B2 和远程 Milestone C 仍需后续验收。
+浏览器图像上传已接入，输入持久化为 Artifact 后显式启动。画布多视图已接入已有 ObservationBundle 引用的执行入口，并完成真实 DA3/Open3D 双视图功能 smoke；多视图浏览器支持逐张上传 RGB 并组包（CPU 测试）；仍未接入：通用 HTTP Backend 和 ComfyUI；复杂嵌套参数仍使用 JSON。运行创建已支持耐久幂等回执及浏览器原请求显式重试；重复 POST 不自动恢复或派发已有运行。完整 B2 和远程 Milestone C 仍需后续验收。
 
 ## 3. 范围与非目标
 
@@ -587,16 +587,16 @@ Milestone A 前允许独立的纯前端技术 spike，但它不得触发真实�
 | ComfyUI 边界 | 缺失内部身份显示为 unverified，不伪造完整 provenance |
 | 前端权威性 | 篡改浏览器图或参数不能绕过后端重新编译 |
 
-## 17. 开工前仍需确定的最小问题
+## 17. 初始设计问题与当前决定
 
-以下问题应在 A1 的 schema PR 中定稿，不继续扩展为平台设计：
+以下初始问题已在实现中确定，后续更改必须保持已有身份与恢复契约：
 
-1. `CompiledPlan` 是扩展现有 `ResolvedPlan`，还是让 `ResolvedPlan` 成为其中的 Backend binding 子结构。不得长期保留两套重叠的 Pipeline identity。
-2. relation validator 的声明放在 OperatorSpec YAML 中，还是由独立 registry 通过 Operator key 绑定。无论选择哪种，Operator 必须显式引用，版本和摘要必须进入计划。
-3. 现有 `WorkbenchPlan` 和 `WorkbenchState` 的兼容读取策略。建议读取旧 schema，新增运行写通用 plan/state schema，不原地改写历史记录。
-4. 单图 Workflow 中哪些步骤首轮作为独立节点，哪些暂时保留为复合 Adapter。选择以能够验证扇出、恢复和 provenance 为准，不为画布展示强行拆碎原子操作。
+1. 编译采用不可变 `CompiledPlan`，执行采用 `BoundDagPlan`。原 `ResolvedPlan` 仍用于复合单图/多视图 workflow 内部 Backend 绑定；它不是 DAG 父运行的身份替代。
+2. 关系由 OperatorSpec 显式声明，RelationValidatorRegistry 提供具名版本化实现，编译及固定计划记录关系身份。
+3. 既有固定 WorkbenchPlan/WorkbenchState 入口继续保留；通用 DAG 使用 BuildRun.dag。旧记录不原地迁移，不把未验证的旧状态当成新 DAG 成功。
+4. 单图首批拆为 proposals、人工选择、asset build；多视图拆为 geometry、reconstruction、release。发布内部 canonicalize/QA/assemble/export 仍为复合操作，尚未作为任意可组合节点开放。
 
-这些问题解决后即可开始 A1。自由连线的产品范围、自动布局、节点分组和分布式执行不阻塞开工。
+这些决定并不表示完整模块目录或所有 paper workflow 均可表达。结果交互预览、复杂参数编辑、更多明确 relation 的组合算子及远程 Backend 仍需分别实现和验收。
 
 ## 18. 设计完成标准
 

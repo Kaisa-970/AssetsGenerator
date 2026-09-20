@@ -1,11 +1,12 @@
 # 文档索引
 
-[节点编辑器使用指南](guides/node-editor.md)
+[节点编辑器使用指南](guides/node-editor.md) · [B2 实现状态与剩余项](reports/node-editor-b2-status.md)
 
 ## 架构与契约 · design
 
 - [固定流程节点工作台 v1（实现中）](design/node-workbench-v1.md)
 - [通用 DAG 编排与节点编辑器实施设计（部分实现）](design/generic-dag-orchestration.md)
+- [节点编辑器结果预览首版（实施准备）](design/node-editor-result-preview.md)
 
 - [Phase 7 场景到资产首版契约](design/scene-to-assets.md)
 - [SAM v1 实例候选契约](design/sam-instance-proposals.md)
