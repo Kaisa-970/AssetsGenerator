@@ -32,6 +32,8 @@ _SCHEMA_KEYS = frozenset(
         "enum",
         "minimum",
         "maximum",
+        "minItems",
+        "maxItems",
     }
 )
 _TYPES = {"object", "array", "string", "integer", "number", "boolean", "null"}
@@ -57,8 +59,13 @@ def _check_schema(schema: Mapping[str, Any]) -> None:
         for subschema in props.values():
             _check_schema(subschema)
     elif kind == "array":
-        allowed.add("items")
+        allowed |= {"items", "minItems", "maxItems"}
         _check_schema(schema.get("items", {}))
+        for key in ("minItems", "maxItems"):
+            if key in schema and (type(schema[key]) is not int or schema[key] < 0):
+                raise ContractError("array length bounds must be nonnegative integers")
+        if schema.get("minItems", 0) > schema.get("maxItems", float("inf")):
+            raise ContractError("array minimum length exceeds maximum")
     elif kind in {"integer", "number"}:
         allowed |= {"minimum", "maximum"}
         for key in ("minimum", "maximum"):
@@ -98,6 +105,10 @@ def _validate(value: Any, schema: Mapping[str, Any], path: str) -> None:
             if key in props:
                 _validate(item, props[key], f"{path}.{key}")
     elif kind == "array":
+        if len(value) < schema.get("minItems", 0):
+            raise ContractError(f"{path} has fewer than minItems")
+        if len(value) > schema.get("maxItems", float("inf")):
+            raise ContractError(f"{path} has more than maxItems")
         for index, item in enumerate(value):
             _validate(item, schema["items"], f"{path}[{index}]")
     elif kind in {"integer", "number"}:

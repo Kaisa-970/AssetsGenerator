@@ -254,3 +254,49 @@ def test_two_instances_resolve_different_backends_in_one_plan():
     assert plan.bindings["left"].parameters["count"] == 2
     assert plan.bindings["right"].parameters["count"] == 4
     assert BoundDagPlan.from_json(plan.to_json(), registry=registry) == plan
+
+
+@pytest.mark.parametrize(
+    "bounds",
+    [
+        {"minItems": -1},
+        {"maxItems": True},
+        {"minItems": 1.5},
+        {"minItems": 4, "maxItems": 3},
+    ],
+)
+def test_invalid_array_bounds_rejected(bounds):
+    with pytest.raises(ContractError):
+        AdapterSpec(
+            "matrix",
+            "1",
+            ("copy@1",),
+            parameter_schema={
+                "type": "object",
+                "properties": {"values": {"type": "array", "items": {"type": "number"}, **bounds}},
+            },
+        )
+
+
+def test_nested_matrix_dimensions_validate_before_execution():
+    row = {"type": "array", "items": {"type": "number"}, "minItems": 4, "maxItems": 4}
+    schema = {
+        "type": "object",
+        "properties": {"matrix": {"type": "array", "items": row, "minItems": 4, "maxItems": 4}},
+        "required": ["matrix"],
+    }
+    spec = AdapterSpec("matrix", "1", ("copy@1",), parameter_schema=schema)
+    matrix = [[1, 0, 0, 0] for _ in range(4)]
+    assert spec.normalize_parameters({"matrix": matrix})["matrix"] == tuple(
+        tuple(row) for row in matrix
+    )
+    for invalid, location in [
+        (matrix[:3], "parameters.matrix"),
+        ([*matrix, matrix[0]], "parameters.matrix"),
+        ([matrix[0][:3], *matrix[1:]], "parameters.matrix[0]"),
+    ]:
+        with pytest.raises(ContractError) as error:
+            spec.normalize_parameters({"matrix": invalid})
+        assert location in str(error.value)
+    with pytest.raises(ContractError):
+        AdapterSpec("matrix", "1", ("copy@1",), parameter_schema=schema, defaults={"matrix": [[]]})
