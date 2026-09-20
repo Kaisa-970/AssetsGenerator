@@ -388,3 +388,73 @@ def test_sam_worker_injection_does_not_change_deployment_identity(tmp_path, monk
     loaded = profiles.load_proposal_profiles({"profiles": {"sam": config["sam"]}})["sam"]
     loaded.proposer.worker = object()
     loaded.identity_check()
+
+
+@pytest.mark.parametrize("shape_only", [False, True])
+@pytest.mark.parametrize("backend", ["triposr", "trellis2"])
+@pytest.mark.parametrize("field", ["python", "repo", "model", "timeout_seconds", "identity"])
+def test_shape_execution_configuration_drift_is_rejected(
+    tmp_path, monkeypatch, shape_only, backend, field
+):
+    config = _config(tmp_path, monkeypatch)
+    shape = config["profiles"]["local-triposr"]
+    if backend == "trellis2":
+        shape["backend"] = backend
+        del shape["frame_validation"]
+        monkeypatch.setattr(
+            profiles, "_model_identity", lambda *args: {"snapshot_digest": "fixture"}
+        )
+    loaded = (
+        profiles.load_shape_profiles({"profiles": config["profiles"]})
+        if shape_only
+        else profiles.load_profiles(config)
+    )["local-triposr"]
+    implementation = loaded.shape_plan.backend_for(
+        "generate_shape", "shape_generation@1"
+    ).implementation
+    loaded.identity_check()
+    if field == "identity":
+        loaded.shape_identity["backend"] = "changed"
+    elif field == "timeout_seconds":
+        implementation.timeout_seconds += 1
+    else:
+        setattr(implementation, field, "/another/resource")
+    with pytest.raises(ValueError, match="resources changed"):
+        loaded.identity_check()
+
+
+@pytest.mark.parametrize(
+    "field", ["chunk_size", "mc_resolution", "foreground_ratio", "frame_validation"]
+)
+def test_triposr_execution_parameters_are_guarded(tmp_path, monkeypatch, field):
+    config = _config(tmp_path, monkeypatch)
+    loaded = profiles.load_shape_profiles({"profiles": config["profiles"]})["local-triposr"]
+    implementation = loaded.shape_plan.backend_for(
+        "generate_shape", "shape_generation@1"
+    ).implementation
+    setattr(implementation, field, None)
+    with pytest.raises(ValueError, match="resources changed"):
+        loaded.identity_check()
+
+
+@pytest.mark.parametrize("changed_profile", ["local-triposr", "second"])
+def test_shape_guards_capture_each_instance_and_allow_worker_injection(
+    tmp_path, monkeypatch, changed_profile
+):
+    config = _config(tmp_path, monkeypatch)
+    config["profiles"]["second"] = {**config["profiles"]["local-triposr"], "chunk_size": 1024}
+    loaded = profiles.load_shape_profiles({"profiles": config["profiles"]})
+    for profile in loaded.values():
+        implementation = profile.shape_plan.backend_for(
+            "generate_shape", "shape_generation@1"
+        ).implementation
+        implementation.worker = object()
+        profile.identity_check()
+    changed = (
+        loaded[changed_profile]
+        .shape_plan.backend_for("generate_shape", "shape_generation@1")
+        .implementation
+    )
+    changed.timeout_seconds += 1
+    with pytest.raises(ValueError, match="resources changed"):
+        loaded[changed_profile].identity_check()

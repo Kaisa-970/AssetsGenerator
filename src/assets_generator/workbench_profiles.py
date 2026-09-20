@@ -384,6 +384,21 @@ class ShapeProfile:
     identity_check: Callable[[], None] | None = None
 
 
+def _shape_execution_configuration(
+    implementation: Trellis2Backend | TripoSRBackend, identity: dict[str, Any]
+) -> bytes:
+    # Both implementations keep only deployment configuration and the injected worker.
+    # Bind the instance through partial below so profiles never share a loop closure.
+    return canonical_json_bytes(
+        {
+            "implementation": {
+                key: value for key, value in vars(implementation).items() if key != "worker"
+            },
+            "declared_identity": identity,
+        }
+    )
+
+
 def _load_shape_profiles(definitions: Any) -> dict[str, ShapeProfile]:
     if not isinstance(definitions, dict) or not definitions:
         raise ValueError("at least one named backend profile is required")
@@ -459,6 +474,8 @@ def _load_shape_profiles(definitions: Any) -> dict[str, ShapeProfile]:
         if frame_identity is not None:
             identity["frame_validation_digest"] = frame_identity["evidence_digest"]
             identity["triposr_environment"] = backend_environment_identity(executable)
+        configuration = partial(_shape_execution_configuration, implementation, identity)
+        _guard(configuration, configuration())
         registry = BackendRegistry()
         registry.register(
             name=backend,

@@ -26,7 +26,7 @@ def test_profile_service_identity_and_worker_injection(tmp_path, monkeypatch):
         assert copied.worker is worker
         assert backend.worker is original_worker
         backend.mc_resolution += 1
-        with pytest.raises(ValueError, match="configuration changed"):
+        with pytest.raises(ValueError, match="resources changed"):
             handler.verify_identity()
     finally:
         store.close()
