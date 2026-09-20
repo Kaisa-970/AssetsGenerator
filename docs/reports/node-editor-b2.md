@@ -50,3 +50,5 @@
 双生成分支 CPU 验收：新增 `examples/dag-image-compare.yaml`，一次 proposals/人工选择后扇出到两个显式 profile 的生成节点。真实单图 Adapter 逻辑配合 Fake Backend 完成两个独立子发布；核对精确共享 SelectionInputBinding、独立 child run、各自 backend provenance、单一决定回执及恢复后节点证据不变。单图 Adapter 文件的 7 项测试通过；随后改为直接加载新示例的单项回归通过（未将两轮相加宣称 8 个独立测试）。两个真实模型的 GPU 组合尚未验收，示例中的 profile 名必须替换为本机已安装配置。
 
 本地 profile 绑定及双生成分支接入后的全仓回归：`PYTHONPATH=src <MAIN_CHECKOUT>/.venv/bin/python -m pytest -q` 单次运行 **927 passed in 221.29s**。Ruff check、format check（170 文件）、mypy（85 源码文件）通过。此轮没有运行 GPU 推理；不能将该测试结果扩大为尚未验收的真实双模型组合或完整 B2 完成。同期修正设计文档的过期“当前代码事实”及指南单 profile 限制说明。
+
+入口一致性修复：编辑器原先注册全部显式 profile，而 dag-image CLI 仅注册默认实现，导致画布导出的 backend YAML 在 CLI 编译失败。现共用 `image_adapter_registry()`；默认与显式绑定两种 YAML 的 CLI start/resume/decide 路径均通过。7 项 CLI/编辑器定向测试通过，mypy 86 源码文件通过；未新增 GPU 推理。

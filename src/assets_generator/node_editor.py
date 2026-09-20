@@ -301,28 +301,13 @@ def serve_editor(
                 raise ValueError("execution requires --config, --store and --profile together")
             from .artifact_store import LocalArtifactStore
             from .dag_engine import DagEngine
-            from .dag_image_adapters import (
-                DagImageBuildAdapter,
-                DagMaskSelectionAdapter,
-                DagProposalAdapter,
-            )
             from .dag_persistence import DagRepository
+            from .dag_profiles import image_adapter_registry
             from .serialization import read_json
             from .workbench_profiles import load_profiles
 
             profiles = load_profiles(read_json(config))
-            if profile not in profiles:
-                raise ValueError(f"unknown profile: {profile}")
-            registry = AdapterRegistry()
-            for adapter in (
-                DagProposalAdapter(profiles[profile]),
-                DagMaskSelectionAdapter(),
-                DagImageBuildAdapter(profiles[profile]),
-            ):
-                registry.register(adapter)
-            for name, configured in profiles.items():
-                registry.register_backend(name, DagProposalAdapter(configured))
-                registry.register_backend(name, DagImageBuildAdapter(configured))
+            registry = image_adapter_registry(profiles, profile)
             repository = DagRepository(LocalArtifactStore(store), directory / "runtime")
             stack.enter_context(repository)
             execution = NodeEditorExecution(

@@ -7,10 +7,9 @@ import json
 from pathlib import Path
 
 from .artifact_store import LocalArtifactStore
-from .dag_adapters import AdapterRegistry
 from .dag_engine import DagEngine
-from .dag_image_adapters import DagImageBuildAdapter, DagMaskSelectionAdapter, DagProposalAdapter
 from .dag_persistence import DagRepository
+from .dag_profiles import image_adapter_registry
 from .pipeline import compile_pipeline, load_default_operator_specs, load_pipeline
 from .serialization import read_json, to_primitive
 from .workbench_profiles import load_profiles
@@ -36,16 +35,7 @@ def add_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) 
 
 def execute(args: argparse.Namespace) -> int:
     profiles = load_profiles(read_json(args.config))
-    if args.profile not in profiles:
-        raise ValueError(f"unknown profile: {args.profile}")
-    profile = profiles[args.profile]
-    registry = AdapterRegistry()
-    for adapter in (
-        DagProposalAdapter(profile),
-        DagMaskSelectionAdapter(),
-        DagImageBuildAdapter(profile),
-    ):
-        registry.register(adapter)
+    registry = image_adapter_registry(profiles, args.profile)
     store = LocalArtifactStore(args.store)
     repo = DagRepository(store, args.directory)
     with repo:

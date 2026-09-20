@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+import pytest
+import yaml
 from test_dag_image_adapters import fixture_engine
 
 from assets_generator.cli import _execute, _parser
@@ -11,7 +13,8 @@ def main(argv):
     return _execute(parser, parser.parse_args(argv))
 
 
-def test_cli_yaml_start_resume_decide(tmp_path, monkeypatch, capsys):
+@pytest.mark.parametrize("explicit", [False, True])
+def test_cli_yaml_start_resume_decide(tmp_path, monkeypatch, capsys, explicit):
     (tmp_path / "fixture").mkdir()
     _, _, profile = fixture_engine(tmp_path / "fixture")
     monkeypatch.setattr("assets_generator.dag_cli.load_profiles", lambda config: {"cpu": profile})
@@ -21,6 +24,13 @@ def test_cli_yaml_start_resume_decide(tmp_path, monkeypatch, capsys):
 
     photo = tmp_path / "photo.png"
     Image.new("RGB", (8, 6), "red").save(photo)
+    pipeline = Path("examples/dag-image-asset.yaml")
+    if explicit:
+        raw = yaml.safe_load(pipeline.read_text())
+        raw["nodes"]["candidates"]["backend"] = "cpu"
+        raw["nodes"]["generate_asset"]["backend"] = "cpu"
+        pipeline = tmp_path / "explicit.yaml"
+        pipeline.write_text(yaml.safe_dump(raw))
     common = [
         "--config",
         str(config),
@@ -38,7 +48,7 @@ def test_cli_yaml_start_resume_decide(tmp_path, monkeypatch, capsys):
                 "start",
                 *common,
                 "--pipeline",
-                str(Path("examples/dag-image-asset.yaml")),
+                str(pipeline),
                 "--image",
                 str(photo),
             ]
