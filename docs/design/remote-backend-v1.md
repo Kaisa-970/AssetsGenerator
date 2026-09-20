@@ -338,3 +338,13 @@ CPU HTTP 回归覆盖远程 shape → 任意名称的 canonicalization → QA �
 并检查跨运行来源不通过、错误 source mesh 拒绝。此改动未重新执行真实 GPU 推理，
 也尚未把 assemble/export 接入这条模块化测试链。Operator 与关系实现摘要发生改变，
 旧固定计划不作隐式迁移。
+
+### 单资产导出节点
+
+`asset_export@1` Operator / Adapter 只接收一个 `AssetDefinition@1.0` Artifact，
+从资产内读取 mesh 和 QA 身份，输出 GLB 与持久化 `AssetRelease`。
+它要求一个 canonical +Z/+X visual mesh、匹配的 frame/unit、geometry-v1 的
+mandatory passing checks，以及 QA provenance 指向同一 mesh；fail 不发布。
+`appearance_mode=preserve_mesh` 固定进入计划和 provenance，保留网格内嵌外观。
+独立纹理引用、附加几何及 physics 暂不支持，避免导出时静默丢弃。
+这一步提供 Store 内 Release，不自动物化目录，不包含资产组装节点或完整远程发布验收。
