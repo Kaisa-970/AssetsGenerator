@@ -27,6 +27,14 @@ class SameInput:
         assert context.values["left"] == context.values["right"]
 
 
+class RejectInput(SameInput):
+    spec = RelationValidatorSpec("same_input_fixture", "1", sha256_bytes(b"reject-input-v1"))
+
+    def validate_runtime(self, context):
+        self.checks += 1
+        raise ContractError("fixture observation relation rejected")
+
+
 class Join:
     spec = AdapterSpec("fixture_join", "1", ("fixture_join@1",))
 
@@ -38,7 +46,8 @@ class Join:
         return NodeExecutionResult({"image": context.inputs["left"]})
 
 
-def test_custom_relation_compiles_runs_and_recovers_through_editor(tmp_path):
+@pytest.mark.parametrize("reject", [False, True])
+def test_custom_relation_compiles_runs_and_recovers_through_editor(tmp_path, reject):
     port = PortSpec(("rgb_image",), carriers=("artifact_ref",))
     specs = {
         "fixture_join@1": OperatorSpec(
@@ -49,7 +58,7 @@ def test_custom_relation_compiles_runs_and_recovers_through_editor(tmp_path):
             (RelationSpec("same_input_fixture@1", ("left", "right")),),
         )
     }
-    relation = SameInput()
+    relation = RejectInput() if reject else SameInput()
     relations = RelationValidatorRegistry()
     relations.register(relation)
     adapter = Join()
@@ -78,8 +87,13 @@ def test_custom_relation_compiles_runs_and_recovers_through_editor(tmp_path):
             started = service.start(graph, str(image))
             run_id = started["run"]["run_id"]
             completed = wait(service, run_id)
-            assert completed["run"]["status"] == "succeeded", completed
-            assert adapter.calls == 1
+            assert completed["run"]["status"] == ("failed" if reject else "succeeded"), completed
+            assert adapter.calls == (0 if reject else 1)
+            if reject:
+                attempt = completed["run"]["dag"]["node_states"]["join"]["attempts"][-1]
+                assert "fixture observation relation rejected" in attempt["error_detail"]
+                assert attempt["error_code"]
+                assert attempt["outputs"] == {}
             assert relation.checks > 0
             plan = service.plan(run_id)
             assert plan["plan_id"] == compiled["bound_plan"]["plan_id"]
@@ -88,8 +102,12 @@ def test_custom_relation_compiles_runs_and_recovers_through_editor(tmp_path):
     with DagRepository(store, directory) as repo:
         engine = DagEngine(repo, registry, relations)
         recovered = engine.drain(run_id)
-        assert recovered.status == "succeeded"
-        assert adapter.calls == 1
+        assert recovered.status == ("failed" if reject else "succeeded")
+        assert adapter.calls == (0 if reject else 1)
+        if reject:
+            state = recovered.dag.node_states["join"]
+            assert "fixture observation relation rejected" in state.current().error_detail
+            assert state.current().status == "failed"
         assert len(recovered.dag.node_states["join"].attempts) == 1
 
 
