@@ -1634,4 +1634,14 @@ test("operator catalog distinguishes registered implementations from contracts",
   await page.getByLabel("只看已注册实现").uncheck();
   await page.getByPlaceholder("搜索算子…").fill("");
   await expect(items).toHaveCount(3);
+  await items.filter({ hasText: "remote" }).click();
+  await page
+    .getByLabel("节点 Backend", { exact: true })
+    .selectOption("installed");
+  await expect(page.getByLabel("Adapter", { exact: true })).toHaveValue(
+    "remote@1",
+  );
+  await expect(
+    page.getByLabel("Adapter", { exact: true }).locator("option"),
+  ).toContainText(["仅 Operator", "remote@1"]);
 });

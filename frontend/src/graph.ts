@@ -262,10 +262,17 @@ export function selectBackend(
   backend: string,
   catalog: Catalog,
 ): PipelineNode {
+  const candidates = (catalog.backends || []).filter(
+    (item) =>
+      item.backend === backend && item.operators.includes(node.operator),
+  );
+  const adapterKey =
+    node.adapter ||
+    (candidates.length === 1 ? candidates[0].adapter : undefined);
   const resolve = (name?: string) =>
     name
       ? catalog.backends?.find(
-          (item) => item.backend === name && item.adapter === node.adapter,
+          (item) => item.backend === name && item.adapter === adapterKey,
         )
       : catalog.adapters.find(
           (item) => `${item.name}@${item.version}` === node.adapter,
@@ -286,7 +293,12 @@ export function selectBackend(
     }
   }
   delete parameters.profile_digest;
-  return { ...node, backend: backend || undefined, parameters };
+  return {
+    ...node,
+    adapter: adapterKey,
+    backend: backend || undefined,
+    parameters,
+  };
 }
 
 /** Duplicate applied configuration and upstream bindings, never downstream edges. */

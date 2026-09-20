@@ -275,7 +275,10 @@ function App() {
   );
   const node = selected ? pipeline.nodes[selected] : undefined;
   const adapters = node
-    ? catalog.adapters.filter((a) => a.operators.includes(node.operator))
+    ? (node.backend
+        ? (catalog.backends || []).filter((a) => a.backend === node.backend)
+        : catalog.adapters
+      ).filter((a) => a.operators.includes(node.operator))
     : [];
   const selectedAdapter = node?.backend
     ? catalog.backends?.find(
@@ -700,6 +703,7 @@ function App() {
                       <label>
                         Adapter
                         <select
+                          aria-label="Adapter"
                           value={node.adapter || ""}
                           onChange={(e) =>
                             update({
