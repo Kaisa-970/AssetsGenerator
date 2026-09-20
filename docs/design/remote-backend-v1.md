@@ -287,3 +287,9 @@ ShapeServiceHandler 接受受信 Backend factory 和部署身份 verifier，客�
 新增受信 RemoteShapeAdapter，绑定既有 shape_generation@1（端口来自 operators YAML），固定服务 endpoint/identity，并允许节点配置 seed/pipeline_type。image Artifact 以 rgba 上传，返回值要求 mesh/shape_metadata 的媒体类型与内容校验，再输出原 Operator 的 mesh/material/native_frame。未修改 OperatorSpec 或复制端口定义。
 
 DAG→耐久 HTTP 服务→ShapeServiceHandler→门控 CPU 测试 Backend→shape 导入已通过，成功后关闭服务仍能本地恢复，attempt 保持一次。该测试使用实际 YAML 合同，修正测试输入为显式 artifact_ref carrier 后，Adapter/handler/output 合跑 11 项通过；Ruff/mypy（102 文件）通过。尚未注册到生产编辑器目录，未运行真实模型。
+
+## 现有真实 profile 的服务 factory
+
+shape_handler_from_profile 仅接受非 test_only 且带 identity_check 的已加载 profile，从既有 ResolvedPlan 取 generate_shape，限制为 TripoSR/TRELLIS2。RemoteIdentity.backend_digest 绑定 shape_identity、Operator 和 Backend 版本；复用 loader 的模型/代码/环境资源 guard，并检查 Backend 配置未变。factory 复制 Backend 后注入 ServiceProcessWorker，不改变原 profile worker。
+
+目前入口接收已加载 BackendProfile，未提供独立 shape-only 配置加载或 CLI；现有 workbench loader 仍同时核验 SAM，后续用户启动入口应避免无关模型依赖。profile/factory/DAG shape 合跑 25 项通过，测试使用模拟环境身份，不是实际模型资源验收。Ruff/mypy（103 文件）通过，无 GPU 推理。
