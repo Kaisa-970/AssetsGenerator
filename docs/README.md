@@ -53,6 +53,8 @@
 
 ## 评测报告 · reports
 
+- [Generic DAG 进程执行与单图迁移切片](reports/generic-dag-a3.md)
+
 - [Generic DAG A2：CPU 与人工节点执行切片](reports/generic-dag-a2.md)
 
 - [Generic DAG A1：静态编译计划](reports/generic-dag-a1.md)

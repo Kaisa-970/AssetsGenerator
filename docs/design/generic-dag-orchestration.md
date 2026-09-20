@@ -1,6 +1,6 @@
 # 通用 DAG 编排与节点编辑器实施设计
 
-**状态**：A1 静态编译与 A2 CPU／人工执行切片已实现；完整里程碑 A 与节点编辑器尚未完成\
+**状态**：A1 静态编译、CPU／人工执行、受控进程及单图 YAML/审查切片已实现；真实 GPU 验收、完整里程碑 A 与节点编辑器尚未完成\
 **目标版本**：Generic DAG Core v1 / Node Editor v1\
 **适用范围**：本地单机执行、人工等待与恢复、独立 Backend 进程或 HTTP 服务\
 **不构成证据**：本文不表示现有 Pipeline 已由通用 DAG 执行器驱动，也不表示 React Flow、HTTP Backend 或 ComfyUI 已接入。
@@ -325,6 +325,8 @@ recovery_blocked
 - 开始/结束时间、execution mode、error code。
 - 精确 outputs。
 - child run、command receipt、worker execution 等适用证据。
+
+恢复定位实现保存 Artifact → node/attempt/port/role 反向索引；无可定位消费者的损坏证据记录为运行级阻塞。索引不替代引用闭包校验，历史记录不能通过索引被豁免为有效输入。进程适配器保存每条命令的 worker 证据；工作台和 DAG 共用准入检查，已确认退出的进程另存按完整身份寻址的终态证据，避免重用 PID 被再次视作旧进程。
 
 ### 8.3 BuildRun 与计划
 

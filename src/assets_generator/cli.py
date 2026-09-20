@@ -20,6 +20,9 @@ from .serialization import to_primitive
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="assets-generator")
     subparsers = parser.add_subparsers(dest="command", required=True)
+    from .dag_cli import add_parser
+
+    add_parser(subparsers)
     compile_command = subparsers.add_parser("compile-pipeline")
     compile_command.add_argument("--pipeline", type=Path)
     compile_command.add_argument("--operators", type=Path)
@@ -245,6 +248,10 @@ def main() -> int:
 
 
 def _execute(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
+    if args.command == "dag-image":
+        from .dag_cli import execute
+
+        return execute(args)
     if args.command == "workbench":
         from .workbench_app import serve_workbench
 
