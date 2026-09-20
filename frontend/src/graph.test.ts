@@ -148,7 +148,7 @@ it("renames instance IDs while preserving optional bindings", () => {
   expect(() => renameNode(p, "a", "b")).toThrow();
 });
 
-import { selectBackend, type Catalog } from "./graph";
+import { selectBackend } from "./graph";
 it("clears fixed remote bindings when switching profiles or returning to default", () => {
   const adapter = (name: string) => ({
     name: "remote_shape",
