@@ -26,6 +26,7 @@ def import_image(
     node: str,
     index: int,
     mode: str,
+    recovery_only: bool = False,
 ) -> ArtifactRef:
     record = journal.read(key)
     if record["deployment"].get("endpoint") != client.endpoint:
@@ -63,6 +64,8 @@ def import_image(
                 raise ValueError("ComfyUI import identity mismatch")
             journal.db.execute("COMMIT")
             return ref
+        if recovery_only:
+            raise ValueError("ComfyUI import receipt missing; recovery cannot download")
         data = client.download_image(journal, key, node=node, index=index, mode=mode)
         validate_png(data, mode=mode)
         identity: dict[str, Any] = {
