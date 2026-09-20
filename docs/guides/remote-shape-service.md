@@ -289,3 +289,37 @@ server.py/log、config.json、download-verified.json 和 downloaded-release.zip�
 载入旧配置后，若固定参数与当前部署契约不一致，参数表单会同时显示草稿值和
 当前要求值。点击“使用当前部署值”只更新当前节点草稿；其他实例和旧运行不变。
 更新后须重新编译、明确启动新运行，不能作为旧结果来源身份的修正。
+
+## 双服务比较的浏览器验收
+
+使用 `--template examples/remote-shape-compare.yaml` 启动编辑器，并在可信 remote config
+中配置两个不同服务。浏览器脚本先在两个 shape 节点分别选择 Backend，再上传 RGBA；
+它不会启动服务端模型执行器。
+
+仓库外配置示例（目录须已存在）：
+
+```json
+{
+  "url": "http://127.0.0.1:8767",
+  "root": "<AUDIT_ROOT>",
+  "image": "<INPUT_RGBA>.png",
+  "first": "trellis-service",
+  "second": "triposr-service"
+}
+```
+
+```bash
+node frontend/smoke/shape-compare.cjs <CONFIG>.json submit
+# 用 browser-submitted.json 中两个 remote_binding.submission_key
+# 分别执行对应服务的 execute 命令；共享 GPU 时串行执行。
+node frontend/smoke/shape-compare.cjs <CONFIG>.json complete
+```
+
+`submit` 检查编译可执行、上传后的页面 Artifact ID、共同输入及独立服务/作业身份，
+创建后立即保存 run ID；已有提交证据时拒绝再次创建。
+`complete` 仅通过页面恢复该运行，检查十个节点各一次、两个 GLB/Release 输出可读，
+再恢复一次并比较完整节点和输出记录。它不替用户批准人工选择，也不评价模型质量。
+
+本脚本已通过实际编辑器与双 HTTP 服务的 CPU Backend 浏览器 smoke，
+尚未使用本脚本验收两个真实模型。API 层的双真实模型证据见
+[双模型报告](../reports/dual-shape-real.md)，两者不能合称真实浏览器全链验收。
