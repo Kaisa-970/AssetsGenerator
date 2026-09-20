@@ -16,7 +16,7 @@ operators:
   - name: apply_binary_mask
     version: 1
     relations:
-      - validator: independent_inputs@1
+      - validator: matched_image_mask@1
         inputs: [image, mask]
     inputs:
       image: {kind: rgb_image, carriers: [artifact_ref]}

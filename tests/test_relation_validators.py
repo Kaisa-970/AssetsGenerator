@@ -163,3 +163,29 @@ def test_builtin_validator_identity_uses_actual_module_content():
     assert IndependentInputsValidator.spec.implementation_digest == sha256_bytes(
         Path(module.__file__).read_bytes()
     )
+
+
+def test_matched_image_mask_relation_rejects_dimension_mismatch(tmp_path):
+    import io
+
+    from PIL import Image
+
+    from assets_generator.relations import MatchedImageMaskValidator
+
+    store = LocalArtifactStore(tmp_path)
+    image_data = io.BytesIO()
+    Image.new("RGB", (2, 2), "red").save(image_data, format="PNG")
+    mask_data = io.BytesIO()
+    Image.new("L", (1, 2), 255).save(mask_data, format="PNG")
+    image = store.persist_bytes(
+        image_data.getvalue(), kind="rgb_image", schema_name="png", schema_version="1.0"
+    )
+    mask = store.persist_bytes(
+        mask_data.getvalue(), kind="binary_mask", schema_name="png", schema_version="1.0"
+    )
+    with pytest.raises(ContractError, match="dimensions"):
+        MatchedImageMaskValidator().validate_runtime(
+            RuntimeRelationContext(
+                "apply_binary_mask@1", ("image", "mask"), {"image": image, "mask": mask}, store
+            )
+        )

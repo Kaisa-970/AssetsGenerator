@@ -204,10 +204,39 @@ class IndependentInputsValidator:
 def default_relation_registry() -> RelationValidatorRegistry:
     registry = RelationValidatorRegistry()
     registry.register(IndependentInputsValidator())
+    registry.register(MatchedImageMaskValidator())
     registry.register(NativeMeshFrameValidator())
     registry.register(CanonicalMeshSourceValidator())
     registry.register(ShapeAssetInputsValidator())
     return registry
+
+
+class MatchedImageMaskValidator:
+    spec = RelationValidatorSpec(
+        "matched_image_mask", "1", sha256_bytes(Path(__file__).read_bytes())
+    )
+
+    def validate_static(self, context: StaticRelationContext) -> None:
+        if set(context.inputs) != {"image", "mask"}:
+            raise ContractError("matched image mask relation requires image and mask")
+
+    def validate_runtime(self, context: RuntimeRelationContext) -> None:
+        from PIL import Image
+
+        from .models import ArtifactRef
+
+        image = context.values.get("image")
+        mask = context.values.get("mask")
+        if not isinstance(image, ArtifactRef) or not isinstance(mask, ArtifactRef):
+            raise ContractError("matched image mask relation requires artifact references")
+        if not context.store.verify_digest(image) or not context.store.verify_digest(mask):
+            raise ContractError("matched image mask inputs are missing or corrupt")
+        with (
+            Image.open(context.store.blob_path(image)) as image_file,
+            Image.open(context.store.blob_path(mask)) as mask_file,
+        ):
+            if image_file.size != mask_file.size:
+                raise ContractError("image and mask dimensions must match")
 
 
 class NativeMeshFrameValidator:
