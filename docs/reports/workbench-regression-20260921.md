@@ -30,3 +30,23 @@ image_transform OperatorSpec 和构建后的编辑器资源。构建产物未提
 目前已有 CLI、服务执行器、双节点 DAG 协议联调与编辑器配置接入。尚未运行真实
 ComfyUI 节点/模型，尚未完成浏览器发起 ComfyUI 推理到输出的完整验收；上传早期
 中断仍采用保守阻塞，不支持任意中断自动续跑。这些边界不因回归检查而关闭。
+
+## 图片节点与预检补齐后的全量回归
+
+代码基线 e7f5dd0，测试期间仅更新文档，未修改实现或测试。
+单次完整 Python 回归：**1306 passed in 355.44s**。
+这次确实重跑了完整套件，包含历史契约 fixture 修复、显式 encode_png 节点、
+统一编辑器图片导入、ComfyUI profile/服务/DAG/预检相关测试。
+
+Ruff lint、format（265 文件）及 mypy（130 source files）通过；
+sdist/wheel 构建通过。独立检查 wheel 内 comfy_preflight、dag_image_encoding、
+OperatorSpec 与源码字节一致，并包含当前图片预览前端资源。
+构建产物未提交。
+
+最近一轮前端在图片预览提交前执行：16 项单元测试、16 项 Playwright 测试、
+TypeScript/Vite 构建通过；本次未重复运行前端测试。随后实际编辑器 HTTP
+预览及损坏输出拒绝读取的 smoke 已通过，见 ComfyUI 专项设计记录。
+
+ComfyUI 浏览器创建→服务执行→输出→完成后恢复的 CPU 协议链现已跑通，
+但其上游仍为注入 fixture，不代表真实 ComfyUI 部署或模型验收。
+本轮没有运行 GPU，不新增重建质量、纹理质量或推理中断结论。

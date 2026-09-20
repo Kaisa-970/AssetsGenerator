@@ -202,10 +202,33 @@ articulation in later iterations
 - VGGT: https://github.com/facebookresearch/vggt
 - Hunyuan3D: https://github.com/hunyuan3d/hunyuan3d
 
-## 当前进展（2026-09-16）
+## 历史基线（2026-09-16）
 
 Phase 3 已整理 13 次真实 VOC 实例运行（12 成功、1 失败）与用户选出的 4 个相对完整模型。
 [初版报告](../reports/phase3-baseline-v1.md)明确记录采样、分辨率和人工评价局限；
 [已筛选输入基线](../reports/phase3-approved-baseline-v1.md)已完成最小工程基线：3 例执行成功，人工保留飞机和自行车、淘汰瓶子；两个成功样本可作为开发回归输入。Phase 4 已完成 Registry、带契约摘要的不可变 ResolvedPlan、Pipeline 默认绑定、BuildRun 绑定记录，以及 TRELLIS.2/TripoSR 的 CLI 注册和显式选择。
 
 第二个 Shape Backend 选择 TripoSR，接入边界见 [TripoSR Backend 契约](../design/triposr-backend.md)。独立环境预检、真实 GPU smoke、native frame 验证和飞机/自行车回归运行已经完成，见 [Phase 4 TripoSR 验证报告](../reports/phase4-triposr-validation-v1.md)。Phase 4 已关闭；人工视觉比较仍可继续补充，但不改变已验证的 Backend 可运行性结论。Phase 5 已显式延期，当前开始 Phase 6 的多图与 Hybrid 基础契约。
+
+
+## 当前开发重点（2026-09-21）
+
+Phase 4 已关闭，Phase 5 延期；Phase 6/7 的流程首版与 Phase 8 窄切片状态见上文，
+不把流程可运行等同于重建质量、自动 completion 或 Isaac runtime 验收完成。
+当前开发主线是用户可自行组合节点、逐实例选择本地或服务 Backend 的资产管线工作台，
+实施顺序见 [通用 DAG 设计](../design/generic-dag-orchestration.md)。
+
+已实现不可变编译/绑定计划、AdapterRegistry、DAG 调度与耐久人工决定、React Flow
+编辑与运行入口；单图、多视图和远程服务的证据分别见
+[B2 状态核对](../reports/node-editor-b2-status.md)及其引用报告。
+不能将单个模板验收推广为任意节点组合或所有模型均可运行。
+
+近期补齐显式 RGB raster→PNG 编码、图片节点结果预览、统一路径/上传校验。
+实验性 ComfyUI 接入包含服务作业边界、双节点 DAG、浏览器 CPU 协议联调和只读
+节点声明预检，见 [ComfyUI 指南](../guides/comfy-image-profile.md)。
+尚未完成真实 ComfyUI 部署/模型验收；上游内部模型及 custom node 身份仍为
+unverified，早期上传中断采用保守阻塞。
+
+后续优先补齐现有配置的真实端到端及中断验收，再扩展拥有明确端口和关系契约的
+模块目录。质量调优、自动配准、拓扑融合、分布式调度均不因画布功能增加而隐式
+进入已完成范围。

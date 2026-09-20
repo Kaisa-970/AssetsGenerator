@@ -24,6 +24,13 @@ Multi RGB / RGBD manifest
     -> AssetDefinition / AssetRelease
 ```
 
+当前开发主线是可编排节点工作台：React Flow 画布编辑、不可变 DAG 执行计划、
+逐节点本地/HTTP Backend 绑定、人工选择和结果预览。使用方法见
+[节点编辑器指南](docs/guides/node-editor.md)，已验收范围与剩余项见
+[B2 状态核对](docs/reports/node-editor-b2-status.md)。
+[ComfyUI 图片复合节点](docs/guides/comfy-image-profile.md)目前为实验接入，
+已通过 CPU 协议与浏览器链路验证，尚未完成真实 ComfyUI 模型验收。
+
 设计入口：
 
 - [文档分类索引](docs/README.md)

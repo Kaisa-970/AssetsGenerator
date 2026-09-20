@@ -13,11 +13,12 @@
 | 服务目录与 UI | 启动时 `--remote-config` 注册可信 profiles，画布逐节点选择；固定部署参数随切换清除，后端重新绑定 |
 | 本地分割与远程生成 | `--proposal-config` 只加载 SAM，无本地 Shape 依赖；真实 SAM 启动核验及 CPU 发布/恢复回归 |
 | 双服务组合 | 两个 HTTP 服务的 CPU 独立作业、10 节点双发布与离线恢复；真实双模型尚未验收 |
-| ComfyUI | 尚未实现；需独立定义复合 workflow 与内部证据边界 |
+| ComfyUI | 实验性图片复合节点、服务边界及浏览器 CPU 协议链已实现；内部来源明确未核实，真实部署/模型验收未完成，见 [专项设计](comfyui-composite-backend.md) |
 
 当前目录是启动配置，不是自动服务发现、在线注册或部署管理。新配置入口的真实浏览器
 全链已通过 [正常执行验收](../reports/sam-only-browser-real-complete.md)；
-远程真实模型推理中的服务异常退出仍需单独验收；CPU 测试不能替代这些证据。
+真实 TRELLIS.2 执行器中断与孤儿门控已完成[独立验收](../reports/trellis-executor-interruption.md)；
+HTTP 服务异常退出、父 DAG 重试到后续成功发布仍未闭环，不能据此声称任意中断均可恢复。
 验证与使用见 [服务指南](../guides/remote-shape-service.md)、
 [真实 shape](../reports/remote-shape-real-smoke.md)、
 [选区发布链](../reports/remote-selected-trellis-fallback-real-smoke.md) 和
