@@ -115,7 +115,7 @@ Ruff lint、format（269 文件）、mypy（130 源文件）通过；sdist/wheel
 产品基线 `89e6cea`。首次完整 Python 回归为 **1333 passed、2 failed in 404.30s**。
 两项均为扩展后的旧测试预期：历史契约重建未排除 resize_image；远程编辑器目录
 仍断言六项而实际新增编码/缩放为八项。修正后兼容性与远程目录合跑
-**14 passed in 7.99s**，随后已启动完整复跑，结果尚待记录，不合并分轮计数宣称全绿。
+**14 passed in 7.99s**，修正后完整复跑一次通过：**1335 passed in 362.09s (0:06:02)**。
 
 同一产品基线的前端 Vitest **27 passed**、Playwright **30 passed (56.1s)**；
 TypeScript/Vite、sdist/wheel 构建通过。Ruff lint/format（272 文件）、mypy
