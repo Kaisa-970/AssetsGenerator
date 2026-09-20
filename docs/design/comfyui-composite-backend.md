@@ -458,3 +458,15 @@ ComfyImageAdapter 依据 run/node/attempt 重新计算预期远程 job key，并
 9 项 ComfyUI Adapter 与既有远程 shape 回归通过，覆盖错误 attempt、错误 binding
 拒绝且不写 Store；Ruff/mypy 通过。上下文新增字段有默认值，既有 Adapter 不受
 调用参数变更影响。尚未完成完整 ComfyUI DAG 联调与 registry/画布接入。
+
+### 两节点 DAG 服务联调
+
+测试按 comfy_image_chain_v1.yaml 注册两个 Backend 实例，Core 通过真实本机服务
+HTTP 上传输入/提交请求，由 execute_next_image 调用 profile 执行并发布，Core
+导入图片与证据后调度第二节点。两次输出像素不同，断言第二节点输入精确等于
+第一节点的输出 Artifact；两节点各一次 attempt、一次 prompt 提交，证据闭包完整。
+关闭并重开 DagRepository 后恢复仍成功，无额外上传或 prompt。
+
+11 项 DAG ComfyUI/执行器测试及 Ruff 格式/检查通过。本轮仅新增测试，未重跑
+mypy。Core↔服务使用真实 HTTP，但服务↔ComfyUI 传输采用注入 fixture，没有运行
+ComfyUI 模型，也不是两个 HTTP 层的全链路。尚未注册启动配置或开放画布入口。
