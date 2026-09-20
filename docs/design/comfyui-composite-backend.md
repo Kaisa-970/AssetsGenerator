@@ -393,3 +393,14 @@ pipelines/comfy_image_chain_v1.yaml 展示同一 Operator 的 first/second 两�
 
 35 项契约相关测试通过，包含编译计划往返、依赖/独立 Backend 绑定和 RGBA 拒绝；
 Ruff 与 git diff --check 通过。没有执行 DAG 推理或真实 ComfyUI。
+
+### DAG 上传输入校验桥接
+
+import_remote_image 接受既有远程调度封装的 image_transform@1 请求，核对精确
+payload 字段、输入/binding 摘要、唯一 image 描述、Artifact identity 和 RGB PNG
+实际编码；从服务 Blob 库读取并在首次导入保留原 Artifact ID。recovery_only 模式
+只读已有输入，缺失时拒绝补写，避免服务端输入证据损坏被重新导入掩盖。
+
+5 项输入回归、Ruff 格式/检查和 mypy 通过，覆盖身份/kind/编码错误、Blob 缺失、
+往返及恢复禁写。本步仅提供服务输入桥接函数，未连接 profile.start、远程 Adapter
+或画布；不能将其描述为已经支持 DAG 执行。
