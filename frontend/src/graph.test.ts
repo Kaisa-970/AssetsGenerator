@@ -1,0 +1,149 @@
+import { describe, it, expect } from "vitest";
+import { load, dump } from "js-yaml";
+import {
+  bind,
+  compatible,
+  connectionError,
+  graphEdges,
+  removeNodes,
+  validateDocument,
+  type Pipeline,
+  type Catalog,
+} from "./graph";
+const p: Pipeline = {
+  pipeline: "diamond",
+  version: "1",
+  inputs: { image: { kind: "rgb_image" } },
+  nodes: {
+    a: {
+      operator: "copy@1",
+      inputs: { image: "pipeline.inputs.image" },
+      parameters: { seed: 42 },
+    },
+    b: { operator: "copy@1", inputs: { image: "a.outputs.image?" } },
+  },
+};
+const c: Catalog = {
+  operators: {
+    "copy@1": {
+      name: "copy",
+      version: "1",
+      inputs: { image: { kind: "rgb_image" } },
+      outputs: { image: { kind: "rgb_image" } },
+    },
+  },
+  adapters: [],
+  templates: [],
+};
+describe("editable graph contracts", () => {
+  it("preserves optional edges, parameters and unknown metadata in YAML roundtrip", () => {
+    const original = { ...p, custom: { policy: "explicit" } };
+    expect(validateDocument(load(dump(original)))).toEqual(original);
+    expect(graphEdges(original)[1].label).toBe("可选");
+  });
+  it("binds two instances independently and preserves upstream identity", () => {
+    const next = bind(p, "a", "image", "b", "image");
+    expect(next.nodes.b.inputs.image).toBe("a.outputs.image");
+    expect(p.nodes.b.inputs.image).toBe("a.outputs.image?");
+  });
+  it("rejects cycles and incompatible carriers/cardinality/schema", () => {
+    expect(connectionError(p, c, "b", "image", "a", "image")).toContain("循环");
+    expect(
+      compatible(
+        { kind: "rgb_image", cardinality: "one_or_more" },
+        { kind: "rgb_image" },
+      ),
+    ).toBeTruthy();
+    expect(
+      compatible(
+        { kind: "rgb_image", carriers: ["structured"] },
+        { kind: "rgb_image", carriers: ["artifact_ref"] },
+      ),
+    ).toBeTruthy();
+    expect(
+      compatible(
+        { kind: "rgb_image" },
+        { kind: "rgb_image", schema_name: "Foo" },
+      ),
+    ).toBeTruthy();
+  });
+  it("removes dependent bindings when their input/node disappears", () => {
+    expect(removeNodes(p, new Set(["a"])).nodes.b.inputs).toEqual({});
+    expect(removeNodes(p, new Set(["input:image"])).nodes.a.inputs).toEqual({});
+  });
+  it("rejects malformed imported documents", () => {
+    expect(() => validateDocument({ pipeline: "x" })).toThrow();
+    expect(() =>
+      validateDocument({
+        ...p,
+        nodes: { a: { operator: "copy@1", inputs: { image: 12 } } },
+      }),
+    ).toThrow();
+  });
+});
+
+import { readFileSync } from "node:fs";
+it("loads real single-image and multi-view templates without changing bindings", () => {
+  for (const name of ["dag-image-asset", "dag-multi-view-asset"]) {
+    const original = load(
+      readFileSync(
+        new URL(`../../examples/${name}.yaml`, import.meta.url),
+        "utf8",
+      ),
+    );
+    const pipeline = validateDocument(original);
+    expect(load(dump(pipeline))).toEqual(original);
+    expect(graphEdges(pipeline).length).toBe(
+      Object.values(pipeline.nodes).reduce(
+        (count, node) => count + Object.keys(node.inputs).length,
+        0,
+      ),
+    );
+  }
+});
+it("supports catalog plural kinds and rejects ambiguous unions", () => {
+  expect(
+    compatible(
+      { kinds: ["rgb_image"], carriers: ["artifact_ref"] },
+      { kinds: ["rgb_image", "rgba_image"], carriers: ["artifact_ref"] },
+    ),
+  ).toBeNull();
+  expect(
+    compatible(
+      { kinds: ["rgb_image", "rgba_image"] },
+      { kinds: ["rgb_image"] },
+    ),
+  ).toBeTruthy();
+});
+it("retains shared references through a diamond join", () => {
+  const diamond: Pipeline = {
+    ...p,
+    nodes: {
+      a: { operator: "copy@1", inputs: { image: "pipeline.inputs.image" } },
+      b: { operator: "copy@1", inputs: { image: "a.outputs.image" } },
+      c: { operator: "copy@1", inputs: { image: "a.outputs.image" } },
+      d: {
+        operator: "join@1",
+        inputs: { left: "b.outputs.image", right: "c.outputs.image" },
+      },
+    },
+  };
+  const restored = validateDocument(load(dump(diamond)));
+  expect(
+    graphEdges(restored).filter((edge) => edge.source === "a"),
+  ).toHaveLength(2);
+  expect(restored.nodes.b.inputs.image).toBe(restored.nodes.c.inputs.image);
+  expect(
+    graphEdges(restored).filter((edge) => edge.target === "d"),
+  ).toHaveLength(2);
+});
+
+import { renameNode } from "./graph";
+it("renames instance IDs while preserving optional bindings", () => {
+  const renamed = renameNode(p, "a", "another");
+  expect(renamed.nodes.b.inputs.image).toBe("another.outputs.image?");
+  expect(
+    renameNode(renamed, "input:image", "photo").nodes.another.inputs.image,
+  ).toBe("pipeline.inputs.photo");
+  expect(() => renameNode(p, "a", "b")).toThrow();
+});

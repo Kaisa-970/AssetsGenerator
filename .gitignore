@@ -13,3 +13,5 @@ outputs/
 data/input/
 *.glb
 *.gltf
+node_modules/
+src/assets_generator/resources/node-editor/

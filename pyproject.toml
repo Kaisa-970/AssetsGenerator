@@ -33,7 +33,7 @@ assets-generator = "assets_generator.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-"assets_generator.resources" = ["*.yaml", "*.html"]
+"assets_generator.resources" = ["*.yaml", "*.html", "node-editor/*", "node-editor/assets/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

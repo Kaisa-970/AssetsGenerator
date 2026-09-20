@@ -1,0 +1,254 @@
+export type Port = {
+  kind?: string;
+  kinds?: string[];
+  cardinality?: string;
+  carriers?: string[];
+  schema_name?: string;
+  schema_version?: string;
+  [key: string]: unknown;
+};
+export type Operator = {
+  name: string;
+  version: string;
+  inputs: Record<string, Port>;
+  outputs: Record<string, Port>;
+  relations?: unknown[];
+};
+export type Adapter = {
+  name: string;
+  version: string;
+  operators: string[];
+  parameter_schema?: Record<string, unknown>;
+  defaults?: Record<string, unknown>;
+  execution_kind?: string;
+};
+export type PipelineNode = {
+  operator: string;
+  adapter?: string;
+  backend?: string;
+  parameters?: Record<string, unknown>;
+  inputs: Record<string, string>;
+  [key: string]: unknown;
+};
+export type Pipeline = {
+  pipeline: string;
+  version: string;
+  inputs: Record<string, Port>;
+  nodes: Record<string, PipelineNode>;
+  [key: string]: unknown;
+};
+export type Layout = Record<string, { x: number; y: number }>;
+export type Catalog = {
+  operators: Record<string, Operator>;
+  adapters: Adapter[];
+  templates: { id: string; label: string; pipeline: Pipeline }[];
+};
+export const inputId = (name: string) => `input:${name}`;
+export function parseReference(
+  ref: string,
+): { source: string; handle: string; optional: boolean } | null {
+  const optional = ref.endsWith("?");
+  const value = optional ? ref.slice(0, -1) : ref;
+  if (value.startsWith("pipeline.inputs."))
+    return { source: inputId(value.slice(16)), handle: "value", optional };
+  const match = value.match(/^(.+)\.outputs\.([^.]+)$/);
+  return match ? { source: match[1], handle: match[2], optional } : null;
+}
+export function reference(source: string, handle: string): string {
+  return source.startsWith("input:")
+    ? `pipeline.inputs.${source.slice(6)}`
+    : `${source}.outputs.${handle}`;
+}
+export function graphEdges(p: Pipeline) {
+  return Object.entries(p.nodes).flatMap(([id, n]) =>
+    Object.entries(n.inputs || {}).flatMap(([port, ref]) => {
+      const parsed = parseReference(ref);
+      return parsed
+        ? [
+            {
+              id: `${id}:${port}`,
+              source: parsed.source,
+              sourceHandle: parsed.handle,
+              target: id,
+              targetHandle: port,
+              label: parsed.optional ? "可选" : undefined,
+            },
+          ]
+        : [];
+    }),
+  );
+}
+const ranges: Record<string, [number, number, boolean]> = {
+  one: [1, 1, false],
+  zero_or_one: [0, 1, false],
+  one_or_more: [1, Infinity, true],
+  zero_or_more: [0, Infinity, true],
+  many: [0, Infinity, true],
+};
+export const portKinds = (port: Port): string[] =>
+  port.kinds || (port.kind ? [port.kind] : []);
+export function compatible(source: Port, target: Port): string | null {
+  const sk = portKinds(source),
+    tk = portKinds(target);
+  if (!sk.length || !tk.length || sk.some((k) => !tk.includes(k)))
+    return `类型不匹配：${sk.join("|")} → ${tk.join("|")}`;
+  const a = ranges[source.cardinality || "one"],
+    b = ranges[target.cardinality || "one"];
+  if (!a || !b || a[2] !== b[2] || a[0] < b[0] || a[1] > b[1])
+    return "基数不匹配；集合与单值需要显式转换";
+  if (
+    source.carriers &&
+    target.carriers &&
+    source.carriers.some((c) => !target.carriers!.includes(c))
+  )
+    return "载体不兼容";
+  for (const key of ["schema_name", "schema_version"] as const)
+    if (target[key] && target[key] !== source[key]) return `${key} 不匹配`;
+  return null;
+}
+export function connectionError(
+  p: Pipeline,
+  c: Catalog,
+  source: string,
+  handle: string,
+  target: string,
+  port: string,
+): string | null {
+  if (source === target) return "节点不能连接自身";
+  const src = source.startsWith("input:")
+    ? p.inputs[source.slice(6)]
+    : c.operators[p.nodes[source]?.operator]?.outputs[handle];
+  const dst = c.operators[p.nodes[target]?.operator]?.inputs[port];
+  if (!src || !dst) return "找不到端口契约";
+  const err = compatible(src, dst);
+  if (err) return err;
+  const edges = graphEdges(p).filter(
+    (e) => !(e.target === target && e.targetHandle === port),
+  );
+  const pending = [target],
+    visited = new Set<string>();
+  while (pending.length) {
+    const id = pending.pop()!;
+    if (id === source) return "该连接会形成循环";
+    if (visited.has(id)) continue;
+    visited.add(id);
+    pending.push(...edges.filter((e) => e.source === id).map((e) => e.target));
+  }
+  return null;
+}
+export function bind(
+  p: Pipeline,
+  source: string,
+  handle: string,
+  target: string,
+  port: string,
+): Pipeline {
+  return {
+    ...p,
+    nodes: {
+      ...p.nodes,
+      [target]: {
+        ...p.nodes[target],
+        inputs: {
+          ...p.nodes[target].inputs,
+          [port]: reference(source, handle),
+        },
+      },
+    },
+  };
+}
+export function removeNodes(p: Pipeline, ids: Set<string>): Pipeline {
+  return {
+    ...p,
+    inputs: Object.fromEntries(
+      Object.entries(p.inputs).filter(([id]) => !ids.has(inputId(id))),
+    ),
+    nodes: Object.fromEntries(
+      Object.entries(p.nodes)
+        .filter(([id]) => !ids.has(id))
+        .map(([id, n]) => [
+          id,
+          {
+            ...n,
+            inputs: Object.fromEntries(
+              Object.entries(n.inputs || {}).filter(
+                ([, ref]) => !ids.has(parseReference(ref)?.source || ""),
+              ),
+            ),
+          },
+        ]),
+    ),
+  };
+}
+export function validateDocument(value: unknown): Pipeline {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw Error("YAML 顶层必须是 Pipeline 对象");
+  const p = value as Pipeline;
+  if (
+    typeof p.pipeline !== "string" ||
+    !p.pipeline ||
+    !p.version ||
+    !p.inputs ||
+    !p.nodes ||
+    Array.isArray(p.nodes) ||
+    Array.isArray(p.inputs)
+  )
+    throw Error("需要 pipeline、version、inputs 和 nodes");
+  for (const [id, n] of Object.entries(p.nodes)) {
+    if (
+      !/^[A-Za-z_][\w-]*$/.test(id) ||
+      !n ||
+      typeof n.operator !== "string" ||
+      !n.inputs ||
+      typeof n.inputs !== "object" ||
+      Object.values(n.inputs).some((v) => typeof v !== "string")
+    )
+      throw Error(`无效节点：${id}`);
+  }
+  for (const [id, port] of Object.entries(p.inputs))
+    if (!port || !portKinds(port).length) throw Error(`无效输入：${id}`);
+  return { ...p, version: String(p.version) };
+}
+
+export function renameNode(
+  p: Pipeline,
+  oldId: string,
+  newName: string,
+): Pipeline {
+  if (!/^[A-Za-z_][\w-]*$/.test(newName))
+    throw Error("实例名称只接受字母开头的字母、数字、下划线和连字符");
+  const isInput = oldId.startsWith("input:");
+  const newId = isInput ? inputId(newName) : newName;
+  if (newId === oldId) return p;
+  if (isInput ? !!p.inputs[newName] : !!p.nodes[newName])
+    throw Error("实例名称已存在");
+  return {
+    ...p,
+    inputs: Object.fromEntries(
+      Object.entries(p.inputs).map(([id, port]) => [
+        isInput && inputId(id) === oldId ? newName : id,
+        port,
+      ]),
+    ),
+    nodes: Object.fromEntries(
+      Object.entries(p.nodes).map(([id, node]) => [
+        !isInput && id === oldId ? newName : id,
+        {
+          ...node,
+          inputs: Object.fromEntries(
+            Object.entries(node.inputs).map(([port, ref]) => {
+              const parsed = parseReference(ref);
+              return [
+                port,
+                parsed?.source === oldId
+                  ? reference(newId, parsed.handle) +
+                    (parsed.optional ? "?" : "")
+                  : ref,
+              ];
+            }),
+          ),
+        },
+      ]),
+    ),
+  };
+}

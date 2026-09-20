@@ -294,6 +294,10 @@ class BoundDagPlan:
 
 
 class AdapterRegistry:
+    def catalog(self) -> list[dict[str, Any]]:
+        """Describe registered capabilities without invoking an adapter."""
+        return [self._adapters[key].spec.to_dict() for key in sorted(self._adapters)]
+
     def __init__(self) -> None:
         self._adapters: dict[str, NodeAdapter] = {}
 

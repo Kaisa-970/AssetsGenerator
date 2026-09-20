@@ -1,5 +1,7 @@
 # 文档索引
 
+[节点编辑器使用指南](guides/node-editor.md)
+
 ## 架构与契约 · design
 
 - [固定流程节点工作台 v1（实现中）](design/node-workbench-v1.md)
@@ -52,6 +54,8 @@
 - [DA3 独立环境与 Python 接入](guides/da3-environment.md)
 
 ## 评测报告 · reports
+
+- [节点编辑器 B1 首版](reports/node-editor-b1.md)
 
 - [Generic DAG 多视图迁移切片](reports/generic-dag-multi-view.md)
 
