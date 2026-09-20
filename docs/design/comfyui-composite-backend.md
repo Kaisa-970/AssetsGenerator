@@ -149,3 +149,14 @@ ComfyWorkflow 校验 API 图节点、连线引用与无环性，复制冻结模�
 完整节点类型与输出槽位有效性仍需部署的 ComfyUI validate_prompt 核验，Core
 静态检查不声称能验证自定义节点实现。47 项 ComfyUI 测试、Ruff/mypy 通过。
 该组件尚未接启动 profile、输入上传、外层服务与 DAG，不是新开放的画布节点。
+
+### 图片输入上传与回读
+
+upload_image 从有效 RGB/RGBA PNG Artifact 读取，校验编码和摘要后以 Blob 摘要
+命名，上传到受控 assets-generator 子目录，overwrite=false。回执必须保留预定
+位置，随后通过固定服务 /view 回读并逐字节比较，返回 Artifact/Blob/文件位置映射。
+改名、重定向、内容变化、超限或损坏输入均拒绝；上传不调用 /prompt。
+
+52 项 ComfyUI 测试、Ruff/mypy 通过。回读只证明观察时刻的文件内容，不保证
+远程文件随后不可变；服务端隔离、提交前再次核验及输入映射的耐久记录仍需
+外层编排接入。当前返回的映射尚非 provenance Artifact，也没有真实 ComfyUI 验收。
