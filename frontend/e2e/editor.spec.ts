@@ -1125,9 +1125,9 @@ test("RGBA canvas upload uses the explicit endpoint and preserves returned refer
       body = { image_ref: imageRef };
     } else if (path === "/api/runs" && route.request().method() === "POST") {
       starts.push(route.request().postDataJSON());
-      body = { run: { run_id: "dag_remote", status: "running", dag: { revision: 1, node_states: {} } }, busy: false };
+      body = { run: { run_id: "dag_remote", status: "running", dag: { revision: 1, node_states: { shape: { status: "running", attempts: [{ status: "running", error_code: "remote_queued", remote_binding: { service_id: "test-service", submission_key: "job-exact-one" } }] } } } }, busy: false };
     } else if (path === "/api/runs") body = { runs: [] };
-    else body = { run: { run_id: "dag_remote", status: "running", dag: { revision: 1, node_states: {} } }, busy: false };
+    else body = { run: { run_id: "dag_remote", status: "running", dag: { revision: 1, node_states: { shape: { status: "running", attempts: [{ status: "running", error_code: "remote_queued", remote_binding: { service_id: "test-service", submission_key: "job-exact-one" } }] } } } }, busy: false };
     await route.fulfill({ json: body });
   });
   await page.goto("/");
@@ -1143,6 +1143,8 @@ test("RGBA canvas upload uses the explicit endpoint and preserves returned refer
   expect(starts).toEqual([]);
   await page.getByRole("button", { name: "启动新运行", exact: true }).click();
   await expect.poll(() => starts.length).toBe(1);
+  await expect(page.getByText(/上次报告作业已排队/)).toBeVisible();
+  await expect(page.getByLabel("远程作业标识 · shape")).toHaveValue("job-exact-one");
   expect(starts[0].image_ref).toEqual(imageRef);
   expect(starts[0].pipeline.inputs.image.kind).toBe("rgba_image");
   await page.getByRole("button", { name: "普通 RGB", exact: true }).click();

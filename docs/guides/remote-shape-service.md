@@ -72,3 +72,7 @@ endpoint/service_id/backend_digest 固定在参数 enum 中，草稿不能任意
 它验证 GET 轮询不消费远程成功结果、重复创建不产生新运行、五节点各一次 attempt、GLB 可回读。
 该测试使用独立 CPU 测试 Backend；与浏览器模拟 API 测试、真实 TRELLIS.2 DAG smoke 是不同证据，
 不能合称已完成“浏览器直接操作真实模型”的验收。
+
+远程节点运行面板展示上次保存的 queued/running/unknown 提示、服务名称和可复制的 submission key。
+把该标识传给服务端 `execute --job`。提示不是实时服务状态；点击“恢复 / 继续此运行”才会核实
+原作业并继续后续节点，普通页面轮询不会派发或重复提交。

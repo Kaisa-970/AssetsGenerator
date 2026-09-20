@@ -1,3 +1,4 @@
+import { remoteStatusMessage } from "./remoteStatus";
 import { RunGraph } from "./RunGraph";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import type { Pipeline } from "./graph";
@@ -14,6 +15,7 @@ type NodeState = {
     error_detail?: string;
     status?: string;
     attempt?: number;
+    remote_binding?: { service_id: string; submission_key: string };
   }[];
 };
 type Run = {
@@ -557,6 +559,17 @@ export function ExecutionPanel({
             <div className="run-node" key={id}>
               <strong>{id}</strong>
               <span>{state.status}</span>
+              {state.status === "running" && state.attempts?.at(-1)?.remote_binding && (
+                <div>
+                  <p>{remoteStatusMessage(state.attempts.at(-1)?.error_code)}</p>
+                  <p>页面轮询只读取已保存状态，不主动查询服务或执行模型。</p>
+                  <p>服务：{state.attempts.at(-1)!.remote_binding!.service_id}</p>
+                  <label>
+                    远程作业标识 · {id}
+                    <input readOnly value={state.attempts.at(-1)!.remote_binding!.submission_key} />
+                  </label>
+                </div>
+              )}
               {state.recovery_blocked_reason && (
                 <p>{state.recovery_blocked_reason}</p>
               )}
