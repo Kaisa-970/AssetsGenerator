@@ -17,3 +17,19 @@ Ruff lint/format、mypy（131 个源文件）、两份 Operator YAML 字节一�
 
 新增全局 Operator 契约会影响基于该契约集合绑定的计划身份；不修改历史计划或
 运行证据来绕过校验。测试只证明本模块的像素与编排行为，不是模型质量结论。
+
+## 实际浏览器交互补验
+
+在产品基线 `5fdec8c`，使用 CPU 示例服务和新增 `frontend/smoke/image-resize.cjs`。
+浏览器加载原编码模板，通过目录添加两个 resize 实例并手工连线；表单设置
+64×32、96×48 和 nearest，编译后上传 RGB 图片并启动。两个预览图片的
+naturalWidth/naturalHeight 与表单尺寸一致，两节点实际输入均指向 encode 的输出。
+
+最终核验运行 `dag_7ce47cb995fb4e119d11bc2c54f8c0fe` 成功，三个节点各一次 attempt。
+等待显式 resume 请求返回 202 后再轮询空闲，完整节点记录不变，浏览器无 pageerror。
+脚本退出码 0；服务已关闭。此前首次 smoke 也成功，但恢复检查未显式等待 POST
+回执，因此补强脚本后用独立新运行重新验证，不将首次结果作为最终恢复证据。
+
+外部证据位于 `<DATASET_ROOT>/resize-browser-cpu-v1/rechecked/`：browser.log、
+resize-browser.json、resize-browser.png；运行 Store 位于父目录 editor/。
+Node 语法检查、Prettier 和 git diff --check 通过。本补验不调用模型或 GPU。

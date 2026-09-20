@@ -165,3 +165,12 @@ ComfyUI 配置目录同样注册此 CPU 节点，可放在复合模型前后。
 直接当作与原 depth、mask、camera 对齐的观测；这种组合需要另一个带关系契约的
 显式空间转换 Operator。每个实例的参数、输入和输出由 Core 写入 provenance，
 恢复时不重做已成功缩放，也不补回损坏输出。
+
+可复现画布手工配置与预览验收（会创建一个新的 CPU 运行）：
+
+```bash
+node frontend/smoke/image-resize.cjs <EDITOR_URL> <RGB_IMAGE> <NEW_EVIDENCE_DIRECTORY>
+```
+
+目录须预先创建且没有同名验收记录。脚本从原编码模板添加两个缩放节点、手工连线、
+修改参数，核对浏览器预览真实尺寸及恢复不增加 attempt；不用配置任何模型。
