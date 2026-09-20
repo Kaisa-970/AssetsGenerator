@@ -149,7 +149,7 @@ it("renames instance IDs while preserving optional bindings", () => {
   expect(() => renameNode(p, "a", "b")).toThrow();
 });
 
-import { selectBackend } from "./graph";
+import { selectBackend, selectAdapter } from "./graph";
 it("clears fixed remote bindings when switching profiles or returning to default", () => {
   const adapter = (name: string) => ({
     name: "remote_shape",
@@ -273,4 +273,40 @@ it("backend switching selects compatible implementations and clears both fixed i
     selectBackend({ ...node, adapter: undefined }, "ambiguous", catalog)
       .adapter,
   ).toBeUndefined();
+});
+
+it("direct adapter selection clears fixed values while preserving editable parameters", () => {
+  const adapter = (name: string) => ({
+    name,
+    version: "1",
+    operators: ["op@1"],
+    parameter_schema: {
+      properties: { [name]: { type: "string", enum: [name] } },
+    },
+  });
+  const catalog: Catalog = {
+    operators: {},
+    templates: [],
+    adapters: [adapter("a"), adapter("b")],
+  };
+  const node = {
+    operator: "op@1",
+    adapter: "a@1",
+    inputs: {},
+    parameters: { a: "a", b: "stale", seed: 42 },
+  };
+  expect(selectAdapter(node, "b@1", catalog)).toEqual({
+    ...node,
+    adapter: "b@1",
+    parameters: { seed: 42 },
+  });
+  expect(node.parameters).toEqual({ a: "a", b: "stale", seed: 42 });
+  catalog.backends = catalog.adapters.map((item) => ({
+    ...item,
+    backend: "shared",
+    adapter: `${item.name}@1`,
+  }));
+  expect(
+    selectAdapter({ ...node, backend: "shared" }, "b@1", catalog).parameters,
+  ).toEqual({ seed: 42 });
 });

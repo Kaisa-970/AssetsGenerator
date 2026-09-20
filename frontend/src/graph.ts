@@ -281,22 +281,7 @@ export function selectBackend(
       )
     : catalog.adapters.find((item) => keyOf(item) === node.adapter);
   const newAdapter = candidates.find((item) => keyOf(item) === adapterKey);
-  const parameters = { ...node.parameters };
-  for (const adapter of [oldAdapter, newAdapter]) {
-    const properties = adapter?.parameter_schema?.properties;
-    if (!properties || typeof properties !== "object") continue;
-    for (const [key, rule] of Object.entries(properties)) {
-      if (
-        rule &&
-        typeof rule === "object" &&
-        "enum" in rule &&
-        Array.isArray(rule.enum) &&
-        rule.enum.length === 1
-      )
-        delete parameters[key];
-    }
-  }
-  delete parameters.profile_digest;
+  const parameters = clearFixedParameters(node, [oldAdapter, newAdapter]);
   return {
     ...node,
     adapter: adapterKey,
@@ -320,5 +305,52 @@ export function duplicateNode(
       ...p,
       nodes: { ...p.nodes, [id]: structuredClone(p.nodes[source]) },
     },
+  };
+}
+
+function clearFixedParameters(
+  node: PipelineNode,
+  adapters: (Adapter | undefined)[],
+) {
+  const parameters = { ...node.parameters };
+  for (const adapter of adapters) {
+    const properties = adapter?.parameter_schema?.properties;
+    if (!properties || typeof properties !== "object") continue;
+    for (const [key, rule] of Object.entries(properties)) {
+      if (
+        rule &&
+        typeof rule === "object" &&
+        "enum" in rule &&
+        Array.isArray(rule.enum) &&
+        rule.enum.length === 1
+      )
+        delete parameters[key];
+    }
+  }
+  delete parameters.profile_digest;
+  return parameters;
+}
+
+export function selectAdapter(
+  node: PipelineNode,
+  adapter: string,
+  catalog: Catalog,
+): PipelineNode {
+  const choices = node.backend
+    ? (catalog.backends || []).filter((item) => item.backend === node.backend)
+    : catalog.adapters;
+  const resolve = (key?: string) =>
+    choices.find(
+      (item) =>
+        `${item.name}@${item.version}` === key &&
+        item.operators.includes(node.operator),
+    );
+  return {
+    ...node,
+    adapter: adapter || undefined,
+    parameters: clearFixedParameters(node, [
+      resolve(node.adapter),
+      resolve(adapter),
+    ]),
   };
 }

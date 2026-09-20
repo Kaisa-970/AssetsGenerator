@@ -37,6 +37,7 @@ import {
   duplicateNode,
   validateDocument,
   selectBackend,
+  selectAdapter,
 } from "./graph";
 import "@xyflow/react/dist/style.css";
 import "./style.css";
@@ -713,10 +714,11 @@ function App() {
                               ...pipeline,
                               nodes: {
                                 ...pipeline.nodes,
-                                [selected]: {
-                                  ...node,
-                                  adapter: e.target.value || undefined,
-                                },
+                                [selected]: selectAdapter(
+                                  node,
+                                  e.target.value,
+                                  catalog,
+                                ),
                               },
                             })
                           }
