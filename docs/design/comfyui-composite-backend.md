@@ -355,3 +355,16 @@ Store Artifact，不是完整依赖闭包的可移植备份。
 
 CLI 3 项回归、Ruff 格式/检查和 mypy 通过；新增覆盖内容一致、无计算调用、已有
 文件不覆盖和损坏 Blob 不生成输出。未重跑完整 ComfyUI 套件，也未运行真实模型。
+
+### CLI 独立进程 HTTP 全链路
+
+原 HTTP 协议 fixture 新增两个 CLI 场景，使用独立 Python 进程实际执行
+assets_generator.cli 的 start/resume/status/download，无替换 profile 执行方法。
+配置从 JSON 加载，已有图片 Artifact 通过 multipart 上传，普通 seed 参数进入
+提交图；正常回执和断连接丢回执均最终成功发布。断连接返回码为 3，恢复未重发。
+
+关闭 HTTP 服务后，再用独立进程查询状态、恢复、下载图片/证据；图片字节、输入
+ArtifactRef 与证据内 profile digest 均匹配，并断言没有新增网络请求。每条链
+上传、prompt POST、输出下载均各一次。HTTP 链共 8 项通过，Ruff 格式/检查通过；
+本轮未改生产代码，未重跑 mypy 或完整套件。fixture 未运行真实 ComfyUI 节点，
+不代表真实模型验收。失败终态处理和 DAG/画布接入仍待完成。

@@ -24,7 +24,7 @@ from assets_generator.remote_protocol import RemoteRequest
 from assets_generator.remote_service_store import RemoteServiceStore
 
 
-@pytest.mark.parametrize("commit_crash", ["none", "before", "after"])
+@pytest.mark.parametrize("commit_crash", ["none", "before", "after", "cli"])
 @pytest.mark.parametrize("lose_ack", [False, True])
 def test_image_chain_recovers_without_reupload_resubmit_or_redownload(
     tmp_path, lose_ack, commit_crash, monkeypatch
@@ -142,6 +142,97 @@ def test_image_chain_recovers_without_reupload_resubmit_or_redownload(
             {"seed": ("2", "seed")},
             image_targets={"image": ("1", "image")},
         )
+
+        if commit_crash == "cli":
+            import os
+            import subprocess
+            import sys
+            from pathlib import Path
+
+            from assets_generator.comfy_profile import ComfyImageProfile
+            from assets_generator.compiled_plan import thaw
+
+            profile_path = tmp_path / "profile.json"
+            profile_path.write_text(
+                json.dumps(
+                    {
+                        "schema": "comfy-image-profile@1",
+                        "service_id": "cli-fixture",
+                        "endpoint": client.endpoint,
+                        "prompt": thaw(workflow.prompt),
+                        "parameter_schema": thaw(workflow.spec.parameter_schema),
+                        "defaults": {},
+                        "parameter_targets": thaw(workflow.targets),
+                        "image_targets": thaw(workflow.image_targets),
+                        "output": {"node": "3", "index": 0, "mode": "RGB"},
+                        "deployment_claims": {"fixture": True},
+                    }
+                )
+            )
+            request_path = tmp_path / "request.json"
+            request_path.write_text(
+                json.dumps(
+                    {
+                        "images": {"image": {"artifact_id": source.artifact_id}},
+                        "parameters": {"seed": 7},
+                    }
+                )
+            )
+            directory = tmp_path / "cli-jobs"
+            env = {**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1] / "src")}
+
+            def command(action, *extra):
+                process = subprocess.run(
+                    [
+                        sys.executable,
+                        "-m",
+                        "assets_generator.cli",
+                        "comfy-image",
+                        action,
+                        "--profile",
+                        str(profile_path),
+                        "--directory",
+                        str(directory),
+                        "--store",
+                        str(store.root),
+                        "--key",
+                        "cli-one",
+                        *extra,
+                    ],
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                assert process.returncode in {0, 3}, process.stderr
+                return process.returncode, json.loads(process.stdout)
+
+            code, started = command("start", "--request", str(request_path))
+            assert code == (3 if lose_ack else 0)
+            assert started["state"] == ("uncertain" if lose_ack else "succeeded")
+            assert command("resume")[1]["state"] == "succeeded"
+            assert calls.count(("POST", "/upload/image")) == 1
+            assert calls.count(("POST", "/prompt")) == 1
+            assert sum(method == "GET" and "type=output" in path for method, path in calls) == 1
+            server.shutdown()
+            snapshot = list(calls)
+            assert command("status")[1]["state"] == "succeeded"
+            assert command("resume")[1]["state"] == "succeeded"
+            image_path, evidence_path = tmp_path / "download.png", tmp_path / "evidence.json"
+            assert command("download", "--output-id", "image", "--output", str(image_path))[0] == 0
+            assert (
+                command("download", "--output-id", "evidence", "--output", str(evidence_path))[0]
+                == 0
+            )
+            assert image_path.read_bytes() == output_bytes
+            evidence = json.loads(evidence_path.read_bytes())
+            assert evidence["inputs"]["image"] == {"artifact_id": source.artifact_id}
+            assert (
+                evidence["deployment_claims"]["claims"]["profile_digest"]
+                == ComfyImageProfile.load(profile_path).identity.backend_digest
+            )
+            assert calls == snapshot
+            return
 
         def start():
             return start_owned_image(
