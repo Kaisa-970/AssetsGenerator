@@ -226,3 +226,27 @@ node frontend/smoke/embedded-review.cjs <EMPTY_CPU_ROOT>/browser-config.json --r
 已有提交结果、完成结果或启动标记时拒绝重跑，即使前次失败也不自动删除标记。
 先检查原运行和服务作业；另一次独立验收应使用新的目录。单元验证命令为
 `node --test frontend/smoke/claim-run.test.cjs`。
+
+## 可复用浏览器继续验收
+
+`frontend/smoke/embedded-review.cjs <BROWSER_CONFIG> --remote-submit` 通过页面创建运行、
+确认一个候选并保存 `browser-submitted.json`。自动检查人明确标记为
+`Codex automated browser smoke (not user approval)`；不代表用户批准或 mask 质量结论。
+配置包含 `url`、`root`、`image` 和 `template`，root 必须为新的仓库外运行目录。
+
+在服务端执行已保存的 submission key 后，运行：
+
+```bash
+node frontend/smoke/remote-complete.cjs <BROWSER_CONFIG>
+```
+
+脚本只选择已提交运行并点击恢复，不创建运行、不重新提交决定、不启动服务端模型。
+它检查全部节点成功且各一次 attempt、原远程绑定和决定回执不变、发布 GLB/Release
+存在且全部展示输出可下载、GLB 文件头与长度有效，然后再次通过页面恢复并比较
+节点、回执和输出。结果与截图写入 `browser-completed.json/png`；JSON 禁止覆盖。
+文件头检查不能替代渲染或几何质量验收。
+
+2026-09-20已在真实浏览器和 HTTP 服务上用 CPU fixture 跑通上述两个脚本。
+运行 `dag_474fa726596740c0b73fbd751edc22b7` 的外部证据位于
+`<DATASET_ROOT>/browser-remote-complete-cpu-v1/`。这是浏览器操作、服务边界和恢复验收，
+SAM/TRELLIS.2 均未在本次执行，不能作为真实模型全链证据。
