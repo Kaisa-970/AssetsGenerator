@@ -40,6 +40,7 @@ export function ParameterForm({
       {fields.map(([name, field]) => {
         const value = effective[name];
         const fixed = field.enum?.length === 1;
+        const stale = fixed && JSON.stringify(value) !== JSON.stringify(field.enum![0]);
         return (
           <label key={name}>
             {name}
@@ -112,6 +113,18 @@ export function ParameterForm({
                   onChange({ ...parameters, [name]: parsed });
                 }}
               />
+            )}
+            {stale && (
+              <span role="alert">
+                {name} 与当前部署不一致。草稿值：{JSON.stringify(value) ?? "未设置"}；
+                当前要求：{JSON.stringify(field.enum![0])}。
+                <button
+                  type="button"
+                  onClick={() => onChange({ ...parameters, [name]: field.enum![0] })}
+                >
+                  使用当前部署值 · {name}
+                </button>
+              </span>
             )}
             {Object.hasOwn(parameters, name) && (
               <button

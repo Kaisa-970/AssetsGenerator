@@ -285,3 +285,7 @@ SAM/TRELLIS.2 均未在本次执行，不能作为真实模型全链证据。
 CRC 与 release 清单一致。证据位于 `<DATASET_ROOT>/archive-browser-cpu-v1/` 的
 server.py/log、config.json、download-verified.json 和 downloaded-release.zip。
 这验证真实浏览器下载，不是模型质量验证；测试服务检查后已关闭。
+
+载入旧配置后，若固定参数与当前部署契约不一致，参数表单会同时显示草稿值和
+当前要求值。点击“使用当前部署值”只更新当前节点草稿；其他实例和旧运行不变。
+更新后须重新编译、明确启动新运行，不能作为旧结果来源身份的修正。

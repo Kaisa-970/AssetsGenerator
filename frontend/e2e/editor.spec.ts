@@ -666,7 +666,7 @@ test("node backend selection uses installed schema and clears stale identity", a
                         adapter: "local@1",
                         inputs: {},
                         parameters: {
-                          profile_digest: "old",
+                          profile_digest: "stale-deployment",
                           service_id: "old-service",
                           seed: 42,
                         },
@@ -690,6 +690,15 @@ test("node backend selection uses installed schema and clears stale identity", a
   await page.goto("/");
   page.on("dialog", (d) => d.accept());
   await page.getByRole("button", { name: "pair", exact: true }).click();
+  await page.locator('.react-flow__node[data-id="left"]').click();
+  await expect(page.getByRole("alert")).toContainText("stale-deployment");
+  await expect(page.getByRole("alert")).toContainText('当前要求："old"');
+  await page.getByRole("button", { name: "使用当前部署值 · profile_digest", exact: true }).click();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await page.getByRole("button", { name: "编译校验", exact: true }).click();
+  await expect.poll(() => saved?.nodes.left.parameters.profile_digest).toBe("old");
+  await page.getByRole("button", { name: "配置", exact: true }).click();
+  expect(saved.nodes.right.parameters).toEqual({ profile_digest: "old" });
   await page.locator('.react-flow__node[data-id="left"]').click();
   await page.getByLabel("节点 Backend", { exact: true }).selectOption("other");
   await expect(
