@@ -59,6 +59,7 @@ class ResizeImageAdapter:
             if (
                 image.format != "PNG"
                 or image.mode != "RGB"
+                or "transparency" in image.info
                 or getattr(image, "n_frames", 1) != 1
                 or identity.identity_metadata.get("channel_layout") != "RGB"
                 or identity.identity_metadata.get("media_type") != "image/png"

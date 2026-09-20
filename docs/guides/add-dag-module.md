@@ -180,3 +180,7 @@ node frontend/smoke/image-resize.cjs <EDITOR_URL> <RGB_IMAGE> <NEW_EVIDENCE_DIRE
 即使远程模型服务离线，只包含 CPU 节点的图仍可执行。
 自定义 Operator 文件只开放其中已声明契约的模块，不能靠注册 Adapter 绕过端口定义。
 这不增加隐式 RGB/RGBA 转换；连接 Shape 的 RGBA 端口仍须经过明确的选区准备节点。
+
+编码及缩放要求不透明 RGB：即使 PNG 显示为 RGB 模式，若携带透明色键（tRNS），
+节点也会拒绝；不能靠重新编码或缩放隐式丢弃透明度。应先用明确的图像处理步骤
+决定如何处理背景，再导入符合契约的 RGB 图片。

@@ -44,3 +44,14 @@ Node 语法检查、Prettier 和 git diff --check 通过。本补验不调用模
 encode→双 resize 的回归，并读取 128×128 输出；既有 SAM-only、ComfyUI-only 及
 多视图专项目录启动回归通过。Ruff、mypy（131 文件）、git diff --check 通过。
 此项没有运行新 GPU 推理或浏览器 smoke。
+
+## RGB 透明色键边界修复
+
+实测 PNG 的 mode 可以为 RGB，同时通过 tRNS 透明色键使像素透明。
+缩放后清除元数据会把这种输入变为不透明，因此仅检查 RGB mode 不足以保证
+本模块的无隐式透明度转换契约。encode_png 和 resize_image 现在均拒绝带
+transparency 元数据的输入，不自动丢弃透明度或合成背景。
+
+真实小型透明 PNG 回归验证拒绝、原 Blob 保留、未创建输出 Artifact；相关
+18 项测试通过（3.40 秒）。Ruff、mypy（131 文件）与 git diff --check 通过。
+没有运行新 GPU 或浏览器验收。修改 Adapter 实现摘要后旧绑定仍按既有身份规则校验。

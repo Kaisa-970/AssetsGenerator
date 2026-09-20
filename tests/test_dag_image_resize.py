@@ -88,3 +88,29 @@ def test_resize_rejects_mislabeled_encoding(tmp_path, mode, format):
     )
     with pytest.raises(ContractError, match="single RGB PNG"):
         ResizeImageAdapter().execute(context)
+
+
+def test_resize_rejects_rgb_transparency_without_creating_output(tmp_path):
+    store = LocalArtifactStore(tmp_path)
+    data = io.BytesIO()
+    Image.new("RGB", (2, 2), "red").save(data, format="PNG", transparency=(255, 0, 0))
+    ref = store.persist_bytes(
+        data.getvalue(),
+        kind="rgb_image",
+        schema_name="png",
+        schema_version="1.0",
+        identity_metadata={"media_type": "image/png", "channel_layout": "RGB"},
+    )
+    before = set(store.manifests_dir.rglob("*.json"))
+    with pytest.raises(ContractError, match="single RGB PNG"):
+        ResizeImageAdapter().execute(
+            NodeExecutionContext(
+                "run",
+                "resize",
+                {"image": ref},
+                {"width": 4, "height": 4, "resampling": "nearest"},
+                store,
+            )
+        )
+    assert set(store.manifests_dir.rglob("*.json")) == before
+    assert store.blob_path(ref).read_bytes() == data.getvalue()

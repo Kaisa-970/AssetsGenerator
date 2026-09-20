@@ -30,7 +30,21 @@ def test_encoding_rejects_implicit_channel_conversion(tmp_path, mode):
     path = tmp_path / "input.png"
     Image.new(mode, (3, 4)).save(path)
     source = _import_image(store, path, "rgb_image")
-    with pytest.raises(ContractError, match="single RGB"):
+    with pytest.raises(ContractError, match="single opaque RGB"):
+        EncodePngAdapter().execute(
+            NodeExecutionContext("run", "encode", {"image": source}, {}, store)
+        )
+
+
+def test_encoding_rejects_rgb_transparent_color_key(tmp_path):
+    store = LocalArtifactStore(tmp_path / "store")
+    path = tmp_path / "transparent.png"
+    Image.new("RGB", (2, 2), "red").save(path, transparency=(255, 0, 0))
+    source = _import_image(store, path, "rgb_image")
+    with Image.open(path) as image:
+        assert image.mode == "RGB"
+        assert image.convert("RGBA").getpixel((0, 0))[3] == 0
+    with pytest.raises(ContractError, match="opaque RGB"):
         EncodePngAdapter().execute(
             NodeExecutionContext("run", "encode", {"image": source}, {}, store)
         )

@@ -25,8 +25,12 @@ class EncodePngAdapter:
             raise ContractError("PNG encoding requires RGB raster_image@1.0")
         with Image.open(context.store.blob_path(source)) as image:
             image.load()
-            if image.mode != "RGB" or getattr(image, "n_frames", 1) != 1:
-                raise ContractError("PNG encoding requires a single RGB frame")
+            if (
+                image.mode != "RGB"
+                or getattr(image, "n_frames", 1) != 1
+                or "transparency" in image.info
+            ):
+                raise ContractError("PNG encoding requires a single opaque RGB frame")
             metadata = identity.identity_metadata
             if (
                 metadata.get("channel_layout") != image.mode
