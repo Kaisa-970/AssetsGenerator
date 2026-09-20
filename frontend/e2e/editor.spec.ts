@@ -1664,5 +1664,61 @@ test("operator catalog distinguishes registered implementations from contracts",
   );
   await expect(
     page.getByLabel("Adapter", { exact: true }).locator("option"),
-  ).toContainText(["仅 Operator", "remote@1"]);
+  ).toContainText(["未指定", "remote@1"]);
+});
+
+test("new nodes do not choose between ambiguous adapters by catalog order", async ({
+  page,
+}) => {
+  let compiled: any;
+  await page.route("**/api/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === "/api/compile")
+      compiled = route.request().postDataJSON().pipeline;
+    await route.fulfill({
+      json:
+        path === "/api/catalog"
+          ? {
+              operators: {
+                "generate@1": {
+                  name: "generate",
+                  version: "1",
+                  inputs: {},
+                  outputs: {},
+                },
+              },
+              adapters: ["first", "second"].map((name) => ({
+                name,
+                version: "1",
+                operators: ["generate@1"],
+                defaults: { seed: name === "first" ? 1 : 2 },
+              })),
+              templates: [],
+            }
+          : path === "/api/compile"
+            ? {
+                ok: false,
+                diagnostics: [
+                  {
+                    message: "requires exactly one compatible adapter",
+                    node_id: "generate",
+                  },
+                ],
+              }
+            : { drafts: [] },
+    });
+  });
+  await page.goto("/");
+  await page.locator(".catalog-item").filter({ hasText: "generate" }).click();
+  await expect(page.getByLabel("Adapter", { exact: true })).toHaveValue("");
+  await page.getByRole("button", { name: "编译校验", exact: true }).click();
+  await expect.poll(() => !!compiled).toBe(true);
+  expect(compiled.nodes.generate.adapter).toBeUndefined();
+  expect(compiled.nodes.generate.parameters).toBeUndefined();
+  await page
+    .getByRole("button", { name: "定位节点 · generate", exact: true })
+    .click();
+  await page.getByLabel("Adapter", { exact: true }).selectOption("second@1");
+  await page.getByRole("button", { name: "编译校验", exact: true }).click();
+  await expect.poll(() => compiled.nodes.generate.adapter).toBe("second@1");
 });

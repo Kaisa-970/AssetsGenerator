@@ -182,7 +182,10 @@ function App() {
     let id = base;
     let i = 2;
     while (pipeline.nodes[id]) id = `${base}_${i++}`;
-    const adapter = catalog.adapters.find((a) => a.operators.includes(key));
+    const candidates = catalog.adapters.filter((a) =>
+      a.operators.includes(key),
+    );
+    const adapter = candidates.length === 1 ? candidates[0] : undefined;
     update({
       ...pipeline,
       nodes: {
@@ -718,7 +721,7 @@ function App() {
                             })
                           }
                         >
-                          <option value="">仅 Operator（静态编译）</option>
+                          <option value="">未指定 · 后端按唯一候选绑定</option>
                           {adapters.map((a) => (
                             <option key={`${a.name}@${a.version}`}>
                               {a.name}@{a.version}
