@@ -1,0 +1,71 @@
+# Replace first-service and second-service with trusted remote profile names.
+pipeline: remote_shape_compare_v1
+version: 1
+inputs:
+  image:
+    kind: rgba_image
+    carriers:
+    - artifact_ref
+nodes:
+  first_shape:
+    operator: shape_generation@1
+    adapter: remote_shape@1
+    inputs:
+      image: pipeline.inputs.image
+    backend: first-service
+  first_canonical:
+    operator: canonicalize@1
+    adapter: canonicalize_shape@1
+    inputs:
+      mesh: first_shape.outputs.mesh
+      native_frame: first_shape.outputs.native_frame
+  first_quality:
+    operator: geometry_validation@1
+    adapter: geometry_validation@1
+    inputs:
+      mesh: first_canonical.outputs.mesh
+      source_mesh: first_shape.outputs.mesh
+  first_assemble:
+    operator: shape_asset_assembly@1
+    adapter: shape_asset_assembly@1
+    inputs:
+      mesh: first_canonical.outputs.mesh
+      image: pipeline.inputs.image
+      spatial: first_canonical.outputs.spatial_info
+      quality: first_quality.outputs.report
+  first_publish:
+    operator: asset_export@1
+    adapter: asset_export@1
+    inputs:
+      asset: first_assemble.outputs.asset
+  second_shape:
+    operator: shape_generation@1
+    adapter: remote_shape@1
+    inputs:
+      image: pipeline.inputs.image
+    backend: second-service
+  second_canonical:
+    operator: canonicalize@1
+    adapter: canonicalize_shape@1
+    inputs:
+      mesh: second_shape.outputs.mesh
+      native_frame: second_shape.outputs.native_frame
+  second_quality:
+    operator: geometry_validation@1
+    adapter: geometry_validation@1
+    inputs:
+      mesh: second_canonical.outputs.mesh
+      source_mesh: second_shape.outputs.mesh
+  second_assemble:
+    operator: shape_asset_assembly@1
+    adapter: shape_asset_assembly@1
+    inputs:
+      mesh: second_canonical.outputs.mesh
+      image: pipeline.inputs.image
+      spatial: second_canonical.outputs.spatial_info
+      quality: second_quality.outputs.report
+  second_publish:
+    operator: asset_export@1
+    adapter: asset_export@1
+    inputs:
+      asset: second_assemble.outputs.asset

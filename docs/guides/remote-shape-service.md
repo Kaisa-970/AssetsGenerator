@@ -190,3 +190,13 @@ PYTHONPATH=src python -m assets_generator.cli node-editor \
 该路径注册 proposals、人工选择和远程生成所需算子，不提供本地 image_build。
 已有固定工作台和完整本地 profile 入口继续保留。SAM-only 配置和远程发布组合已有 CPU
 回归；此新配置入口尚未重复进行真实 GPU 验收。
+
+### 同一输入对比两个远程 Backend
+
+`examples/remote-shape-compare.yaml` 将同一个已准备 RGBA 输入连接到两个 shape 节点，
+各自执行 canonical、QA、assemble、publish。把 `first-service`、`second-service` 改为
+受信 remote 配置中的名称，再通过 `--template` 加载；每一路都有独立 Release。
+服务端作业仍需显式执行；若共享 GPU，请串行执行，Core 不提供跨服务 GPU 互斥。
+
+双 HTTP 服务的 CPU 回归验证了同输入、独立身份与作业、分支完成状态和关闭服务后恢复；
+模板编译验证覆盖两路独立发布连接。尚未对两个真实模型运行此对比模板，不构成质量排名。

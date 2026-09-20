@@ -174,3 +174,115 @@ def test_local_selection_and_remote_shape_profiles_bind_composed_template(tmp_pa
     )
     assert plan.bindings["candidates"].adapter == "image_proposals@1"
     assert plan.bindings["shape"].parameters["service_id"] == "second"
+
+
+def test_two_http_services_keep_node_jobs_and_offline_results_separate(tmp_path):
+    import io
+    from contextlib import ExitStack
+
+    from PIL import Image
+    from test_remote_service_http import serve
+    from test_remote_shape_service import Backend
+
+    from assets_generator.artifact_store import LocalArtifactStore
+    from assets_generator.dag_engine import DagEngine
+    from assets_generator.dag_persistence import DagRepository
+    from assets_generator.remote_protocol import RemoteIdentity
+    from assets_generator.remote_service_worker import execute_service_job
+    from assets_generator.remote_shape_service import ShapeServiceHandler
+
+    store = LocalArtifactStore(tmp_path / "store")
+    data = io.BytesIO()
+    Image.new("RGBA", (2, 2), "red").save(data, format="PNG")
+    image = store.persist_bytes(
+        data.getvalue(),
+        kind="rgba_image",
+        schema_name="png",
+        schema_version="1.0",
+        identity_metadata={"media_type": "image/png", "channel_layout": "RGBA"},
+    )
+    with ExitStack() as stack:
+        services, configured = {}, {}
+        for name, char in (("first", "a"), ("second", "b")):
+            identity = RemoteIdentity(name, "sha256:" + char * 64)
+            service, client, _ = stack.enter_context(
+                serve(tmp_path / f"{name}.sqlite", identity=identity)
+            )
+            services[name] = (service, identity)
+            configured[name] = {
+                "endpoint": client.endpoint,
+                "service_id": name,
+                "backend_digest": identity.backend_digest,
+            }
+        registry = AdapterRegistry()
+        register_remote_shape_profiles(
+            registry, {"default_profile": "first", "profiles": configured}
+        )
+        graph = {
+            "pipeline": "two_remote_shapes",
+            "version": "1",
+            "inputs": {"image": {"kind": "rgba_image", "carriers": ["artifact_ref"]}},
+            "nodes": {
+                name: {
+                    "operator": "shape_generation@1",
+                    "adapter": "remote_shape@1",
+                    "backend": name,
+                    "inputs": {"image": "pipeline.inputs.image"},
+                }
+                for name in services
+            },
+        }
+        plan = registry.bind_plan(
+            compile_pipeline(
+                _pipeline_from_raw(graph),
+                load_default_operator_specs(),
+                require_explicit_joins=True,
+            )
+        )
+        with DagRepository(store, tmp_path / "core") as repo:
+            engine = DagEngine(repo, registry)
+            run = engine.drain(engine.create(plan, {"image": image}).run_id)
+            keys = []
+            for name, (service, identity) in services.items():
+                attempt = run.dag.node_states[name].current()
+                assert attempt.resolved_inputs["image"] == image
+                assert attempt.remote_binding.service_id == name
+                key = attempt.remote_binding.submission_key
+                keys.append(key)
+                assert len(service.list_jobs()["jobs"]) == 1
+                request = service.request_for(key)
+                assert request.identity == identity
+                handler = ShapeServiceHandler(
+                    identity, tmp_path / name, Backend, lambda identity=identity: identity
+                )
+                assert execute_service_job(service, request, handler).state == "succeeded"
+                run = engine.drain(run.run_id)
+                if name == "first":
+                    assert run.dag.node_states["first"].status == "succeeded"
+                    assert run.dag.node_states["second"].status == "running"
+            assert len(set(keys)) == 2
+            assert run.status == "succeeded"
+            completed = run.dag.node_states
+            assert all(len(state.attempts) == 1 for state in completed.values())
+    with DagRepository(store, tmp_path / "core") as repo:
+        restored = DagEngine(repo, registry).recover(run.run_id)
+        assert restored.dag.node_states == completed
+
+
+def test_remote_comparison_template_compiles_two_independent_releases():
+    registry = AdapterRegistry()
+    config = configuration()
+    config["profiles"] = {name + "-service": value for name, value in config["profiles"].items()}
+    config["default_profile"] = "first-service"
+    register_remote_shape_profiles(registry, config)
+    graph = yaml.safe_load(Path("examples/remote-shape-compare.yaml").read_text())
+    plan = registry.bind_plan(
+        compile_pipeline(
+            _pipeline_from_raw(graph), load_default_operator_specs(), require_explicit_joins=True
+        )
+    )
+    assert len(plan.bindings) == 10
+    assert plan.bindings["first_shape"].parameters["service_id"] == "first"
+    assert plan.bindings["second_shape"].parameters["service_id"] == "second"
+    assert graph["nodes"]["first_publish"]["inputs"]["asset"] == "first_assemble.outputs.asset"
+    assert graph["nodes"]["second_publish"]["inputs"]["asset"] == "second_assemble.outputs.asset"
