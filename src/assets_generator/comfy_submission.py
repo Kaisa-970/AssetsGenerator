@@ -22,16 +22,23 @@ class ComfySubmissionUnknown(ValueError):
 
 
 class ComfySubmissionJournal:
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, *, expected_journal_id: str | None = None):
         from .workbench_persistence import DurableIO
 
         path = path.expanduser().absolute()
+        if expected_journal_id is not None:
+            if str(uuid.UUID(expected_journal_id)) != expected_journal_id:
+                raise ValueError("invalid expected ComfyUI journal ID")
+            if not path.is_file():
+                raise ValueError("expected ComfyUI journal missing; refusing to recreate")
         io = DurableIO()
         io.mkdir(path.parent)
         marker = path.with_name(path.name + ".identity.json")
         with path.with_name(path.name + ".init.lock").open("a+b") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
             fresh = not marker.exists() and not path.exists()
+            if fresh and expected_journal_id is not None:
+                raise ValueError("expected ComfyUI journal missing; refusing to recreate")
             if fresh:
                 identity = {"schema": "comfy-journal@1", "journal_id": str(uuid.uuid4())}
                 io.write(marker, canonical_json_bytes(identity), exclusive=True)
@@ -46,6 +53,9 @@ class ComfySubmissionJournal:
                     or str(uuid.UUID(identity["journal_id"])) != identity["journal_id"]
                 ):
                     raise ValueError("invalid ComfyUI journal identity")
+            if expected_journal_id is not None and identity["journal_id"] != expected_journal_id:
+                raise ValueError("ComfyUI journal differs from parent binding")
+            self.journal_id: str = identity["journal_id"]
             self.db = sqlite3.connect(
                 path.as_uri() + ("?mode=rwc" if fresh else "?mode=rw"),
                 uri=True,
@@ -99,6 +109,30 @@ class ComfySubmissionJournal:
 
     def close(self) -> None:
         self.db.close()
+
+    def submission_binding(self, key: str) -> dict[str, str]:
+        """Parent must persist this binding before authorizing upstream submission."""
+        record = self.read(key)
+        return {
+            "journal_id": self.journal_id,
+            "submission_key": key,
+            "prompt_id": record["prompt_id"],
+            "request_digest": sha256_bytes(
+                canonical_json_bytes(
+                    {
+                        "deployment": record["deployment"],
+                        "prompt": record["prompt"],
+                    }
+                )
+            ),
+        }
+
+    def verify_binding(self, binding: dict[str, str]) -> None:
+        """Read only: deleted/replaced rows must not be prepared again on recovery."""
+        if set(binding) != {"journal_id", "submission_key", "prompt_id", "request_digest"}:
+            raise ValueError("invalid ComfyUI parent binding")
+        if self.submission_binding(binding["submission_key"]) != binding:
+            raise ValueError("ComfyUI submission differs from parent binding")
 
     def prepare(
         self, key: str, *, deployment: dict[str, Any], prompt: dict[str, Any]

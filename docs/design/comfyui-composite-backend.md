@@ -183,3 +183,14 @@ SQLite 首次创建前写独立 journal UUID 标记，初始化由文件锁串�
 58 项 ComfyUI 测试、Ruff/mypy 通过。无标记的旧实验库不自动迁移，需保留并人工
 核查，不能重建它来恢复推理。完整目录和标记同时丢失、单行删除及同 UUID 的旧库
 回滚仍需要外层运行的固定身份/回执保护，本步不宣称覆盖这些情况。
+
+### 外层固定日志与提交身份
+
+日志提供 expected_journal_id 恢复入口，以及 submission_binding / verify_binding。
+外层应在允许 POST 前耐久保存 journal UUID、submission key、prompt UUID 和请求摘要；
+恢复时先核对该绑定。预期日志整个目录丢失时拒绝创建目录；替换为新日志、删除或
+重新准备提交行、修改请求内容均拒绝。验证接口只读，不补写缺失提交。
+
+62 项 ComfyUI 测试、Ruff 格式/检查及 mypy 通过。这是供外层使用的接口，尚未接入
+BuildRun 或 RemoteServiceStore 的持久化路径；相同 UUID 数据库的 phase 回滚、导入
+回执删除仍未由该不可变请求绑定覆盖，不宣称完整恢复或真实 ComfyUI 验收完成。

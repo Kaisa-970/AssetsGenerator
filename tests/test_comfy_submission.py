@@ -159,3 +159,54 @@ def test_journal_loss_or_replacement_blocks_recreation(tmp_path, damage):
         ComfySubmissionJournal(path)
     if damage == "database":
         assert not path.exists()
+
+
+def test_parent_journal_binding_blocks_total_loss_and_replacement(tmp_path):
+    import shutil
+
+    path = tmp_path / "owned" / "journal.sqlite"
+    journal = ComfySubmissionJournal(path)
+    journal.prepare("one", deployment=DEPLOYMENT, prompt=PROMPT)
+    binding = journal.submission_binding("one")
+    journal.close()
+    reopened = ComfySubmissionJournal(path, expected_journal_id=binding["journal_id"])
+    reopened.verify_binding(binding)
+    reopened.close()
+    shutil.rmtree(path.parent)
+    with pytest.raises(ValueError, match="missing"):
+        ComfySubmissionJournal(path, expected_journal_id=binding["journal_id"])
+    assert not path.parent.exists()
+    ComfySubmissionJournal(path).close()
+    with pytest.raises(ValueError, match="parent binding"):
+        ComfySubmissionJournal(path, expected_journal_id=binding["journal_id"])
+
+
+@pytest.mark.parametrize("damage", ["deleted", "reprepared", "modified"])
+def test_parent_submission_binding_detects_row_loss_or_change(tmp_path, damage):
+    journal = ComfySubmissionJournal(tmp_path / "journal.sqlite")
+    try:
+        journal.prepare("one", deployment=DEPLOYMENT, prompt=PROMPT)
+        binding = journal.submission_binding("one")
+        journal.verify_binding(binding)
+        if damage in {"deleted", "reprepared"}:
+            journal.db.execute("DELETE FROM prompts")
+            if damage == "reprepared":
+                journal.prepare("one", deployment=DEPLOYMENT, prompt=PROMPT)
+        else:
+            from assets_generator.serialization import canonical_json_bytes
+
+            journal.db.execute(
+                "UPDATE prompts SET request=?",
+                (
+                    canonical_json_bytes(
+                        {
+                            "deployment": {**DEPLOYMENT, "revision": "changed"},
+                            "prompt": PROMPT,
+                        }
+                    ),
+                ),
+            )
+        with pytest.raises(ValueError, match="missing|parent binding"):
+            journal.verify_binding(binding)
+    finally:
+        journal.close()
