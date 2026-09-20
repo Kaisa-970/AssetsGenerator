@@ -82,3 +82,7 @@ node frontend/smoke/embedded-review.cjs <SMOKE_ROOT>/browser-config.json
 加载 `examples/dag-image-compare.yaml`（也可启动时增加 `--template`）。把 `generate_first` 和 `generate_second` 的 Backend 分别改为目录内配置，再编译运行。SAM 只执行一次、选区只确认一次，两个生成节点读取同一个 SelectionInputBinding，分别生成发布与 provenance；当前调度器串行执行，不会同时抢占 GPU。示例 Backend 名为占位符，未替换前编译会拒绝执行。该图尚无模型质量评分或自动优胜选择。
 
 编辑器导出的显式 `backend` YAML 也可通过 `dag-image start --pipeline <YAML>` 执行。CLI 与编辑器共用本地 profile 注册目录；两者需使用相同配置文件，`--profile` 只指定省略 backend 时的默认实现。已有服务仍持有运行目录锁时，不要用 CLI 同时修改该目录。
+
+### Profile 启动进度
+
+启用真实本地 profile 时，CLI 会在 stderr 输出 SAM checkpoint、SAM environment、每个 profile 的 source/model weights/environment 和最终一致性检查的开始、完成与耗时。模型快照摘要可能耗时较长；进度输出不跳过哈希，也不代表 GPU 已开始推理。服务地址只会在全部 profile 身份检查通过后打印。

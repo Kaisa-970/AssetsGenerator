@@ -282,3 +282,24 @@ def test_environment_guard_rejects_new_package_source(tmp_path, monkeypatch):
     with pytest.raises(ValueError, match="resources changed"):
         for check in checks:
             check()
+
+
+def test_progress_does_not_change_identity_and_resets_after_failure(tmp_path, monkeypatch):
+    config = _config(tmp_path, monkeypatch)
+    baseline = profiles.load_profiles(config)["local-triposr"]
+    events = []
+    loaded = profiles.load_profiles(config, progress=events.append)["local-triposr"]
+    assert loaded.shape_identity == baseline.shape_identity
+    assert loaded.proposal_identity == baseline.proposal_identity
+    assert any("model weights" in event and "核验完成" in event for event in events)
+    assert any("SAM environment" in event for event in events)
+    count = len(events)
+    profiles.load_profiles(config)
+    assert len(events) == count
+    monkeypatch.setattr(
+        profiles, "_model_identity", lambda *args: (_ for _ in ()).throw(ValueError("injected"))
+    )
+    with pytest.raises(ValueError, match="injected"):
+        profiles.load_profiles(config, progress=events.append)
+    assert "核验失败" in events[-1]
+    assert profiles._PROGRESS.get() is None

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import mimetypes
 import re
+import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
@@ -306,7 +307,10 @@ def serve_editor(
             from .serialization import read_json
             from .workbench_profiles import load_profiles
 
-            profiles = load_profiles(read_json(config))
+            profiles = load_profiles(
+                read_json(config),
+                progress=lambda message: print(message, file=sys.stderr, flush=True),
+            )
             registry = image_adapter_registry(profiles, profile)
             repository = DagRepository(LocalArtifactStore(store), directory / "runtime")
             stack.enter_context(repository)

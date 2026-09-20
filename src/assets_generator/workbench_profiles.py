@@ -8,12 +8,13 @@ import math
 import os
 import re
 import subprocess
+import time
 from collections.abc import Callable
 from contextvars import ContextVar
 from dataclasses import replace
 from functools import partial
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 from .backend_registry import BackendRegistry, resolve_plan
 from .backends.environment_identity import backend_environment_identity
@@ -28,6 +29,26 @@ _BACKENDS = Path(__file__).parent / "backends"
 
 
 _CHECKS: ContextVar[list[Callable[[], None]] | None] = ContextVar("profile_checks", default=None)
+
+
+_PROGRESS: ContextVar[Callable[[str], None] | None] = ContextVar("profile_progress", default=None)
+_T = TypeVar("_T")
+
+
+def _step(label: str, operation: Callable[[], _T]) -> _T:
+    report = _PROGRESS.get()
+    started = time.monotonic()
+    if report:
+        report(f"正在核验 {label}…")
+    try:
+        result = operation()
+    except Exception:
+        if report:
+            report(f"核验失败 {label}（{time.monotonic() - started:.1f}s）")
+        raise
+    if report:
+        report(f"核验完成 {label}（{time.monotonic() - started:.1f}s）")
+    return result
 
 
 def _signature(path: Path) -> list[Any]:
@@ -301,10 +322,13 @@ def _load_profiles(config: dict[str, Any]) -> dict[str, BackendProfile]:
     _guard(lambda: _signature(python), _signature(python))
     proposal_identity = {
         "backend": "sam-v1",
-        "checkpoint_digest": _digest(checkpoint),
+        "checkpoint_digest": _step("SAM checkpoint", lambda: _digest(checkpoint)),
         "runner_digest": _digest(_BACKENDS / "sam_instances_runner.py"),
-        "environment": _environment_identity(
-            python, ("segment_anything", "torch", "torchvision", "numpy", "Pillow")
+        "environment": _step(
+            "SAM environment",
+            lambda: _environment_identity(
+                python, ("segment_anything", "torch", "torchvision", "numpy", "Pillow")
+            ),
         ),
         "parameters": proposer.parameters,
         "timeout_seconds": proposer.timeout_seconds,
@@ -362,15 +386,22 @@ def _load_profiles(config: dict[str, Any]) -> dict[str, BackendProfile]:
             frame_identity = implementation._frame_validation_identity()
         else:
             implementation = Trellis2Backend(executable, repo, str(model), **parameters)
-        source = backend_source_identity(repo)
+        source = _step(f"{name} source", partial(backend_source_identity, repo))
         _guard(partial(backend_source_identity, repo), source)
         identity = {
             "backend": backend,
             "source": {key: value for key, value in source.items() if key != "path"},
-            "model": _model_identity(backend, model, executable),
+            "model": _step(
+                f"{name} model weights", partial(_model_identity, backend, model, executable)
+            ),
             "runner_digest": _digest(_BACKENDS / f"{backend}_runner.py"),
-            "environment": _environment_identity(
-                executable, ("torch", "numpy", "Pillow", "transformers", "safetensors")
+            "environment": _step(
+                f"{name} environment",
+                partial(
+                    _environment_identity,
+                    executable,
+                    ("torch", "numpy", "Pillow", "transformers", "safetensors"),
+                ),
             ),
             "parameters": parameters,
         }
@@ -396,9 +427,12 @@ def _load_profiles(config: dict[str, Any]) -> dict[str, BackendProfile]:
     return profiles
 
 
-def load_profiles(config: dict[str, Any]) -> dict[str, BackendProfile]:
+def load_profiles(
+    config: dict[str, Any], *, progress: Callable[[str], None] | None = None
+) -> dict[str, BackendProfile]:
     checks: list[Callable[[], None]] = []
     token = _CHECKS.set(checks)
+    progress_token = _PROGRESS.set(progress)
     try:
         profiles = _load_profiles(config)
 
@@ -406,10 +440,11 @@ def load_profiles(config: dict[str, Any]) -> dict[str, BackendProfile]:
             for check in checks:
                 check()
 
-        identity_check()
+        _step("profile resource consistency", identity_check)
         return {
             name: replace(profile, identity_check=identity_check)
             for name, profile in profiles.items()
         }
     finally:
         _CHECKS.reset(token)
+        _PROGRESS.reset(progress_token)

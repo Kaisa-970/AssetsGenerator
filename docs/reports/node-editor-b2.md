@@ -52,3 +52,5 @@
 本地 profile 绑定及双生成分支接入后的全仓回归：`PYTHONPATH=src <MAIN_CHECKOUT>/.venv/bin/python -m pytest -q` 单次运行 **927 passed in 221.29s**。Ruff check、format check（170 文件）、mypy（85 源码文件）通过。此轮没有运行 GPU 推理；不能将该测试结果扩大为尚未验收的真实双模型组合或完整 B2 完成。同期修正设计文档的过期“当前代码事实”及指南单 profile 限制说明。
 
 入口一致性修复：编辑器原先注册全部显式 profile，而 dag-image CLI 仅注册默认实现，导致画布导出的 backend YAML 在 CLI 编译失败。现共用 `image_adapter_registry()`；默认与显式绑定两种 YAML 的 CLI start/resume/decide 路径均通过。7 项 CLI/编辑器定向测试通过，mypy 86 源码文件通过；未新增 GPU 推理。
+
+启动可观测性：`load_profiles(..., progress=...)` 增加阶段性耗时回调，CLI 服务将信息写到 stderr；身份内容和校验顺序不变，失败会标明阶段并清理上下文。新增 profile 测试验证回调不影响身份、失败回调及后续调用隔离；27 项 profile/editor 定向测试、Ruff、mypy 通过。
