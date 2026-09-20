@@ -415,3 +415,13 @@ running 状态，再导入上传图片并调用既有首次执行入口。DAG in
 16 项 profile/输入桥接测试、Ruff 与 mypy 通过。新增测试核对上传身份、参数、
 DAG 摘要转发，并证明已启动后删除输入再次调用不会修复。此处尚未实现 DAG
 客户端 Adapter 和服务循环，因此仍不构成已可运行的 DAG Backend。
+
+### 服务显式调度入口
+
+execute_next_image 先验证 profile/服务身份，再原子领取一个 queued 作业，调用
+start_dag 和一次 finish。异常保留 running；recover_image_job 仅接受已领取的
+作业并调用 finish，不重新导入输入或提交。未解决 running 作业继续阻塞队列。
+
+2 项执行器回归、Ruff 与 mypy 通过，覆盖中断后重开、队列阻塞、恢复后领取下一项
+以及错误 profile 不领取任务。测试替代 profile 方法以检查调度行为，未声称
+DAG/ComfyUI 端到端执行；客户端 Adapter、服务命令及画布仍需连接。
