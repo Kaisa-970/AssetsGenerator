@@ -1,3 +1,4 @@
+from copy import deepcopy
 from pathlib import Path
 
 import pytest
@@ -20,7 +21,10 @@ from assets_generator.remote_shape_service import ShapeServiceHandler
 
 
 @pytest.mark.parametrize("proposal_only", [False, True])
-def test_confirmed_rgb_selection_connects_to_remote_shape_and_release(tmp_path, proposal_only):
+@pytest.mark.parametrize("abandon_first", [False, True])
+def test_confirmed_rgb_selection_connects_to_remote_shape_and_release(
+    tmp_path, proposal_only, abandon_first
+):
     store, image, profile = fixture_engine(tmp_path)
     with serve(tmp_path / "service.sqlite") as (remote, client, _):
         identity = request().identity
@@ -102,6 +106,42 @@ def test_confirmed_rgb_selection_connects_to_remote_shape_and_release(tmp_path, 
             shape = run.dag.node_states["shape"].current()
             assert shape.resolved_inputs["image"] == rgba
             req = remote.request_for(shape.remote_binding.submission_key)
+            ancestors = deepcopy(
+                {
+                    name: run.dag.node_states[name]
+                    for name in ("candidates", "choose_object", "prepare")
+                }
+            )
+            receipts = deepcopy(run.dag.receipts)
+            failed_shape = None
+            if abandon_first:
+                import sys
+
+                from assets_generator.remote_service_process import ServiceProcessWorker
+                from assets_generator.worker import ProcessJobRequest
+
+                remote.transition(req, expected="queued", state="running")
+                ServiceProcessWorker(remote, req).run(
+                    ProcessJobRequest([sys.executable, "-c", "pass"], tmp_path, 10, "unpublished")
+                )
+                remote.abandon_exited_job(req)
+                failed = engine.drain(run.run_id)
+                assert failed.status == "failed"
+                failed_shape = deepcopy(failed.dag.node_states["shape"].current())
+                assert failed_shape.error_code == "SERVICE_RESULT_ABANDONED"
+                # A fresh engine must preserve upstream execution and human decision evidence.
+                engine = DagEngine(repo, registry)
+                recovered = engine.recover(run.run_id)
+                retried = engine.retry(run.run_id, "shape", recovered.dag.revision)
+                assert retried.dag.receipts == receipts
+                for name, state in ancestors.items():
+                    assert retried.dag.node_states[name] == state
+                shape = retried.dag.node_states["shape"].current()
+                assert shape.remote_binding.submission_key != req.submission_key
+                assert shape.resolved_inputs["image"] == rgba
+                assert remote.lookup(req).state == "failed"
+                req = remote.request_for(shape.remote_binding.submission_key)
+                assert remote.lookup(req).state == "queued"
             assert (
                 execute_service_job(
                     remote,
@@ -112,6 +152,14 @@ def test_confirmed_rgb_selection_connects_to_remote_shape_and_release(tmp_path, 
             )
             completed = engine.drain(run.run_id)
             assert completed.status == "succeeded"
+            assert completed.dag.receipts == receipts
+            for name, state in ancestors.items():
+                assert completed.dag.node_states[name] == state
+            for name, state in completed.dag.node_states.items():
+                assert len(state.attempts) == (2 if abandon_first and name == "shape" else 1)
+            if failed_shape is not None:
+                assert completed.dag.node_states["shape"].attempts[0] == failed_shape
+                repo.verify_reference_closure(failed_shape.remote_result)
             from assets_generator.dag_asset_assembly import shape_observation_id
 
             assembled = completed.dag.node_states["assemble"].current()

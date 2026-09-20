@@ -392,3 +392,14 @@ CPU 子进程，等待 Backend 开始后 SIGKILL 执行器，并重新打开服�
 真实 TRELLIS.2 执行器 SIGKILL 后的存活门控、自然退出核实和显式放弃已通过
 [独立验收](../reports/trellis-executor-interruption.md)。中断发生于 runner 启动后的
 加载/执行窗口，不证明 GPU sampling 时刻；父 DAG 故障重试全链仍未验收。
+
+## 选区 DAG 的生成失败重试
+
+选区到远程发布的 CPU 集成回归现覆盖 SAM-only 与原组合配置的正常/失败重试路径。
+在已发布选择和 RGBA 准备之后，将未发布远程结果显式放弃；父 DAG 导入原错误，
+新 engine 恢复并显式 retry shape。断言 candidates、choose_object、prepare 的完整
+节点记录以及决定回执不变，shape 使用相同 RGBA、新 submission key 和第二次 attempt。
+完成后其余节点各一次 attempt，第一次失败记录仍在且 remote_result 证据闭包可验证。
+
+与编辑器 HTTP 发布/放弃重试回归合跑 6 项通过。这里使用 CPU fixture，不替代
+真实模型父 DAG 故障后重试全链；真实执行器门控证据见上节报告。
