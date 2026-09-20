@@ -1,7 +1,7 @@
 # ComfyUI 图像 profile 实验入口
 
 此入口运行受信的 ComfyUI API workflow，产出图片和边界证据。尚未完成真实 ComfyUI
-验收，也未接入 DAG/画布；不是 3D 资产发布。Core 不安装或加载 ComfyUI 模型。
+验收；已接入实验性 DAG/画布图片节点，不是 3D 资产发布。Core 不安装或加载 ComfyUI 模型。
 服务须由用户预先部署，profile 只能由受信配置提供，勿接受浏览器任意上传的配置。
 
 ## 配置
@@ -44,6 +44,7 @@ parameter_targets 映射到 `[node, input]`，图片只通过 image_targets 绑�
 
 ```bash
 assets-generator comfy-image validate --profile /path/to/profile.json
+assets-generator comfy-image preflight --profile /path/to/profile.json
 assets-generator comfy-image start --profile /path/to/profile.json \
   --directory /path/to/jobs --store /path/to/store --key image-001 \
   --request /path/to/request.json
@@ -162,3 +163,16 @@ node frontend/smoke/comfy-run.cjs /tmp/comfy-browser-smoke/browser-config.json d
 preview 验证图片实际解码并保存截图；damaged 验证后端拒绝损坏输出且页面显示
 读取失败。两者断言没有变更请求、BuildRun 前后完全一致，不调用恢复或模型。
 damage-output 只适用于这个脚本创建的临时 fixture，不用于实际资产目录。
+
+
+### 只读部署预检
+
+validate 只验证本地配置；preflight 对 profile 指定的上游服务逐类请求
+GET /object_info/<class_type>，检查 workflow 所需节点类存在，并检查所选输出
+节点声明 output_node=true。成功返回 0，缺类、无输出声明或查询失败返回 1，
+报告包含具体 issues、观察声明摘要及 profile 身份。
+
+该命令不创建作业数据库、不上传图片、不提交 prompt。报告始终标记
+deployment_verified=false：节点声明不能证明模型文件可用、输入语义兼容、
+自定义节点身份可靠或推理成功。它是配置诊断，不能替代真实 workflow 验收，
+也不参与已有运行恢复或自动授权重试。

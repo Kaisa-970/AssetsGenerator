@@ -1,7 +1,7 @@
 """Trusted local configuration for an opaque ComfyUI image workflow.
 
 Loading validates declarations only; it neither contacts the service nor attests
-installed nodes/models. This is not yet a registered Core Operator or DAG adapter.
+installed nodes/models. DAG registration is provided by dag_comfy_profiles.
 """
 
 from __future__ import annotations

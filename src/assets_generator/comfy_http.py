@@ -1,7 +1,7 @@
 """Bounded ComfyUI transport with durable one-shot POST and read-only history.
 
 History is untrusted observation, not a verified execution result. Output imports
-and workflow correlation belong to the composite adapter, still to be implemented.
+and workflow correlation belong to the composite adapter.
 """
 
 from __future__ import annotations

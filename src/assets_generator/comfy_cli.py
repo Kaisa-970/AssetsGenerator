@@ -19,7 +19,9 @@ def add_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) 
     parser = subparsers.add_parser(
         "comfy-image", help="Experimental trusted ComfyUI image workflow"
     )
-    parser.add_argument("action", choices=("validate", "start", "resume", "status", "download"))
+    parser.add_argument(
+        "action", choices=("validate", "preflight", "start", "resume", "status", "download")
+    )
     parser.add_argument("--profile", type=Path, required=True)
     parser.add_argument("--directory", type=Path)
     parser.add_argument("--store", type=Path)
@@ -31,6 +33,12 @@ def add_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) 
 
 def execute(args: argparse.Namespace) -> int:
     profile = ComfyImageProfile.load(args.profile)
+    if args.action == "preflight":
+        from .comfy_preflight import preflight
+
+        report = preflight(profile)
+        print(json.dumps(report, indent=2))
+        return 0 if report["ok"] else 1
     if args.action == "validate":
         print(
             json.dumps(
