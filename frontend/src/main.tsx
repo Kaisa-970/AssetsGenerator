@@ -752,26 +752,24 @@ function App() {
                           }
                         >
                           <option value="">服务默认实现</option>
-                          {(catalog.backends || [])
-                            .filter(
-                              (b) =>
-                                b.operators.includes(node.operator) &&
-                                (!node.adapter || b.adapter === node.adapter),
-                            )
-                            .map((b) => (
-                              <option
-                                key={`${b.backend}:${b.adapter}`}
-                                value={b.backend}
-                              >
-                                {b.backend}
-                              </option>
-                            ))}
+                          {[
+                            ...new Set(
+                              (catalog.backends || [])
+                                .filter((b) =>
+                                  b.operators.includes(node.operator),
+                                )
+                                .map((b) => b.backend),
+                            ),
+                          ].map((backend) => (
+                            <option key={backend} value={backend}>
+                              {backend}
+                            </option>
+                          ))}
                           {node.backend &&
                             !(catalog.backends || []).some(
                               (b) =>
                                 b.backend === node.backend &&
-                                b.operators.includes(node.operator) &&
-                                (!node.adapter || b.adapter === node.adapter),
+                                b.operators.includes(node.operator),
                             ) && (
                               <option value={node.backend}>
                                 {node.backend}（未安装或不兼容）

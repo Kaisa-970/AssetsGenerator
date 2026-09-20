@@ -262,23 +262,27 @@ export function selectBackend(
   backend: string,
   catalog: Catalog,
 ): PipelineNode {
-  const candidates = (catalog.backends || []).filter(
-    (item) =>
-      item.backend === backend && item.operators.includes(node.operator),
-  );
-  const adapterKey =
-    node.adapter ||
-    (candidates.length === 1 ? candidates[0].adapter : undefined);
-  const resolve = (name?: string) =>
-    name
-      ? catalog.backends?.find(
-          (item) => item.backend === name && item.adapter === adapterKey,
-        )
-      : catalog.adapters.find(
-          (item) => `${item.name}@${item.version}` === node.adapter,
-        );
+  const candidates = backend
+    ? (catalog.backends || []).filter(
+        (item) =>
+          item.backend === backend && item.operators.includes(node.operator),
+      )
+    : catalog.adapters.filter((item) => item.operators.includes(node.operator));
+  const keyOf = (item: Adapter) => `${item.name}@${item.version}`;
+  const adapterKey = candidates.some((item) => keyOf(item) === node.adapter)
+    ? node.adapter
+    : candidates.length === 1
+      ? keyOf(candidates[0])
+      : undefined;
+  const oldAdapter = node.backend
+    ? catalog.backends?.find(
+        (item) =>
+          item.backend === node.backend && item.adapter === node.adapter,
+      )
+    : catalog.adapters.find((item) => keyOf(item) === node.adapter);
+  const newAdapter = candidates.find((item) => keyOf(item) === adapterKey);
   const parameters = { ...node.parameters };
-  for (const adapter of [resolve(node.backend), resolve(backend)]) {
+  for (const adapter of [oldAdapter, newAdapter]) {
     const properties = adapter?.parameter_schema?.properties;
     if (!properties || typeof properties !== "object") continue;
     for (const [key, rule] of Object.entries(properties)) {

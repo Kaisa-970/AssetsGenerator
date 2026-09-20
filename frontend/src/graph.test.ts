@@ -227,3 +227,50 @@ it("duplicate preserves configured upstreams but has independent nested values",
   expect(pipeline.nodes[result.id]).toBeUndefined();
   expect(() => duplicateNode(pipeline, "missing")).toThrow();
 });
+
+it("backend switching selects compatible implementations and clears both fixed identities", () => {
+  const a = {
+    name: "a",
+    version: "1",
+    operators: ["op@1"],
+    parameter_schema: {
+      properties: { old_identity: { type: "string", enum: ["a"] } },
+    },
+  };
+  const b = {
+    name: "b",
+    version: "1",
+    operators: ["op@1"],
+    parameter_schema: {
+      properties: { new_identity: { type: "string", enum: ["b"] } },
+    },
+  };
+  const catalog: Catalog = {
+    operators: {},
+    templates: [],
+    adapters: [a],
+    backends: [
+      { ...a, adapter: "a@1", backend: "first" },
+      { ...b, adapter: "b@1", backend: "second" },
+    ],
+  };
+  const node = {
+    operator: "op@1",
+    adapter: "a@1",
+    backend: "first",
+    inputs: {},
+    parameters: { old_identity: "a", new_identity: "stale", seed: 4 },
+  };
+  const changed = selectBackend(node, "second", catalog);
+  expect(changed.adapter).toBe("b@1");
+  expect(changed.parameters).toEqual({ seed: 4 });
+  expect(selectBackend(changed, "", catalog).adapter).toBe("a@1");
+  catalog.backends!.push(
+    { ...a, adapter: "a@1", backend: "ambiguous" },
+    { ...b, adapter: "b@1", backend: "ambiguous" },
+  );
+  expect(
+    selectBackend({ ...node, adapter: undefined }, "ambiguous", catalog)
+      .adapter,
+  ).toBeUndefined();
+});
