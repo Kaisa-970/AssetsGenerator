@@ -35,6 +35,7 @@ import {
   removeNodes,
   renameNode,
   validateDocument,
+  selectBackend,
 } from "./graph";
 import "@xyflow/react/dist/style.css";
 import "./style.css";
@@ -671,20 +672,15 @@ function App() {
                           value={node.backend || ""}
                           onChange={(e) =>
                             update((previous) => {
-                              const parameters = {
-                                ...previous.nodes[selected].parameters,
-                              };
-                              // The previous identity must not masquerade as the newly selected profile.
-                              delete parameters.profile_digest;
                               return {
                                 ...previous,
                                 nodes: {
                                   ...previous.nodes,
-                                  [selected]: {
-                                    ...previous.nodes[selected],
-                                    backend: e.target.value || undefined,
-                                    parameters,
-                                  },
+                                  [selected]: selectBackend(
+                                    previous.nodes[selected],
+                                    e.target.value,
+                                    catalog,
+                                  ),
                                 },
                               };
                             })

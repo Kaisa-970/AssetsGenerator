@@ -147,3 +147,51 @@ it("renames instance IDs while preserving optional bindings", () => {
   ).toBe("pipeline.inputs.photo");
   expect(() => renameNode(p, "a", "b")).toThrow();
 });
+
+import { selectBackend, type Catalog } from "./graph";
+it("clears fixed remote bindings when switching profiles or returning to default", () => {
+  const adapter = (name: string) => ({
+    name: "remote_shape",
+    version: "1",
+    operators: ["shape@1"],
+    backend: name,
+    adapter: "remote_shape@1",
+    parameter_schema: {
+      properties: {
+        remote_endpoint: { enum: [`http://${name}`] },
+        service_id: { enum: [name] },
+        backend_digest: { enum: [name] },
+        pipeline_type: { enum: ["512", "1024"] },
+      },
+    },
+  });
+  const catalog: Catalog = {
+    operators: {},
+    templates: [],
+    adapters: [adapter("default")],
+    backends: [adapter("first"), adapter("second")],
+  };
+  const node = {
+    operator: "shape@1",
+    adapter: "remote_shape@1",
+    backend: "first",
+    inputs: {},
+    parameters: {
+      remote_endpoint: "http://first",
+      service_id: "first",
+      backend_digest: "first",
+      seed: 7,
+      pipeline_type: "512",
+    },
+  };
+  for (const backend of ["second", ""]) {
+    const changed = selectBackend(node, backend, catalog);
+    expect(changed.parameters).toEqual({ seed: 7, pipeline_type: "512" });
+    expect(changed.backend).toBe(backend || undefined);
+  }
+  expect(node.parameters.service_id).toBe("first");
+  expect(
+    selectBackend({ ...node, backend: "uninstalled" }, "second", catalog)
+      .parameters,
+  ).toEqual({ seed: 7, pipeline_type: "512" });
+});

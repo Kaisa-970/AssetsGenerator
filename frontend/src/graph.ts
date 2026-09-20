@@ -255,3 +255,36 @@ export function renameNode(
     ),
   };
 }
+
+/** Clear fixed deployment overrides when switching trusted implementations. */
+export function selectBackend(
+  node: PipelineNode,
+  backend: string,
+  catalog: Catalog,
+): PipelineNode {
+  const resolve = (name?: string) =>
+    name
+      ? catalog.backends?.find(
+          (item) => item.backend === name && item.adapter === node.adapter,
+        )
+      : catalog.adapters.find(
+          (item) => `${item.name}@${item.version}` === node.adapter,
+        );
+  const parameters = { ...node.parameters };
+  for (const adapter of [resolve(node.backend), resolve(backend)]) {
+    const properties = adapter?.parameter_schema?.properties;
+    if (!properties || typeof properties !== "object") continue;
+    for (const [key, rule] of Object.entries(properties)) {
+      if (
+        rule &&
+        typeof rule === "object" &&
+        "enum" in rule &&
+        Array.isArray(rule.enum) &&
+        rule.enum.length === 1
+      )
+        delete parameters[key];
+    }
+  }
+  delete parameters.profile_digest;
+  return { ...node, backend: backend || undefined, parameters };
+}

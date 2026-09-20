@@ -611,10 +611,13 @@ test("node backend selection uses installed schema and clears stale identity", a
     name: "local",
     version: "1",
     operators: ["generate@1"],
-    defaults: { profile_digest: "old" },
+    defaults: { profile_digest: "old", service_id: "old-service" },
     parameter_schema: {
       type: "object",
-      properties: { profile_digest: { type: "string", enum: ["old"] } },
+      properties: {
+        profile_digest: { type: "string", enum: ["old"] },
+        service_id: { type: "string", enum: ["old-service"] },
+      },
     },
   };
   await page.route("**/api/**", async (route) => {
@@ -644,6 +647,7 @@ test("node backend selection uses installed schema and clears stale identity", a
                     type: "object",
                     properties: {
                       profile_digest: { type: "string", enum: ["new"] },
+                      service_id: { type: "string", enum: ["new-service"] },
                     },
                   },
                 },
@@ -661,7 +665,11 @@ test("node backend selection uses installed schema and clears stale identity", a
                         operator: "generate@1",
                         adapter: "local@1",
                         inputs: {},
-                        parameters: { profile_digest: "old", seed: 42 },
+                        parameters: {
+                          profile_digest: "old",
+                          service_id: "old-service",
+                          seed: 42,
+                        },
                       },
                       right: {
                         operator: "generate@1",
