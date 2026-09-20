@@ -22,7 +22,7 @@ from .compiled_plan import CompiledPlan, thaw
 from .contracts import ContractError, OperatorSpec, validate_port_value
 from .dag_engine import DagEngine
 from .dag_review import DagMaskReviewService, create_dag_review_server
-from .models import ArtifactRef
+from .models import ArtifactRef, PortValue
 from .pipeline import _pipeline_from_raw, _port_spec, compile_pipeline, load_default_operator_specs
 from .relations import RelationValidatorRegistry
 from .serialization import cache_key, canonical_json_bytes, read_json, to_primitive
@@ -400,6 +400,7 @@ class NodeEditorExecution:
         *,
         image_ref: dict[str, Any] | None = None,
         observations_ref: dict[str, Any] | None = None,
+        input_refs: dict[str, dict[str, Any]] | None = None,
         idempotency_key: str | None = None,
     ) -> dict[str, Any]:
         with self._lock:
@@ -421,63 +422,95 @@ class NodeEditorExecution:
                 ),
                 relation_registry=self.relations,
             )
-            name = validate_editor_execution(plan.static_plan)
-            contract = plan.static_plan.inputs[name].contract
-            if sum(v is not None for v in (image_path, image_ref, observations_ref)) != 1:
-                raise ContractError("provide exactly one input source")
-            if (name == "observations") != (observations_ref is not None):
-                raise ContractError("input source does not match pipeline input")
-            reference = observations_ref if name == "observations" else image_ref
-            if reference is not None:
-                if not isinstance(reference, dict) or set(reference) != {"artifact_id"}:
-                    raise ContractError("input reference must be an ArtifactRef")
-                image = ArtifactRef(**reference)
-            else:
-                if not isinstance(image_path, str) or not image_path.strip():
-                    raise ContractError("image path is required")
-                source_path = Path(image_path).expanduser()
-                if source_path.stat().st_size > 20 * 1024 * 1024:
-                    raise ContractError("image upload must be at most 20 MiB")
-                image = ArtifactRef(
-                    **self.upload_image(
-                        source_path.read_bytes(),
-                        rgba=tuple(contract["kinds"]) == ("rgba_image",),
-                    )["image_ref"]
-                )
-            if name == "observations":
-                from .observations import observation_bundle_from_artifact
-
-                observation_bundle_from_artifact(image, self.engine.store)
-                self.engine.repository.verify_reference_closure(image)
-            validate_port_value(
-                operator=plan.static_plan.pipeline_name,
-                port_name=name,
-                spec=_port_spec(thaw(contract)),
-                value=image,
-                store=self.engine.store,
-            )
-            if tuple(contract["kinds"]) == ("rgba_image",):
-                identity = self.engine.store.get_manifest(image.artifact_id).identity
-                if (identity.schema_name, identity.schema_version, identity.identity_metadata) != (
-                    "png",
-                    "1.0",
-                    {"media_type": "image/png", "channel_layout": "RGBA"},
+            actual_inputs: dict[str, PortValue | list[PortValue]]
+            if input_refs is not None:
+                if any(value is not None for value in (image_path, image_ref, observations_ref)):
+                    raise ContractError("multi-input refs cannot be combined with image sources")
+                if not plan.static_plan.nodes:
+                    raise ContractError("canvas execution requires at least one processing node")
+                name = None
+                if not isinstance(input_refs, dict) or set(input_refs) != set(
+                    plan.static_plan.inputs
                 ):
-                    raise ContractError("prepared RGBA Artifact has an invalid identity")
-                blob = self.engine.store.blob_path(image)
-                if blob.stat().st_size > 20 * 1024 * 1024:
-                    raise ContractError("image upload must be at most 20 MiB")
-                with Image.open(blob) as prepared:
-                    if (
-                        prepared.format != "PNG"
-                        or prepared.mode != "RGBA"
-                        or prepared.width * prepared.height > 25_000_000
-                        or getattr(prepared, "n_frames", 1) != 1
+                    raise ContractError(
+                        "multi-input run requires one ArtifactRef for every pipeline input"
+                    )
+                if any(
+                    not isinstance(value, dict) or set(value) != {"artifact_id"}
+                    for value in input_refs.values()
+                ):
+                    raise ContractError("multi-input inputs must be ArtifactRef objects")
+                actual_inputs = {key: ArtifactRef(**value) for key, value in input_refs.items()}
+                for key, value in actual_inputs.items():
+                    contract = plan.static_plan.inputs[key].contract
+                    validate_port_value(
+                        operator=plan.static_plan.pipeline_name,
+                        port_name=key,
+                        spec=_port_spec(thaw(contract)),
+                        value=value,
+                        store=self.engine.store,
+                    )
+                    if not isinstance(value, ArtifactRef) or not self.engine.store.verify_digest(
+                        value
                     ):
-                        raise ContractError("prepared RGBA input must be a bounded RGBA PNG")
-                    prepared.load()
-                    if prepared.getchannel("A").getextrema()[1] == 0:
-                        raise ContractError("prepared RGBA input contains no foreground")
+                        raise ContractError(f"input Artifact is missing or corrupt: {key}")
+            else:
+                name = validate_editor_execution(plan.static_plan)
+                if sum(v is not None for v in (image_path, image_ref, observations_ref)) != 1:
+                    raise ContractError("provide exactly one input source")
+                if (name == "observations") != (observations_ref is not None):
+                    raise ContractError("input source does not match pipeline input")
+                reference = observations_ref if name == "observations" else image_ref
+                if reference is not None:
+                    if not isinstance(reference, dict) or set(reference) != {"artifact_id"}:
+                        raise ContractError("input reference must be an ArtifactRef")
+                    image = ArtifactRef(**reference)
+                else:
+                    if not isinstance(image_path, str) or not image_path.strip():
+                        raise ContractError("image path is required")
+                    source_path = Path(image_path).expanduser()
+                    if source_path.stat().st_size > 20 * 1024 * 1024:
+                        raise ContractError("image upload must be at most 20 MiB")
+                    contract = plan.static_plan.inputs[name].contract
+                    image = ArtifactRef(
+                        **self.upload_image(
+                            source_path.read_bytes(),
+                            rgba=tuple(contract["kinds"]) == ("rgba_image",),
+                        )["image_ref"]
+                    )
+                actual_inputs = {name: image}
+                contract = plan.static_plan.inputs[name].contract
+                if name == "observations":
+                    from .observations import observation_bundle_from_artifact
+
+                    observation_bundle_from_artifact(image, self.engine.store)
+                    self.engine.repository.verify_reference_closure(image)
+                validate_port_value(
+                    operator=plan.static_plan.pipeline_name,
+                    port_name=name,
+                    spec=_port_spec(thaw(contract)),
+                    value=image,
+                    store=self.engine.store,
+                )
+                if tuple(contract["kinds"]) == ("rgba_image",):
+                    identity = self.engine.store.get_manifest(image.artifact_id).identity
+                    if (
+                        identity.schema_name,
+                        identity.schema_version,
+                        identity.identity_metadata,
+                    ) != ("png", "1.0", {"media_type": "image/png", "channel_layout": "RGBA"}):
+                        raise ContractError("prepared RGBA Artifact has an invalid identity")
+                    with Image.open(self.engine.store.blob_path(image)) as prepared:
+                        if (
+                            prepared.format != "PNG"
+                            or prepared.mode != "RGBA"
+                            or prepared.width * prepared.height > 25_000_000
+                            or getattr(prepared, "n_frames", 1) != 1
+                        ):
+                            raise ContractError("prepared RGBA input must be a bounded RGBA PNG")
+                        prepared.load()
+                        if prepared.getchannel("A").getextrema()[1] == 0:
+                            raise ContractError("prepared RGBA input contains no foreground")
             run_id = None
             marker = None
             repository = self.engine.repository
@@ -487,7 +520,7 @@ class NodeEditorExecution:
                 receipt = repository.reserve_creation(
                     CreationReceipt(
                         "node-editor:" + idempotency_key,
-                        cache_key({"plan": plan.to_dict(), name: to_primitive(image)}),
+                        cache_key({"plan": plan.to_dict(), "inputs": to_primitive(actual_inputs)}),
                         f"dag_{uuid.uuid4().hex}",
                     )
                 )
@@ -499,7 +532,7 @@ class NodeEditorExecution:
                     if (
                         existing.dag is None
                         or existing.dag.plan_id != plan.plan_id
-                        or existing.dag.named_actual_inputs != {name: image}
+                        or existing.dag.named_actual_inputs != actual_inputs
                     ):
                         raise ContractError("creation receipt does not match persisted run")
                     if not marker.exists():
@@ -516,7 +549,7 @@ class NodeEditorExecution:
                     raise ContractError("created run index is missing; refusing to recreate it")
             self._idle()
             self._stop_review()
-            run = self.engine.create(plan, {name: image}, run_id=run_id)
+            run = self.engine.create(plan, actual_inputs, run_id=run_id)
             if marker is not None:
                 repository._mutate(
                     lambda: repository.io.write(

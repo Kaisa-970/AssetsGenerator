@@ -639,3 +639,61 @@ def test_path_and_upload_share_identity_and_validation(tmp_path, monkeypatch):
             assert len(service.list_runs()) == 1
         finally:
             service.close()
+
+
+def test_multi_input_refs_bind_every_pipeline_input_and_are_idempotent(tmp_path):
+    graph = {
+        "pipeline": "multi_input_encode",
+        "version": "1",
+        "inputs": {
+            "image": {
+                "kind": "rgb_image",
+                "carriers": ["artifact_ref"],
+                "schema_name": "raster_image",
+                "schema_version": "1.0",
+            },
+            "unused": {
+                "kind": "rgb_image",
+                "carriers": ["artifact_ref"],
+                "schema_name": "raster_image",
+                "schema_version": "1.0",
+            },
+        },
+        "nodes": {
+            "encode": {"operator": "encode_png@1", "inputs": {"image": "pipeline.inputs.image"}}
+        },
+    }
+    from io import BytesIO
+
+    from PIL import Image
+
+    from assets_generator.artifact_store import LocalArtifactStore
+    from assets_generator.dag_adapters import AdapterRegistry
+    from assets_generator.dag_image_encoding import EncodePngAdapter
+
+    store = LocalArtifactStore(tmp_path / "store")
+    registry = AdapterRegistry()
+    registry.register(EncodePngAdapter())
+    with DagRepository(store, tmp_path / "runtime") as repo:
+        service = NodeEditorExecution(DagEngine(repo, registry))
+        try:
+            refs = []
+            for color in ("red", "blue"):
+                data = BytesIO()
+                Image.new("RGB", (2, 2), color).save(data, format="PNG")
+                refs.append(service.upload_image(data.getvalue())["image_ref"])
+            inputs = {"image": refs[0], "unused": refs[1]}
+            started = service.start(graph, input_refs=inputs, idempotency_key="two-inputs")
+            result = wait(service, started["run"]["run_id"])
+            assert result["run"]["status"] == "succeeded", result
+            run_id = started["run"]["run_id"]
+            persisted = repo.load(run_id)
+            assert persisted.dag.named_actual_inputs["image"].artifact_id == refs[0]["artifact_id"]
+            assert persisted.dag.named_actual_inputs["unused"].artifact_id == refs[1]["artifact_id"]
+            replay = service.start(graph, input_refs=inputs, idempotency_key="two-inputs")
+            assert replay["run"]["run_id"] == run_id
+            assert len(repo.load(run_id).dag.node_states["encode"].attempts) == 1
+            with pytest.raises(ContractError, match="one ArtifactRef for every"):
+                service.start(graph, input_refs={"image": refs[0]})
+        finally:
+            service.close()

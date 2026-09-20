@@ -510,3 +510,74 @@ def test_remote_only_editor_runs_cpu_utilities_without_contacting_service(tmp_pa
     node_editor.serve_editor(
         tmp_path / "editor", 0, None, [], remote_config=config, store=tmp_path / "store"
     )
+
+
+def test_http_input_refs_requires_complete_port_mapping(tmp_path):
+    from http.client import HTTPConnection
+    from io import BytesIO
+
+    from PIL import Image
+
+    from assets_generator.artifact_store import LocalArtifactStore
+    from assets_generator.dag_adapters import AdapterRegistry
+    from assets_generator.dag_engine import DagEngine
+    from assets_generator.dag_image_encoding import EncodePngAdapter
+    from assets_generator.dag_persistence import DagRepository
+    from assets_generator.node_editor import DraftEditor, create_editor_server
+    from assets_generator.node_editor_execution import NodeEditorExecution
+
+    graph = {
+        "pipeline": "http_multi",
+        "version": "1",
+        "inputs": {
+            "image": {
+                "kind": "rgb_image",
+                "carriers": ["artifact_ref"],
+                "schema_name": "raster_image",
+                "schema_version": "1.0",
+            },
+            "other": {
+                "kind": "rgb_image",
+                "carriers": ["artifact_ref"],
+                "schema_name": "raster_image",
+                "schema_version": "1.0",
+            },
+        },
+        "nodes": {
+            "encode": {"operator": "encode_png@1", "inputs": {"image": "pipeline.inputs.image"}}
+        },
+    }
+    store = LocalArtifactStore(tmp_path / "store")
+    registry = AdapterRegistry()
+    registry.register(EncodePngAdapter())
+    with DagRepository(store, tmp_path / "runtime") as repo:
+        execution = NodeEditorExecution(DagEngine(repo, registry))
+        server = create_editor_server(DraftEditor(tmp_path / "drafts", execution=execution), 0)
+        thread = threading.Thread(target=server.serve_forever)
+        thread.start()
+        try:
+            image = BytesIO()
+            Image.new("RGB", (2, 2), "red").save(image, format="PNG")
+            refs = [execution.upload_image(image.getvalue())["image_ref"] for _ in range(2)]
+            conn = HTTPConnection("127.0.0.1", server.server_port)
+            body = json.dumps(
+                {
+                    "pipeline": graph,
+                    "input_refs": {"image": refs[0], "other": refs[1]},
+                    "idempotency_key": "http-two",
+                }
+            )
+            conn.request("POST", "/api/runs", body, {"Content-Type": "application/json"})
+            response = conn.getresponse()
+            assert response.status == 202
+            run = json.loads(response.read())
+            assert (
+                run["run"]["dag"]["named_actual_inputs"]["other"]["artifact_id"]
+                == refs[1]["artifact_id"]
+            )
+            conn.close()
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join()
+            execution.close()

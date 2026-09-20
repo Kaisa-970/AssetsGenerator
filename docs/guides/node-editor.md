@@ -200,3 +200,28 @@ Adapter、Backend 和上游输入连接，便于设置多分支实验。原节�
 加载草稿、导入 YAML 或从历史运行载入配置期间，如果画布又有编辑，迟到响应会
 被拒绝以保留当前内容；重新发起加载即可。以上只读查看不等于质量批准，成功状态
 也不替代模型效果或资产质量评测。
+
+## 多输入运行绑定（API）
+
+运行入口原先支持单个 `image_ref` 或 `observations_ref`。对于拥有多个 Pipeline
+输入的图，后端现在支持按端口名提交完整的不可变 ArtifactRef 映射：
+
+```json
+{
+  "pipeline": {"pipeline": "...", "version": "1", "inputs": {"image": {}, "mask": {}}, "nodes": {}},
+  "input_refs": {
+    "image": {"artifact_id": "sha256:..."},
+    "mask": {"artifact_id": "sha256:..."}
+  },
+  "idempotency_key": "..."
+}
+```
+
+映射必须与 Pipeline 输入集合完全一致，每个值只能是 `{artifact_id}`；Core 会按
+OperatorSpec 校验 kind、schema、carrier、digest 和证据完整性，再固定到
+`named_actual_inputs`。缺失、额外或损坏引用会拒绝创建；重复幂等请求必须使用
+同一映射，不会重跑已有节点。
+
+这是后端 API 契约，当前运行面板仍只展示单图或 ObservationBundle 的专用表单。
+在前端加入任意多输入表单前，应为每个支持的输入 kind 提供上传/Artifact 选择器
+和关系校验提示，不能把输入 JSON 文本框当作用户体验。

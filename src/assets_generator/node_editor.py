@@ -286,6 +286,7 @@ def create_editor_server(editor: DraftEditor, port: int = 8767) -> ThreadingHTTP
                         {"pipeline", "image_path"},
                         {"pipeline", "image_ref"},
                         {"pipeline", "observations_ref"},
+                        {"pipeline", "input_refs"},
                     ):
                         raise ValueError("run requires pipeline and exactly one input source")
                     options: dict[str, Any] = {}
@@ -293,7 +294,11 @@ def create_editor_server(editor: DraftEditor, port: int = 8767) -> ThreadingHTTP
                         if not isinstance(body["idempotency_key"], str):
                             raise ValueError("idempotency_key must be text")
                         options["idempotency_key"] = body["idempotency_key"]
-                    if "observations_ref" in body:
+                    if "input_refs" in body:
+                        value = editor.execution.start(
+                            body["pipeline"], input_refs=body["input_refs"], **options
+                        )
+                    elif "observations_ref" in body:
                         value = editor.execution.start(
                             body["pipeline"], observations_ref=body["observations_ref"], **options
                         )

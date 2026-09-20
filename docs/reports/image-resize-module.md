@@ -55,3 +55,8 @@ transparency 元数据的输入，不自动丢弃透明度或合成背景。
 真实小型透明 PNG 回归验证拒绝、原 Blob 保留、未创建输出 Artifact；相关
 18 项测试通过（3.40 秒）。Ruff、mypy（131 文件）与 git diff --check 通过。
 没有运行新 GPU 或浏览器验收。修改 Adapter 实现摘要后旧绑定仍按既有身份规则校验。
+
+为支持后续 `RGB + binary_mask → RGBA` 等二输入节点，编辑器后端新增 `input_refs`
+创建 API，先验证每个 Pipeline 输入的 ArtifactRef 和证据闭包，再固定运行；
+完整 端口集合、幂等重放、缺失输入拒绝已有执行回归。mask 合成节点暂未接入，
+因为当前前端还没有多输入选择器，避免出现只能编译不能启动的目录模块。

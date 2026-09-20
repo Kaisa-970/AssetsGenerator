@@ -65,6 +65,7 @@ type CreationRequest = {
   image_path?: string;
   image_ref?: Record<string, unknown>;
   observations_ref?: Record<string, unknown>;
+  input_refs?: Record<string, Record<string, unknown>>;
 };
 const creationStorageKey = "assets-generator:pending-creation:v1";
 function restoreCreation(): { request?: CreationRequest; error?: string } {
