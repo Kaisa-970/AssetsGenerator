@@ -72,3 +72,22 @@ assets-generator comfy-image download --profile /path/to/profile.json \
 上传后、提交绑定前中断会保守阻塞，尚不支持自动续跑或远程取消。匹配原请求的上游失败
 历史会持久化并记为 COMFY_EXECUTION_FAILED，可离线恢复；缺失或不匹配的历史仍
 保持不确定，不应手工删除日志来解锁。
+
+## DAG 服务端实验命令
+
+同一 profile 可用于单 RGB 图片输入/输出的服务端。监听器只接收作业，执行需另一个
+终端显式调用，尚无后台自动调度；DAG 客户端 Adapter 仍待接入。
+
+```bash
+assets-generator comfy-service serve --profile /path/to/profile.json \
+  --directory /path/to/jobs --port 8771
+assets-generator comfy-service list --profile /path/to/profile.json --directory /path/to/jobs
+assets-generator comfy-service execute-next --profile /path/to/profile.json \
+  --directory /path/to/jobs --store /path/to/store
+assets-generator comfy-service recover --profile /path/to/profile.json \
+  --directory /path/to/jobs --store /path/to/store --key <原作业key>
+```
+
+serve 只绑定本机地址，不代表提供公网认证。execute-next 只领取一项，未知结果保持
+running 并阻塞后续领取；recover 不重新提交推理。不要将此前本地图像 CLI 请求混入
+DAG 服务队列，二者请求格式不同，建议使用独立 jobs 目录。

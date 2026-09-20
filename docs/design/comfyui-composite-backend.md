@@ -425,3 +425,13 @@ start_dag 和一次 finish。异常保留 running；recover_image_job 仅接受�
 2 项执行器回归、Ruff 与 mypy 通过，覆盖中断后重开、队列阻塞、恢复后领取下一项
 以及错误 profile 不领取任务。测试替代 profile 方法以检查调度行为，未声称
 DAG/ComfyUI 端到端执行；客户端 Adapter、服务命令及画布仍需连接。
+
+### 服务命令接线
+
+新增 comfy-service serve/list/execute-next/recover，复用远程 HTTP 协议和显式队列
+执行器。serve 仅本机监听并接收任务，不运行模型；execute-next 才领取一项，
+recover 只处理原作业。非 serve 命令拒绝重建缺失数据库，恢复要求已有 Store。
+
+4 项服务 CLI/执行器回归及 Ruff/mypy 通过，测试 listener 与执行路径分离、参数
+限制和缺失数据库不重建。CLI 测试替代监听器/执行器，尚未做该服务命令的 HTTP
+端到端；DAG 客户端 Adapter 与画布仍未完成。
