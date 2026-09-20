@@ -389,12 +389,13 @@ class NodeEditorExecution:
             if getattr(mask, "n_frames", 1) != 1:
                 raise ContractError("mask upload must be a single frame")
             mask.load()
-            if mask.mode not in {"1", "L"}:
-                raise ContractError("mask upload must be a grayscale PNG")
+            if mask.mode not in {"1", "L"} or "transparency" in mask.info:
+                raise ContractError("mask upload must be a grayscale PNG without transparency")
             values = set(mask.convert("L").tobytes())
             if not values <= {0, 255} or 255 not in values:
                 raise ContractError("mask upload must contain only 0/255 values and foreground")
             width, height = mask.size
+            channel_layout = mask.mode
         with self._lock:
             if self._closed:
                 raise ContractError("editor execution service is closing")
@@ -405,7 +406,7 @@ class NodeEditorExecution:
                 schema_version="1.0",
                 identity_metadata={
                     "media_type": "image/png",
-                    "channel_layout": "L",
+                    "channel_layout": channel_layout,
                     "width": width,
                     "height": height,
                 },
@@ -490,19 +491,6 @@ class NodeEditorExecution:
                 ):
                     raise ContractError("multi-input inputs must be ArtifactRef objects")
                 actual_inputs = {key: ArtifactRef(**value) for key, value in input_refs.items()}
-                for key, value in actual_inputs.items():
-                    contract = plan.static_plan.inputs[key].contract
-                    validate_port_value(
-                        operator=plan.static_plan.pipeline_name,
-                        port_name=key,
-                        spec=_port_spec(thaw(contract)),
-                        value=value,
-                        store=self.engine.store,
-                    )
-                    if not isinstance(value, ArtifactRef) or not self.engine.store.verify_digest(
-                        value
-                    ):
-                        raise ContractError(f"input Artifact is missing or corrupt: {key}")
             else:
                 name = validate_editor_execution(plan.static_plan)
                 if sum(v is not None for v in (image_path, image_ref, observations_ref)) != 1:
@@ -528,28 +516,33 @@ class NodeEditorExecution:
                         )["image_ref"]
                     )
                 actual_inputs = {name: image}
-                contract = plan.static_plan.inputs[name].contract
-                if name == "observations":
-                    from .observations import observation_bundle_from_artifact
-
-                    observation_bundle_from_artifact(image, self.engine.store)
-                    self.engine.repository.verify_reference_closure(image)
+            for input_name, value in actual_inputs.items():
+                assert isinstance(value, ArtifactRef)
+                contract = plan.static_plan.inputs[input_name].contract
                 validate_port_value(
                     operator=plan.static_plan.pipeline_name,
-                    port_name=name,
+                    port_name=input_name,
                     spec=_port_spec(thaw(contract)),
-                    value=image,
+                    value=value,
                     store=self.engine.store,
                 )
-                if tuple(contract["kinds"]) == ("rgba_image",):
-                    identity = self.engine.store.get_manifest(image.artifact_id).identity
+                identity = self.engine.store.get_manifest(value.artifact_id).identity
+                self.engine.repository.verify_reference_closure(value)
+                if identity.kind == "observation_bundle":
+                    from .observations import observation_bundle_from_artifact
+
+                    observation_bundle_from_artifact(value, self.engine.store)
+                if identity.kind == "rgba_image":
                     if (
                         identity.schema_name,
                         identity.schema_version,
                         identity.identity_metadata,
                     ) != ("png", "1.0", {"media_type": "image/png", "channel_layout": "RGBA"}):
                         raise ContractError("prepared RGBA Artifact has an invalid identity")
-                    with Image.open(self.engine.store.blob_path(image)) as prepared:
+                    blob = self.engine.store.blob_path(value)
+                    if blob.stat().st_size > 20 * 1024 * 1024:
+                        raise ContractError("image upload must be at most 20 MiB")
+                    with Image.open(blob) as prepared:
                         if (
                             prepared.format != "PNG"
                             or prepared.mode != "RGBA"

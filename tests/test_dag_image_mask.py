@@ -122,3 +122,35 @@ def test_mask_editor_compiles_runs_and_recovers_exact_evidence(tmp_path):
             assert not store.blob_path(output).exists()
         finally:
             execution.close()
+
+
+@pytest.mark.parametrize(
+    "damage", ["rgb_color_key", "rgba_mask", "rgb_mask", "mask_color_key", "jpeg_mask"]
+)
+def test_compositing_rejects_implicit_alpha_or_color_conversion(tmp_path, damage):
+    store = LocalArtifactStore(tmp_path / "store")
+    source = Image.new("RGB", (2, 2), "red")
+    mask = Image.new("L", (2, 2), 255)
+    if damage == "rgb_color_key":
+        source.info["transparency"] = (255, 0, 0)
+    if damage == "rgba_mask":
+        mask = Image.new("RGBA", (2, 2), (255, 255, 255, 0))
+    if damage == "rgb_mask":
+        mask = Image.new("RGB", (2, 2), "white")
+    if damage == "mask_color_key":
+        mask.info["transparency"] = 255
+    mask_bytes = _png(mask)
+    if damage == "jpeg_mask":
+        data = io.BytesIO()
+        mask.save(data, format="JPEG")
+        mask_bytes = data.getvalue()
+    image_ref = store.persist_bytes(
+        _png(source), kind="rgb_image", schema_name="png", schema_version="1.0"
+    )
+    mask_ref = store.persist_bytes(
+        mask_bytes, kind="binary_mask", schema_name="png", schema_version="1.0"
+    )
+    with pytest.raises(ContractError, match="opaque RGB|grayscale PNG"):
+        ApplyBinaryMaskAdapter().execute(
+            NodeExecutionContext("run", "mask", {"image": image_ref, "mask": mask_ref}, {}, store)
+        )

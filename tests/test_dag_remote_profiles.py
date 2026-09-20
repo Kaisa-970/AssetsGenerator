@@ -162,6 +162,10 @@ def test_editor_rgba_upload_start_and_empty_foreground_rejection(tmp_path):
                 )
                 with pytest.raises(ValueError, match="foreground"):
                     execution.start(graph, image_ref={"artifact_id": bad.artifact_id})
+                with pytest.raises(ValueError, match="foreground"):
+                    execution.start(graph, input_refs={"image": {"artifact_id": bad.artifact_id}})
+                assert len(execution.list_runs()) == 1
+
             finally:
                 execution.close()
 

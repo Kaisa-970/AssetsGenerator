@@ -95,3 +95,14 @@ SAM-only profiles 与双 HTTP 服务 CPU 发布/恢复的已登记回归。
 本轮 Ruff lint/format、mypy 和 diff 检查通过，尚未重跑完整 Python 套件。
 历史契约测试继续使用原摘要：重建历史目录时排除新增 mask 算子，不能更新旧摘要
 来掩盖基线变化。
+
+## 多输入内容边界补齐
+
+多输入 `input_refs` 与旧输入入口现共用 Artifact 端口、证据闭包和 RGBA 内容校验，
+全透明 RGBA 不再能通过更换请求字段绕过前景检查；恢复 20 MiB 的已导入 RGBA
+输入大小限制。mask 合成拒绝透明色键、彩色/带 alpha 的 mask 以及伪装成 PNG 的
+其他编码，避免隐式转换丢失语义。上传的一位 PNG 保留实际 channel_layout="1"。
+
+验证分次执行：32 项编辑器/远程配置/mask 测试通过；随后 25 项 mask/实际 HTTP
+发布/编辑器测试通过；补充的一位 PNG 和透明色键上传回归单项通过。Ruff、mypy、
+diff 检查通过。没有新增 GPU 或浏览器真实后端验收，未声称完整 Python 回归通过。

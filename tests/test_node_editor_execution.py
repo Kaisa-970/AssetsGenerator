@@ -720,6 +720,19 @@ def test_upload_mask_accepts_binary_png_and_rejects_invalid_values(tmp_path):
             result = service.upload_mask(data.getvalue())
             ref = result["mask_ref"]
             assert repo.store.get_manifest(ref["artifact_id"]).identity.kind == "binary_mask"
+            one_bit = io.BytesIO()
+            Image.new("1", (2, 2), 1).save(one_bit, format="PNG")
+            bit_ref = service.upload_mask(one_bit.getvalue())["mask_ref"]
+            assert (
+                repo.store.get_manifest(bit_ref["artifact_id"]).identity.identity_metadata[
+                    "channel_layout"
+                ]
+                == "1"
+            )
+            transparent = io.BytesIO()
+            Image.new("L", (2, 2), 255).save(transparent, format="PNG", transparency=255)
+            with pytest.raises(ContractError, match="without transparency"):
+                service.upload_mask(transparent.getvalue())
             bad = io.BytesIO()
             Image.frombytes("L", (2, 2), bytes([0, 0, 0, 0])).save(bad, format="PNG")
             with pytest.raises(ContractError, match="foreground"):
