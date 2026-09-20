@@ -137,3 +137,15 @@ workflow、图像上传、DAG 与画布入口仍未接通。
 此导入仍是内部首片：尚未将导入记录自身的身份固定到外层 BuildRun，因此
 整个日志或单条导入记录丢失的检测仍需外层归属集成；不能宣称完整恢复闭环。
 也尚未构建复合 provenance Artifact、上传输入或开放 DAG/画布节点。
+
+### 受信模板的标量参数绑定
+
+ComfyWorkflow 校验 API 图节点、连线引用与无环性，复制冻结模板，复用 AdapterSpec
+参数 schema/defaults 校验实际参数。公开参数逐个映射到已有标量输入，不能替换
+连线或两个参数覆盖同一槽位。绑定结果记录 template/workflow/mapping 摘要与
+实际规范化参数；不同 seed 改变实际图摘要，不改变模板摘要。
+
+首版不支持 literal array 输入或对象参数映射，避免把数组与 ComfyUI 连线混淆。
+完整节点类型与输出槽位有效性仍需部署的 ComfyUI validate_prompt 核验，Core
+静态检查不声称能验证自定义节点实现。47 项 ComfyUI 测试、Ruff/mypy 通过。
+该组件尚未接启动 profile、输入上传、外层服务与 DAG，不是新开放的画布节点。
