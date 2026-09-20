@@ -66,3 +66,9 @@ endpoint/service_id/backend_digest 固定在参数 enum 中，草稿不能任意
 浏览器 Playwright 回归覆盖 RGBA 专用上传路由、明确点击后创建运行、提交精确 ArtifactRef，
 以及切换成 RGB 图后禁止复用旧 RGBA 上传。该测试使用模拟 API，证明界面请求行为，
 不替代真实服务端图像校验或浏览器真实模型全链验收。
+
+真实 HTTP 集成回归 `tests/test_node_editor_remote_http.py` 启动编辑器和远程服务，
+通过 HTTP 完成 compile → RGBA 上传 → 幂等创建 → 服务端执行 → 显式 resume → GLB/Release 读取。
+它验证 GET 轮询不消费远程成功结果、重复创建不产生新运行、五节点各一次 attempt、GLB 可回读。
+该测试使用独立 CPU 测试 Backend；与浏览器模拟 API 测试、真实 TRELLIS.2 DAG smoke 是不同证据，
+不能合称已完成“浏览器直接操作真实模型”的验收。
