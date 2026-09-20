@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +37,10 @@ class RemoteServiceStore:
                 "CREATE TABLE IF NOT EXISTS jobs "
                 "(key TEXT PRIMARY KEY, request BLOB NOT NULL, job BLOB NOT NULL)"
             )
+            if "comfy_binding" not in {
+                row[1] for row in self.db.execute("PRAGMA table_info(jobs)")
+            }:
+                self.db.execute("ALTER TABLE jobs ADD COLUMN comfy_binding BLOB")
             self.db.execute(
                 "CREATE TABLE IF NOT EXISTS blobs (digest TEXT PRIMARY KEY, body BLOB NOT NULL)"
             )
@@ -109,7 +114,7 @@ class RemoteServiceStore:
                 if row is None:
                     wire = self._wire(request)
                     self.db.execute(
-                        "INSERT INTO jobs VALUES (?, ?, ?)",
+                        "INSERT INTO jobs (key, request, job) VALUES (?, ?, ?)",
                         (
                             request.submission_key,
                             canonical_json_bytes(request.to_dict()),
@@ -140,6 +145,68 @@ class RemoteServiceStore:
             return RemoteJob.parse(
                 json.loads(row[1]), request, expected_job_id=request.submission_key
             )
+
+    def comfy_binding(self, request: RemoteRequest) -> dict[str, str] | None:
+        """Read the immutable upstream authorization fixed in the owning job row."""
+        with self._lock:
+            if self.lookup(request) is None:
+                raise ValueError("ComfyUI owner job missing")
+            raw = self.db.execute(
+                "SELECT comfy_binding FROM jobs WHERE key=?", (request.submission_key,)
+            ).fetchone()[0]
+            if raw is None:
+                return None
+            value = json.loads(raw)
+            if not isinstance(value, dict) or canonical_json_bytes(value) != raw:
+                raise ValueError("invalid ComfyUI owner binding")
+            self._validate_comfy_binding(request, value)
+            return value
+
+    @staticmethod
+    def _validate_comfy_binding(request: RemoteRequest, binding: dict[str, str]) -> None:
+        if (
+            set(binding) != {"journal_id", "submission_key", "prompt_id", "request_digest"}
+            or any(not isinstance(value, str) for value in binding.values())
+            or binding.get("submission_key") != request.submission_key
+        ):
+            raise ValueError("invalid ComfyUI binding owner or fields")
+        for key in ("journal_id", "prompt_id"):
+            if str(uuid.UUID(binding[key])) != binding[key]:
+                raise ValueError("invalid ComfyUI binding UUID")
+        digest = binding["request_digest"]
+        if (
+            not digest.startswith("sha256:")
+            or len(digest) != 71
+            or any(char not in "0123456789abcdef" for char in digest[7:])
+        ):
+            raise ValueError("invalid ComfyUI binding digest")
+
+    def authorize_comfy_submission(self, request: RemoteRequest, binding: dict[str, str]) -> bool:
+        """Only the caller that durably installs the binding may send one POST.
+
+        An existing binding never authorizes sending, even if the inner journal
+        was rolled back to prepared. Recovery must query the original prompt.
+        """
+        self._validate_comfy_binding(request, binding)
+        with self._lock:
+            self.db.execute("BEGIN IMMEDIATE")
+            try:
+                job = self.lookup(request)
+                if job is None or job.state != "running":
+                    raise ValueError("ComfyUI authorization requires running job")
+                previous = self.comfy_binding(request)
+                if previous is not None and previous != binding:
+                    raise ValueError("ComfyUI owner binding conflict")
+                if previous is None:
+                    self.db.execute(
+                        "UPDATE jobs SET comfy_binding=? WHERE key=?",
+                        (canonical_json_bytes(binding), request.submission_key),
+                    )
+                self.db.execute("COMMIT")
+                return previous is None
+            except BaseException:
+                self.db.execute("ROLLBACK")
+                raise
 
     def transition(
         self,
