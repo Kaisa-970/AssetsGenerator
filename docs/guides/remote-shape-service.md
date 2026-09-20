@@ -1,6 +1,6 @@
 # 本机远程 shape 服务实验入口
 
-当前供开发验收使用。已完成 [TRELLIS.2 远程 shape GPU smoke](../reports/remote-shape-real-smoke.md)，尚未接编辑器服务目录；五节点完整资产链另见 [真实运行报告](../reports/remote-asset-chain-real-smoke.md)。这些 smoke 不代表质量验收。复用已有 TripoSR/TRELLIS2 环境和模型，不安装 PyTorch 或下载权重。
+当前供开发验收使用。已完成 [TRELLIS.2 远程 shape GPU smoke](../reports/remote-shape-real-smoke.md)，以及 [真实 SAM 选区到远程 TRELLIS.2 发布链](../reports/remote-selected-trellis-fallback-real-smoke.md)；编辑器服务目录仍未接入。这些 smoke 不代表质量验收。复用已有 TripoSR/TRELLIS2 环境和模型，不安装 PyTorch 或下载权重。
 
 配置 JSON 只包含 `profiles`，每个 profile 的字段沿用 workbench shape 配置（backend/python/repo/model，以及可选模型参数）；不包含 `sam`。所有资源路径指向现有本地资源，TripoSR 仍要求 frame_validation。
 
@@ -138,7 +138,7 @@ alive/unknown/缺失身份一律拒绝；已有 succeeded/其他 failed 不覆�
 ObservationBundle ID 自动补进资产。后续可通过显式观测关联扩展组装契约。
 
 CPU 集成测试覆盖人工等待/决定、alpha 保留、精确 RGBA 输入、HTTP shape 发布及服务关闭后恢复。
-此示例尚未完成真实 SAM + 远程 TRELLIS.2 同次运行验收。
+此示例已完成真实 SAM + 远程 TRELLIS.2 同次运行验收；当前运行因 TRELLIS.2 `CuMesh` 后处理失败采用无纹理几何 fallback，详见真实运行报告。服务目录、编辑器内逐节点服务选择和完整纹理后处理仍待完成。
 
 selection_prepare 在任何转换前验证绑定的完整引用闭包，并用已有 selection、原 proposals 和
 MaskDraft 在内存中重建预期绑定身份；仅比较图片/mask 自报字段不足以通过。缺失历史 mask

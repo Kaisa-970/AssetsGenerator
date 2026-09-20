@@ -9,7 +9,8 @@
 | 耐久提交日志、父 DAG attempt 归属 | 已实现内部桥接；不能直接作为公开执行入口 |
 | remote Adapter、非终态调度、恢复与重试门控 | 实验路径已实现并经 CPU HTTP 回归；尚未接生产目录或 UI |
 | 服务端耐久作业、HTTP、显式 worker | 已实现 SQLite 基础、本机 HTTP 重开与 CPU worker SIGKILL 不重放测试 |
-| 真实模型、服务目录与 UI | 尚未实现 |
+| 真实模型 | TRELLIS.2 已完成真实远程 shape 与 SAM→选区→发布链 smoke；当前一次运行记录了 `CuMesh` 后处理 fallback，不代表完整纹理质量 |
+| 服务目录与 UI | 尚未实现；编辑器仍需显式受信配置 |
 
 首批使用模拟 HTTP 服务验证，再接真实独立模型服务，ComfyUI 另行封装。
 
