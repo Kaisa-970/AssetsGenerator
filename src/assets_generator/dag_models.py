@@ -37,7 +37,11 @@ class DagAttempt:
     child_result: ArtifactRef | None = None
     remote_binding: RemoteAttemptBinding | None = field(default=None, metadata={"omit_none": True})
 
+    remote_result: ArtifactRef | None = field(default=None, metadata={"omit_none": True})
+
     def __post_init__(self) -> None:
+        if self.remote_result is not None and self.remote_binding is None:
+            raise ValueError("remote result requires remote binding")
         if type(self.attempt) is not int or self.attempt < 1:
             raise ValueError("DAG attempt index must be positive")
         if self.status not in {

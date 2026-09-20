@@ -6,12 +6,12 @@ Internal foundation only: adapters and scheduling do not yet expose remote execu
 from __future__ import annotations
 
 from .dag_persistence import DagRepository
-from .models import BuildRun
+from .models import ArtifactRef, BuildRun, StructuredValue
 from .remote_binding import RemoteAttemptBinding
 from .remote_http import RemoteJobClient
 from .remote_protocol import RemoteJob
 from .remote_submission import RemoteSubmission
-from .serialization import read_json
+from .serialization import canonical_json_bytes, read_json, to_primitive
 
 
 class DagRemoteSubmission:
@@ -87,3 +87,58 @@ class DagRemoteSubmission:
         with self.repository._command_lock:
             self._owner(binding, must_be_bound=True)
             return self.journal.download(binding.request(), output_id, max_bytes=max_bytes)
+
+    def pinned_result(self, binding: RemoteAttemptBinding) -> RemoteJob:
+        """Validate immutable terminal evidence locally, without contacting the service."""
+        with self.repository._command_lock:
+            run = self._owner(binding, must_be_bound=True)
+            assert run.dag is not None
+            reference = run.dag.node_states[binding.node_id].current().remote_result
+            if reference is None:
+                raise ValueError("remote terminal evidence is not pinned")
+            self.repository.verify_reference_closure(reference)
+            manifest = self.repository.store.get_manifest(reference.artifact_id)
+            if (
+                manifest.identity.kind != "remote_job_result"
+                or manifest.identity.schema_name != "RemoteJobResult"
+                or manifest.identity.schema_version != "1.0"
+            ):
+                raise ValueError("invalid remote terminal evidence contract")
+            raw = self.repository.store.read_structured(reference)
+            if set(raw) != {"binding", "job"} or canonical_json_bytes(
+                raw["binding"]
+            ) != canonical_json_bytes(binding):
+                raise ValueError("remote terminal evidence owner mismatch")
+            job = RemoteJob.parse(raw["job"], binding.request())
+            if job.state not in {"succeeded", "failed"}:
+                raise ValueError("remote terminal evidence requires a terminal job")
+            return job
+
+    def pin_result(self, binding: RemoteAttemptBinding, *, expected_revision: int) -> ArtifactRef:
+        """Pin an already observed terminal job; never query or reconstruct pinned evidence."""
+        with self.repository._command_lock:
+            run = self._owner(binding, must_be_bound=True)
+            assert run.dag is not None
+            if type(expected_revision) is not int or expected_revision != run.dag.revision:
+                raise ValueError("DAG revision conflict")
+            attempt = run.dag.node_states[binding.node_id].current()
+            if attempt.remote_result is not None:
+                self.pinned_result(binding)
+                return attempt.remote_result
+            record = self.journal._load(binding.request())
+            if record["phase"] != "observed":
+                raise ValueError("remote terminal evidence requires an observed job")
+            job = RemoteJob.parse(record["job"], binding.request())
+            if job.state not in {"succeeded", "failed"}:
+                raise ValueError("remote terminal evidence requires a terminal job")
+            reference = self.repository.store.persist_structured(
+                StructuredValue(
+                    "remote_job_result",
+                    "RemoteJobResult",
+                    "1.0",
+                    {"binding": to_primitive(binding), "job": record["job"]},
+                )
+            )
+            attempt.remote_result = reference
+            self.repository.save(run, expected_revision=expected_revision)
+            return reference

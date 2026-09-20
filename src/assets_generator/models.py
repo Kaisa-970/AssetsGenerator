@@ -42,6 +42,7 @@ ARTIFACT_KINDS = frozenset(
         "build_run",
         "workbench_plan",
         "dag_plan",
+        "remote_job_result",
         "dag_human_request",
         "dag_human_decision",
         "human_input_request",

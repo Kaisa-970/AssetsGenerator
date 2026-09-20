@@ -161,3 +161,58 @@ def test_download_requires_durable_success_and_rejects_changed_result(tmp_path, 
         with pytest.raises(OSError):
             bridge.download(owned, "mesh")
         assert state["downloads"] == 1
+
+
+@pytest.mark.parametrize("terminal", ["succeeded", "failed"])
+def test_terminal_evidence_survives_restart_without_service_or_journal(
+    tmp_path, http_server, monkeypatch, terminal
+):
+    state, client = http_server
+    store = LocalArtifactStore(tmp_path / "store")
+    directory = tmp_path / "service"
+    with DagRepository(store, directory) as repo:
+        owned = setup(repo, client)
+        bridge = DagRemoteSubmission(repo, client)
+        bridge.prepare(owned, expected_revision=0)
+        bridge.submit(owned)
+        with pytest.raises(ValueError, match="terminal"):
+            bridge.pin_result(owned, expected_revision=repo.load(owned.run_id).dag.revision)
+        state["jobs"][owned.submission_key].update(
+            state=terminal,
+            result={"outputs": []} if terminal == "succeeded" else None,
+            error={"code": "BACKEND_TIMEOUT", "detail": "deadline exceeded"}
+            if terminal == "failed"
+            else None,
+        )
+        observed = bridge.recover(owned)
+        reference = bridge.pin_result(owned, expected_revision=repo.load(owned.run_id).dag.revision)
+        bridge.journal._path(owned.request()).unlink()
+        bridge.journal._reservation(owned.request()).unlink()
+
+    def no_network(*args, **kwargs):
+        raise AssertionError("offline evidence validation must not use HTTP")
+
+    monkeypatch.setattr(client, "query", no_network)
+    monkeypatch.setattr(client, "lookup", no_network)
+    with DagRepository(store, directory) as repo:
+        bridge = DagRemoteSubmission(repo, client)
+        run = repo.load(owned.run_id)
+        assert run.dag.node_states["a"].current().remote_result == reference
+        assert bridge.pinned_result(owned) == observed
+        assert bridge.pin_result(owned, expected_revision=run.dag.revision) == reference
+        assert repo.load(owned.run_id).dag.revision == run.dag.revision
+        run.dag.node_states["a"].current().remote_result = None
+        with pytest.raises(ValueError, match="immutable"):
+            repo.save(run, expected_revision=run.dag.revision)
+        store.blob_path(reference).unlink()
+        with pytest.raises(ValueError, match="missing/corrupt"):
+            bridge.pin_result(owned, expected_revision=run.dag.revision)
+        assert not store.blob_path(reference).exists()
+        assert state["submissions"] == 1
+
+
+def test_result_without_binding_rejected():
+    from assets_generator.models import ArtifactRef
+
+    with pytest.raises(ValueError, match="requires remote binding"):
+        DagAttempt(1, remote_result=ArtifactRef("sha256:" + "a" * 64))

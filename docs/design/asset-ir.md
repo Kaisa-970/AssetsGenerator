@@ -446,3 +446,7 @@ Standard OpenUSD export uses binary Artifact kind `usd_asset` with `OpenUSD@1.0`
 and meter units. The `openusd-rigid-v1` release preserves the source AssetDefinition, adds package-local
 texture Artifacts and export QA, and does not imply Isaac runtime acceptance. See
 [USD export](usd-export.md).
+
+### 远程作业终态证据
+
+`remote_job_result` kind 使用 `RemoteJobResult@1.0` schema，持久化远程请求的完整 attempt binding 与已经耐久观察的终态 JobRecord，包含成功结果描述或明确失败的 code/detail。它是执行证据，不是几何或可发布资产。`DagAttempt.remote_result` 固定其 ArtifactRef，固定后不可替换；后续输出 provenance 可将该引用纳入 derived_from。服务位置只记录在 binding 中，不作为模型身份。远程输出仍需独立下载、格式和 Operator 契约校验，不能将此记录的 succeeded 等同资产通过验收。

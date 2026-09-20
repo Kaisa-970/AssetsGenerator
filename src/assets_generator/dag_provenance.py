@@ -22,6 +22,7 @@ def expected_node_provenance_records(
     inputs: dict[str, PortValue | list[PortValue]],
     outputs: dict[str, PortValue | list[PortValue]],
     decision_ref: ArtifactRef | None = None,
+    execution_evidence: ArtifactRef | None = None,
 ) -> dict[str, list[ProvenanceRecord]]:
     """Give each output occurrence its own identity, even for equal ArtifactRefs.
 
@@ -40,6 +41,11 @@ def expected_node_provenance_records(
                 parents.append(item)
     if decision_ref is not None and decision_ref not in parents:
         parents.append(decision_ref)
+    if execution_evidence is not None:
+        if not store.verify_digest(execution_evidence):
+            raise ContractError("DAG execution evidence is missing or corrupt")
+        if execution_evidence not in parents:
+            parents.append(execution_evidence)
     records: dict[str, list[ProvenanceRecord]] = {}
     for port, value in outputs.items():
         records[port] = []
@@ -99,6 +105,7 @@ def persist_node_provenance(
     inputs: dict[str, PortValue | list[PortValue]],
     outputs: dict[str, PortValue | list[PortValue]],
     decision_ref: ArtifactRef | None = None,
+    execution_evidence: ArtifactRef | None = None,
 ) -> dict[str, list[ArtifactRef]]:
     records = expected_node_provenance_records(
         store,
@@ -111,6 +118,7 @@ def persist_node_provenance(
         inputs=inputs,
         outputs=outputs,
         decision_ref=decision_ref,
+        execution_evidence=execution_evidence,
     )
     return {
         port: [

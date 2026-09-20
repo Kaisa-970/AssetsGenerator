@@ -152,3 +152,11 @@ HTTP/协议合跑最终 26 项通过；相关 Ruff、mypy（89 源码文件）�
 必须覆盖：A 只执行一次；B 为远程图像节点、C 为独立本地分支；B 活跃/状态未知时 C 仍完成、D 等待；丢失提交响应后重开客户端仓库查询同 job 且 POST 次数不增加；明确失败保留错误码；活动 B 或活动远程后代禁止通过 retry 换 attempt；输出成功但父保存中断可恢复，已固定结果 Blob 丢失时只能阻塞，不能重建；终态身份变化被拒绝；整个运行成功后服务关闭仍可验证本地完整证据。
 
 服务端跨重启耐久性另设验收：当前测试服务仅用内存保存作业，客户端仓库重开不等于服务重启验收。实现上述切片前不移除现有 fail-closed 调度限制。
+
+### 不可变远程终态证据（已实现基础接口）
+
+`DagRemoteSubmission.pin_result()` 将耐久 observed 日志中的终态固定为 `remote_job_result / RemoteJobResult@1.0` Artifact，内容为完整 attempt binding 和协议 JobRecord；引用存入可选 `DagAttempt.remote_result`。未观察或非终态不能固定，已固定引用不能改写或删除。字段缺省时不写入旧 attempt 的序列化形状。
+
+`pinned_result()` 核验 Artifact 闭包、schema、完整归属及终态，仅读取本地 Store；服务不可用或旁路日志删除不影响已固定结果核验。重复 pin 首先验证原引用，损坏时拒绝，不重新生成 Blob。节点 provenance 工具新增可选 execution_evidence 父引用；这是供调度器使用的接口，尚未自动接入远程执行或结果导入。
+
+本接口验证：DAG 桥接、绑定、持久化、引擎及 provenance 合跑 62 项通过；Ruff format/lint、mypy（92 源文件）通过。测试覆盖成功/失败终态、仓库重开、禁用网络并删除旁路日志后的本地核验、引用不可删除、Blob 丢失时不重建及 provenance 父引用。此次没有运行真实服务或 GPU，也未重新执行完整 Python 回归。

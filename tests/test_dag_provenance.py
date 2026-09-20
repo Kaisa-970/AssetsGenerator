@@ -54,3 +54,34 @@ def test_decision_and_structured_input_are_preserved(tmp_path):
     record = store.read_structured(refs["output"][0])
     assert record["derived_from_artifact_ids"] == [decision.artifact_id]
     assert record["parameters"]["resolved_inputs"]["info"]["value"] == {"label": "test"}
+
+
+def test_remote_execution_evidence_is_a_provenance_parent(tmp_path):
+    import pytest
+
+    from assets_generator.contracts import ContractError
+
+    store = LocalArtifactStore(tmp_path)
+    output = store.persist_bytes(
+        b"output", kind="quality_evidence", schema_name="test", schema_version="1"
+    )
+    evidence = store.persist_structured(
+        StructuredValue("remote_job_result", "RemoteJobResult", "1.0", {"job": "test"})
+    )
+    args = dict(
+        run_id="run_test",
+        node_id="remote",
+        attempt=1,
+        operator="copy@1",
+        adapter_identity={"version": "1"},
+        parameters={},
+        inputs={},
+        outputs={"output": output},
+        execution_evidence=evidence,
+    )
+    refs = persist_node_provenance(store, **args)
+    record = store.read_structured(refs["output"][0])
+    assert record["derived_from_artifact_ids"] == [evidence.artifact_id]
+    store.blob_path(evidence).unlink()
+    with pytest.raises(ContractError, match="execution evidence"):
+        persist_node_provenance(store, **args)

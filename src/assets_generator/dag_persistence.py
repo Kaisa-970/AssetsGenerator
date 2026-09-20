@@ -162,6 +162,9 @@ class DagRepository(WorkbenchRepository):
                     if remote is not None and remote.run_id != run.run_id:
                         raise ValueError("remote binding parent run mismatch")
                     if index < len(old_node.attempts):
+                        old_result = old_node.attempts[index].remote_result
+                        if old_result is not None and attempt.remote_result != old_result:
+                            raise ValueError("remote result evidence is immutable")
                         old_remote = old_node.attempts[index].remote_binding
                         if old_remote is not None and remote != old_remote:
                             raise ValueError("remote attempt binding is immutable")
