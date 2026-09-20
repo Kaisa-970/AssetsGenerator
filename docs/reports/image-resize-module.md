@@ -15,8 +15,8 @@ width/height/resampling 固定在节点绑定及 Core provenance 中。
 Ruff lint/format、mypy（131 个源文件）、两份 Operator YAML 字节一致及
 `git diff --check` 通过。没有执行新的 GPU 模型或浏览器交互验收，也未重复完整套件。
 
-新增全局 Operator 契约会影响基于该契约集合绑定的计划身份；不修改历史计划或
-运行证据来绕过校验。测试只证明本模块的像素与编排行为，不是模型质量结论。
+计划身份只包含实际引用的 Operator 契约；新增未引用的 resize_image 不会改变
+既有计划身份。实际修改已绑定 Adapter 实现仍受身份校验约束，不改写历史证据。测试只证明本模块的像素与编排行为，不是模型质量结论。
 
 ## 实际浏览器交互补验
 

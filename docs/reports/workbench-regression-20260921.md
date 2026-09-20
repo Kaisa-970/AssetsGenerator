@@ -109,3 +109,18 @@ Ruff lint、format（269 文件）、mypy（130 源文件）通过；sdist/wheel
 
 本轮没有运行 GPU 或新增真实模型验收。真实父 DAG 故障重试、多图浏览器全链、
 真实双模型比较与 ComfyUI 部署仍按 [B2 状态表](node-editor-b2-status.md)推进。
+
+## 图片模块扩展后的回归（进行中）
+
+产品基线 `89e6cea`。首次完整 Python 回归为 **1333 passed、2 failed in 404.30s**。
+两项均为扩展后的旧测试预期：历史契约重建未排除 resize_image；远程编辑器目录
+仍断言六项而实际新增编码/缩放为八项。修正后兼容性与远程目录合跑
+**14 passed in 7.99s**，随后已启动完整复跑，结果尚待记录，不合并分轮计数宣称全绿。
+
+同一产品基线的前端 Vitest **27 passed**、Playwright **30 passed (56.1s)**；
+TypeScript/Vite、sdist/wheel 构建通过。Ruff lint/format（272 文件）、mypy
+（131 源文件）通过。wheel 中缩放模块与 Operator YAML 与源码逐字节一致。
+Vite 大于 500 kB 的 chunk 提示仍存在。本轮没有新增 GPU 验收。
+
+原缩放报告的身份说明同时纠正：新增未被引用的 Operator 不影响既有计划身份；
+实际引用的契约或已绑定实现改变，才进入相应身份校验。旧摘要断言未被替换成新值。
