@@ -266,3 +266,13 @@ node frontend/smoke/image-mask.cjs http://127.0.0.1:8770 \
 ArtifactRef；前端核对 schema 后绑定。绑定本身不创建新运行，仍需明确点击启动。
 损坏证据不能通过此入口修复；目标输入的 frame/unit 与关系仍由启动时后端校验。
 当前按钮范围为可查看的标量 Artifact 输出和多输入表单，不含 StructuredValue 或集合。
+
+历史输出复用的真实浏览器验收（同一 CPU 示例服务、新建 Store 与证据目录）：
+
+```bash
+node frontend/smoke/reuse-output.cjs http://127.0.0.1:8770 \
+  <RGB_IMAGE> <SAME_SIZE_MASK_PNG> <FRESH_EVIDENCE_DIRECTORY>
+```
+
+脚本先在浏览器执行编码，再加载 mask 模板并点击“用作输入”，上传 mask 后显式
+创建第二个运行。检查精确引用一致、绑定不产生额外运行、原运行未改变及 RGBA 可预览。

@@ -139,3 +139,18 @@ ArtifactRef 与 kind/schema。多输入面板可将当前所选历史运行的�
 验证：21 项 mask/编辑器测试、4 项实际 HTTP 集成、1 项定向 Playwright 通过；
 TypeScript/Vite 构建、Ruff、mypy、Prettier、diff 检查通过。浏览器测试使用模拟 API，
 不宣称真实浏览器到 references 端点的完整验收；本轮未运行 GPU。
+
+## 历史输出复用真实浏览器验收
+
+基线 `b2d96cf`，实际 Chromium → CPU 示例 HTTP 服务，无 API 模拟：浏览器创建
+编码运行，随后从输出列表将其 RGB PNG 引用绑定到双输入 mask 图；编译、mask
+上传、显式创建第二运行和 RGBA 预览通过。第二运行 named_actual_inputs 及
+composite resolved_inputs 均等于第一运行输出引用；绑定期间仍只有一个运行，
+新运行成功后第一运行整个 BuildRun 与之前完全一致，两个节点各一次 attempt。
+浏览器无 pageerror。脚本为 `frontend/smoke/reuse-output.cjs`。
+
+证据位于 `<REUSE_BROWSER_ROOT>/reuse-browser.json` 和 `reuse-browser.png`，
+未提交输入/Store/生成资产。第一次脚本因全局 status 定位匹配多个提示而失败，
+改用 footer 状态定位后在全新目录完成验收，保留第一次证据。两次临时服务均正常
+关闭。本次仅 CPU 浏览器验收，不证明 GPU 模型质量或服务中断恢复；未重复运行
+全仓回归，Prettier 和 diff 检查通过。
