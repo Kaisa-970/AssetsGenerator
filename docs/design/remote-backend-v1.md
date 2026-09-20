@@ -44,3 +44,13 @@ HTTP 客户端已在 remote_http.py 实现 submit/lookup/query，禁止自动重
 耐久提交准备、DAG remote kind、真实模型服务仍未实现。HTTP 客户端没有自动恢复持久化状态，也不能把模拟服务内存映射称为跨服务重启验收；下一步接耐久提交与 job ID 固定。认证、输入上传及输出下载也尚未接入；当前入口仅供受信配置的协议测试，未注册进生产 AdapterRegistry。
 
 HTTP/协议合跑最终 26 项通过；相关 Ruff、mypy（89 源码文件）通过。本轮无真实模型/GPU 验收。
+
+## 耐久提交日志首版
+
+`RemoteSubmission` 使用已有 WorkbenchRepository 的独占锁、命令锁、DurableIO 与写入失败后 poisoned 语义。请求和 endpoint 先写为 prepared；发送 POST 前耐久写 authorized；确认响应后写 observed 与完整已验证 JobRecord。endpoint 暂固定，不隐式迁移服务位置。提交键同请求摘要但 endpoint 改变也拒绝复用。
+
+恢复仅查询：没有固定 job ID 时按提交键 lookup，有 job ID 时 query；查询 404/网络错误不会生成新键或发送 POST。authorized 但查不到作业时保持不确定并阻止自动重发；这包含授权落盘后、实际发送前崩溃的保守窗口。显式同键重发策略及服务能力声明后续再接，当前不会通过新 attempt 绕过未知作业。
+
+已观察终态的结果不可变，running 不允许退回 queued；服务返回另一 job ID、另一身份或更改终态时拒绝写入。结果仍是远程描述，未成为可发布 Artifact。本地 JSON 日志损坏会拒绝恢复，不重建请求。日志目录仍依赖上层保存其归属；DAG 集成必须把该提交记录与具体 attempt 固定，不能仅依赖一个可丢失的旁路文件。
+
+验证：真实本机 HTTP 与协议、日志合跑 30 项通过。覆盖响应丢失后关闭/重开 Repository 找回同 job、授权后发送前中断、查询未找到不重发、job ID 变化、终态内容变化、请求冲突及写盘失败不联网。这里重开的是客户端仓库，模拟服务仍存活，不能称为服务重启持久化验收。DAG remote execution kind、输入/输出传输与真实模型仍未接入。
