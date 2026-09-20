@@ -204,3 +204,11 @@ RemoteServiceStore 在 running→succeeded 的事务内解析完整 outputs 描�
 新增 create_remote_server，固定监听 127.0.0.1，提供 Blob PUT、job POST、按提交键/job ID 查询和按固定描述下载。请求体有大小及读取超时限制，严格解析 JSON 和请求身份，拒绝 Origin 请求；暂无认证，因此不提供公网绑定或生产部署入口。POST 仅登记 queued，不自动调用模型或重放 running 作业。
 
 真实本机 HTTP 测试关闭监听器和数据库后，使用原端口重开，核对同 job ID 与 running 状态；固定成功输出后再重开并通过既有客户端下载核验。重启是同进程中关闭/重新实例化服务，不是子进程 SIGKILL，不能证明 worker 中断恢复或掉电耐久性。服务/存储合跑 9 项通过，Ruff lint/format（191 文件）、mypy（96 源文件）通过。下一步接明确 worker 执行与进程级中断测试，真实模型仍未验收。
+
+## 显式服务 worker 首片
+
+execute_service_job 在调用受信 handler 前事务式认领 queued→running。handler 返回显式 bytes/media_type 映射，Core 验证描述与总大小、保存所有 Blob 后才发布 succeeded；普通 handler 异常固定为 SERVICE_HANDLER_FAILED，存储写入异常向上抛出，不伪装为模型失败。BaseException/进程终止不自动修改 running 或重新执行。
+
+实际耐久 HTTP 服务验收已覆盖上传 PNG→显式 CPU 反色 handler→发布→关闭重开服务→下载并核对像素；重复执行同作业拒绝。该 worker 是同步受信调用基础，没有 GPU 环境启动、进程组监督或自动队列调度。真实模型仍必须走独立环境，不能把模型代码装入 Pipeline Core。
+
+服务 worker/HTTP/存储合跑 12 项通过；含 spawn 子进程认领后经 Pipe 明确通知父测试，再由测试对该自建进程发送 SIGKILL，确认负退出码，重开数据库后仍为 running 且不能重认领。该测试证明保守不重放，不证明能自动判断或恢复任意真实模型的孤儿进程。Ruff、mypy（97 源文件）通过，无 GPU 验证。
