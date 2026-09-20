@@ -85,3 +85,64 @@ def test_comfy_submission_uses_one_http_post_across_restart(tmp_path, mode):
         server.shutdown()
         server.server_close()
         thread.join()
+
+
+def test_fixed_image_download_uses_exact_descriptor_and_validates_bytes(tmp_path):
+    import io
+    from urllib.parse import parse_qs, urlsplit
+
+    from PIL import Image
+
+    stream = io.BytesIO()
+    Image.new("RGB", (2, 2), "red").save(stream, format="PNG")
+    data = stream.getvalue()
+    paths = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+
+        def do_GET(self):
+            paths.append(self.path)
+            self.send_response(200)
+            self.send_header("Content-Type", "image/png")
+            self.end_headers()
+            self.wfile.write(data)
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever)
+    thread.start()
+    journal = ComfySubmissionJournal(tmp_path / "journal.sqlite")
+    try:
+        client = ComfyClient(f"http://127.0.0.1:{server.server_port}")
+        prompt = {"1": {"class_type": "Fixture", "inputs": {}}}
+        record = journal.prepare("one", deployment={"endpoint": client.endpoint}, prompt=prompt)
+        journal.submit_once("one", lambda body: {"prompt_id": body["prompt_id"]})
+        journal.record_history(
+            "one",
+            {
+                record["prompt_id"]: {
+                    "prompt": [0, record["prompt_id"], prompt],
+                    "outputs": {
+                        "1": {
+                            "images": [
+                                {"filename": "a & b.png", "subfolder": "job", "type": "output"}
+                            ]
+                        }
+                    },
+                    "status": {"status_str": "success", "completed": True, "messages": []},
+                }
+            },
+        )
+        assert client.download_image(journal, "one", node="1", index=0, mode="RGB") == data
+        assert parse_qs(urlsplit(paths[0]).query)["filename"] == ["a & b.png"]
+        assert urlsplit(paths[0]).path == "/view"
+        with pytest.raises(ComfySubmissionUnknown):
+            client.download_image(journal, "one", node="1", index=0, mode="RGBA")
+        with pytest.raises(ComfySubmissionUnknown):
+            client.download_image(journal, "one", node="1", index=0, mode="RGB", max_bytes=4)
+    finally:
+        journal.close()
+        server.shutdown()
+        server.server_close()
+        thread.join()

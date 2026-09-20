@@ -75,3 +75,42 @@ class ComfyClient:
         if fixed is not None:
             return fixed
         return journal.record_history(key, self.history(journal, key))
+
+    def download_image(
+        self,
+        journal: ComfySubmissionJournal,
+        key: str,
+        *,
+        node: str,
+        index: int,
+        mode: str,
+        max_bytes: int = 32 * 1024 * 1024,
+    ) -> bytes:
+        """Read a fixed output descriptor; bytes are not yet durable imported evidence."""
+        from .comfy_output import image_query, validate_png
+
+        if type(max_bytes) is not int or not 0 < max_bytes <= 128 * 1024 * 1024:
+            raise ValueError("invalid ComfyUI image download limit")
+        if mode not in {"RGB", "RGBA"}:
+            raise ValueError("invalid ComfyUI image mode")
+        record = journal.read(key)
+        if record["deployment"].get("endpoint") != self.endpoint:
+            raise ValueError("ComfyUI journal endpoint differs from configured service")
+        observation = journal.observation(key)
+        if observation is None:
+            raise ValueError("ComfyUI output observation must be fixed before download")
+        path = image_query(observation, node, index)
+        try:
+            with self.transport.opener.open(
+                Request(self.endpoint + path, headers={"Accept": "image/png"}),
+                timeout=self.transport.timeout,
+            ) as response:
+                if response.status != 200 or response.headers.get_content_type() != "image/png":
+                    raise ValueError("unexpected ComfyUI image response")
+                data: bytes = response.read(max_bytes + 1)
+                if len(data) > max_bytes:
+                    raise ValueError("ComfyUI image exceeds download limit")
+                validate_png(data, mode=mode)
+                return data
+        except (OSError, HTTPException, ValueError) as error:
+            raise ComfySubmissionUnknown("ComfyUI output unavailable or invalid") from error
