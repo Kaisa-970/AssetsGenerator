@@ -480,3 +480,16 @@ node-editor --comfy-config 加载受信网关/profile 映射，register_comfy_pr
 新增配置/编辑器启动回归验证两个 profile 的独立参数/digest、非法配置拒绝及
 仅 ComfyUI 配置也能构造执行器并进入节点目录。尚无浏览器真实交互验收或模型
 验收；服务执行仍显式运行，不因前端轮询而派发。
+
+### 编辑器浏览器目录与编译 smoke
+
+使用 --comfy-config 启动实际编辑器 HTTP 服务，Playwright 加载双节点模板（另有
+一个 pipeline 输入节点）、选择 first、将 Backend 从 comfy_first 切到 comfy_second，
+点击编译并验证后端 ok=true/execution_ready=true，无浏览器 pageerror。
+可复用脚本：frontend/smoke/comfy-catalog.cjs <编辑器URL>。模板替换确认由自动化
+脚本接受，只改变临时画布，不是用户质量批准。服务验证后已关闭，没有创建运行。
+
+前端 build、16 项单元测试、15 项浏览器回归通过，新增真实编辑器 smoke 通过。
+最初 smoke 因未接受模板确认、随后漏算输入节点失败，修正脚本后通过，没有将
+这两次失败视作产品缺陷。Vite 保留 >500 kB chunk 提示。此验证不证明浏览器发起
+ComfyUI 推理已闭环，也没有真实模型验收。
