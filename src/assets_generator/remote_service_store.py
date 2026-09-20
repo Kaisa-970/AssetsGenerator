@@ -181,6 +181,37 @@ class RemoteServiceStore:
                 self.db.execute("ROLLBACK")
                 raise
 
+    def claim_next_queued(self) -> RemoteRequest | None:
+        """Atomically claim one job; any unresolved running job blocks queue drain."""
+        with self._lock:
+            self.db.execute("BEGIN IMMEDIATE")
+            try:
+                selected = None
+                for key, raw in self.db.execute("SELECT key, job FROM jobs ORDER BY rowid"):
+                    request = self.request_for(key)
+                    if request is None:
+                        raise ValueError("queued request disappeared")
+                    job = RemoteJob.parse(json.loads(raw), request, expected_job_id=key)
+                    if job.state == "running":
+                        raise ValueError("queue blocked by unresolved running job: " + key)
+                    if selected is None and job.state == "queued":
+                        selected = request
+                if selected is not None:
+                    wire = self._wire(selected)
+                    wire["state"] = "running"
+                    self.db.execute(
+                        "UPDATE jobs SET job=? WHERE key=?",
+                        (
+                            canonical_json_bytes(wire),
+                            selected.submission_key,
+                        ),
+                    )
+                self.db.execute("COMMIT")
+                return selected
+            except BaseException:
+                self.db.execute("ROLLBACK")
+                raise
+
     def _validate_outputs(self, job: RemoteJob) -> None:
         raw = json.loads(job.result_json or b"{}")
         if set(raw) != {"outputs"} or not isinstance(raw["outputs"], list):

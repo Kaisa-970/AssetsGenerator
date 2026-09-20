@@ -10,7 +10,7 @@ from pathlib import Path
 
 from .remote_service_http import create_remote_server
 from .remote_service_store import RemoteServiceStore
-from .remote_service_worker import execute_service_job
+from .remote_service_worker import execute_next_service_job, execute_service_job
 from .remote_shape_profile import shape_handler_from_profile
 from .serialization import to_primitive
 from .workbench_profiles import load_shape_profiles
@@ -18,13 +18,14 @@ from .workbench_profiles import load_shape_profiles
 
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description=__doc__)
-    result.add_argument("action", choices=("serve", "execute", "observe", "inspect"))
+    result.add_argument("action", choices=("serve", "execute", "observe", "inspect", "drain"))
     result.add_argument("--config", type=Path, required=True)
     result.add_argument("--profile", required=True)
     result.add_argument("--service-id", required=True)
     result.add_argument("--database", type=Path, required=True)
     result.add_argument("--workspace", type=Path, required=True)
     result.add_argument("--job")
+    result.add_argument("--max-jobs", type=int, default=1)
     result.add_argument("--port", type=int, default=8770)
     return result
 
@@ -32,8 +33,10 @@ def parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     cli = parser()
     args = cli.parse_args(argv)
-    if args.action != "serve" and not args.job:
+    if args.action not in {"serve", "drain"} and not args.job:
         cli.error("--job is required for execute, observe and inspect")
+    if args.max_jobs < 1 or args.max_jobs > 1000:
+        cli.error("--max-jobs must be in 1..1000")
     if not 0 <= args.port <= 65535:
         cli.error("--port must be in 0..65535")
     store = None
@@ -48,6 +51,15 @@ def main(argv: list[str] | None = None) -> int:
             profiles[args.profile], service_id=args.service_id, workspace=args.workspace
         )
         store = RemoteServiceStore(args.database, handler.identity)
+        if args.action == "drain":
+            for _ in range(args.max_jobs):
+                job = execute_next_service_job(store, handler)
+                if job is None:
+                    break
+                print(json.dumps({"job_id": job.job_id, "state": job.state}), flush=True)
+                if job.state != "succeeded":
+                    return 1
+            return 0
         if args.action == "serve":
             server = create_remote_server(store, port=args.port)
             try:

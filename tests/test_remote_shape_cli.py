@@ -65,3 +65,49 @@ def test_execute_requires_job_before_loading_resources(tmp_path):
                 str(tmp_path),
             ]
         )
+
+
+def test_drain_loads_once_and_stops_at_limit(tmp_path, monkeypatch, capsys):
+    from assets_generator.remote_protocol import RemoteRequest
+
+    config = tmp_path / "config.json"
+    config.write_text("{}")
+    loads = []
+
+    def load(*args, **kwargs):
+        loads.append(True)
+        return {"test": object()}
+
+    monkeypatch.setattr(cli, "load_shape_profiles", load)
+    monkeypatch.setattr(cli, "shape_handler_from_profile", lambda *args, **kwargs: Handler())
+    path = tmp_path / "db"
+    store = RemoteServiceStore(path, Handler.identity)
+    for key in ("a", "b", "c"):
+        store.submit(RemoteRequest.create(Handler.identity, key, {}))
+    try:
+        assert (
+            cli.main(
+                [
+                    "drain",
+                    "--config",
+                    str(config),
+                    "--profile",
+                    "test",
+                    "--service-id",
+                    "test",
+                    "--database",
+                    str(path),
+                    "--workspace",
+                    str(tmp_path),
+                    "--max-jobs",
+                    "2",
+                ]
+            )
+            == 0
+        )
+        rows = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+        assert [row["job_id"] for row in rows] == ["a", "b"]
+        assert loads == [True]
+        assert store.lookup(RemoteRequest.create(Handler.identity, "c", {})).state == "queued"
+    finally:
+        store.close()

@@ -80,3 +80,19 @@ endpoint/service_id/backend_digest 固定在参数 enum 中，草稿不能任意
 运行面板按 Artifact kind 列出 GLB、AssetDefinition、AssetRelease 和 QualityReport，
 因此 `quality.report` 也可直接查看。读取前验证证据闭包；报告节点成功只说明报告生成成功，
 质量结论以 JSON 内 `overall_status` 和各项检查为准。中间 triangle_mesh 不作为交付 GLB 展示。
+
+## 有界串行消费
+
+服务端可使用 `drain` 代替逐个复制 job ID：
+
+```bash
+PYTHONPATH=src python -m assets_generator.remote_shape_cli drain \
+  --config <CONFIG_JSON> --profile <PROFILE_NAME> --service-id shape-local \
+  --database <RUN_ROOT>/service.sqlite --workspace <RUN_ROOT>/workspace --max-jobs 10
+```
+
+配置核验一次，按登记顺序串行执行最多 10 个 queued 作业，每完成一个输出一行 JSON。
+队列为空立即退出；失败返回非零并停止，不跳过失败继续批量推理。已有任意 running 作业时
+不领取新作业，不改写其状态；需要先核实原作业。领取由 SQLite 事务保护，多个 drain
+连接不会同时领取任务。它不是常驻轮询守护进程；新任务需要再次执行 drain。
+进程门控仍生效，不同数据库之间仍无统一 GPU 调度。本命令仅 CPU 回归验证，未重新跑 GPU。

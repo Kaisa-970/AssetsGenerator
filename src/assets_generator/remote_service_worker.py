@@ -30,6 +30,21 @@ def execute_service_job(
     Storage failures propagate without converting an uncertain commit into failure.
     """
     store.transition(request, expected="queued", state="running")
+    return _execute_claimed_job(store, request, handler)
+
+
+def execute_next_service_job(
+    store: RemoteServiceStore, handler: ServiceHandler
+) -> RemoteJob | None:
+    request = store.claim_next_queued()
+    if request is None:
+        return None
+    return _execute_claimed_job(store, request, handler)
+
+
+def _execute_claimed_job(
+    store: RemoteServiceStore, request: RemoteRequest, handler: ServiceHandler
+) -> RemoteJob:
     try:
         outputs = dict(handler(request, store))
         descriptors = []
