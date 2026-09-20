@@ -394,7 +394,10 @@ class DagEngine:
                 else:
                     state.dispatch_block_reason = None
             if plan.bindings[node_id].spec["execution_kind"] == "remote" and state.attempts:
-                if state.status in {"running", "interrupted", "recovery_blocked"}:
+                if (
+                    state.status in {"running", "interrupted", "recovery_blocked"}
+                    and state.current().status != "succeeded"
+                ):
                     from .dag_remote_execution import execute_remote
 
                     execute_remote(self, run, plan, nodes[node_id], recover=True)

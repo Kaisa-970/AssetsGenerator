@@ -43,6 +43,9 @@ class ImageAdapter(RemoteNodeAdapter):
     def spec(self):
         return self._spec
 
+    def input_blobs(self, context):
+        return {"image": context.inputs["image"]}
+
     def prepare_payload(self, context):
         return {"operation": "image_fixture"}
 
@@ -130,6 +133,7 @@ def test_remote_diamond_wait_reopen_and_import(tmp_path, http_server, drop):
         with pytest.raises(ValueError):
             engine.retry(run.run_id, "B", run.dag.revision)
         assert state["submissions"] == 1
+        assert state["uploads"] == [data]
     job = next(iter(state["jobs"].values()))
     state["blob"] = data
     state["media"] = "image/png"
@@ -192,3 +196,54 @@ def test_invalid_result_blocks_without_new_submission(tmp_path, http_server):
             engine.retry(run.run_id, "B", run.dag.revision)
         assert state["submissions"] == 1
         assert len(repo.load(run.run_id).dag.node_states["B"].attempts) == 1
+
+
+def test_corrupt_completed_remote_output_never_reimports(tmp_path, http_server):
+    state, client = http_server
+    store, registry, _, plan, source, _ = setup(tmp_path, client.endpoint)
+    buffer = io.BytesIO()
+    Image.new("RGB", (2, 2), "blue").save(buffer, format="PNG")
+    data = buffer.getvalue()
+    with DagRepository(store, tmp_path / "repo") as repo:
+        engine = DagEngine(repo, registry)
+        run = engine.drain(engine.create(plan, {"source": source}).run_id)
+        state.update(blob=data, media="image/png")
+        next(iter(state["jobs"].values())).update(
+            state="succeeded",
+            result={
+                "outputs": [
+                    {
+                        "output_id": "mesh",
+                        "blob_digest": sha256_bytes(data),
+                        "byte_length": len(data),
+                        "media_type": "image/png",
+                    }
+                ]
+            },
+        )
+        run = engine.drain(run.run_id)
+        assert run.status == "succeeded"
+        output = run.dag.node_states["B"].current().outputs["image"]
+        store.blob_path(output).unlink()
+        downloads = state["downloads"]
+        for _ in range(2):
+            run = engine.recover(run.run_id)
+            assert run.dag.node_states["B"].status == "recovery_blocked"
+            assert not store.blob_path(output).exists()
+            assert state["downloads"] == downloads
+
+
+def test_upload_receipt_failure_never_submits_or_reuploads_on_recovery(tmp_path, http_server):
+    state, client = http_server
+    store, registry, _, plan, source, data = setup(tmp_path, client.endpoint)
+    state["bad_receipt"] = True
+    with DagRepository(store, tmp_path / "repo") as repo:
+        engine = DagEngine(repo, registry)
+        run = engine.drain(engine.create(plan, {"source": source}).run_id)
+        assert run.dag.node_states["B"].status == "running"
+        assert run.dag.node_states["C"].status == "succeeded"
+        assert state["submissions"] == 0
+        assert state["uploads"] == [data]
+        engine.recover(run.run_id)
+        assert state["submissions"] == 0
+        assert state["uploads"] == [data]

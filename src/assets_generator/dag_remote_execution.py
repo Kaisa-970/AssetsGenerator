@@ -12,12 +12,13 @@ from .dag_adapters import BoundDagPlan, NodeExecutionContext
 from .dag_provenance import persist_node_provenance
 from .dag_remote_adapter import RemoteNodeAdapter
 from .dag_remote_submission import DagRemoteSubmission
-from .models import BuildRun
+from .models import ArtifactRef, BuildRun
 from .remote_binding import RemoteAttemptBinding
 from .remote_http import RemoteJobClient, RemoteTransportUnknown
 from .remote_protocol import RemoteIdentity, RemoteJob, RemoteOutput, RemoteRequest
 from .runtime import utc_now
-from .serialization import canonical_json_bytes
+from .serialization import canonical_json_bytes, to_primitive
+from .workbench_persistence import _references
 
 if TYPE_CHECKING:
     from .dag_engine import DagEngine
@@ -80,7 +81,28 @@ def execute_remote(
         )
         client = RemoteJobClient(str(bound.parameters["remote_endpoint"]))
         bridge = DagRemoteSubmission(engine.repository, client)
+        uploads = adapter.input_blobs(context)
+        available = {ref.artifact_id for ref in _references(to_primitive(inputs))}
+        descriptors = {}
+        total_input = 0
+        for name, ref in uploads.items():
+            if not isinstance(name, str) or not name or not isinstance(ref, ArtifactRef):
+                raise ContractError("remote upload requires named ArtifactRefs")
+            if ref.artifact_id not in available:
+                raise ContractError("remote upload must belong to resolved inputs")
+            engine.repository.verify_reference_closure(ref)
+            manifest = engine.store.get_manifest(ref.artifact_id)
+            total_input += engine.store.blob_path(ref).stat().st_size
+            if total_input > 128 * 1024 * 1024:
+                raise ContractError("remote inputs exceed aggregate byte limit")
+            descriptors[name] = {
+                "artifact_id": ref.artifact_id,
+                "identity": to_primitive(manifest.identity),
+            }
         payload = adapter.prepare_payload(context)
+        if "input_blobs" in payload:
+            raise ContractError("input_blobs is reserved for validated upload descriptors")
+        payload["input_blobs"] = descriptors
         payload.update(input_digest=attempt.input_digest, binding_digest=attempt.binding_digest)
         request = RemoteRequest.create(
             RemoteIdentity(
@@ -113,6 +135,14 @@ def execute_remote(
         if attempt.remote_result is not None:
             job = bridge.pinned_result(binding)
         else:
+            if not recover:
+                for ref in uploads.values():
+                    manifest = engine.store.get_manifest(ref.artifact_id)
+                    client.upload_blob(
+                        request.identity,
+                        engine.store.blob_path(ref).read_bytes(),
+                        manifest.identity.blob_digest,
+                    )
             job = bridge.recover(binding) if recover else bridge.submit(binding)
             if job is None or job.state in {"queued", "running"}:
                 attempt.status = state.status = "running"

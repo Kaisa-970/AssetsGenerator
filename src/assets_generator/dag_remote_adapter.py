@@ -8,6 +8,7 @@ from typing import Any
 
 from .contracts import ContractError
 from .dag_adapters import AdapterSpec, NodeExecutionContext, NodeExecutionResult
+from .models import ArtifactRef
 from .remote_protocol import RemoteJob
 
 
@@ -24,6 +25,10 @@ class RemoteNodeAdapter(ABC):
 
     def execute(self, context: NodeExecutionContext) -> NodeExecutionResult:
         raise ContractError("remote adapters require remote dispatch")
+
+    def input_blobs(self, context: NodeExecutionContext) -> Mapping[str, ArtifactRef]:
+        """Explicit input artifacts to upload, drawn from validated input evidence."""
+        return {}
 
     @abstractmethod
     def prepare_payload(self, context: NodeExecutionContext) -> dict[str, Any]: ...
