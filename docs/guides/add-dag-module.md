@@ -78,3 +78,27 @@ NodeEditorExecution 与 DagEngine 共享同一个关系注册表实例；构造�
 真实 GPU smoke 串行执行，复用已有环境和权重。报告分别记录协议、真实运行和质量，
 不要把它们合并成一个“通过”。修改实现或 schema 后，旧固定计划可能拒绝恢复；
 应保留历史并创建新计划，而不是修改原运行记录绕过身份校验。
+
+## 不配置模型，直接试用画布
+
+在仓库根目录执行（Python 环境须已安装项目依赖）：
+
+```bash
+PYTHONPATH=src python examples/cpu_image_editor.py \
+  --directory /tmp/assets-cpu-editor --port 8770
+```
+
+打开终端打印的地址，点击 `cpu-image-editor` 模板，再打开“运行”。
+选择上传图片，上传一张 RGB PNG/JPEG/WebP，点击“启动新运行”。成功后点击
+“预览图片 · encode · image”。输入先作为 raster_image Artifact 导入，再由
+显式 encode_png 节点输出 PNG；像素不做增强，不生成 mask 或 3D 模型。
+RGBA、灰度和动画图片不属于这个 RGB 示例的输入范围。
+
+服务只监听本机；按 Ctrl+C 关闭。用相同 directory 重新启动后，可在运行列表
+选择历史运行并“恢复 / 继续此运行”，成功节点不会再次执行。运行、Store 和
+草稿都保存在指定目录，不放入仓库。需要替换端口时使用 --port。
+
+启动器在 examples/cpu_image_editor.py；接线在 examples/cpu-image-editor.yaml。
+节点目录仍展示完整 Operator 契约，但本示例只注册 encode_png 的执行实现，
+其他显示“仅契约”的节点不能直接运行。这个示例不需要 PyTorch、GPU 或模型
+profile；它证明 CPU 数据流和恢复路径，不代表任何模型已验收。
