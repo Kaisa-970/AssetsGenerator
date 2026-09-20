@@ -317,3 +317,19 @@ ArtifactRef 和部署声明。事务只授权一次；重复启动即使尚无 p
 保持 running。此窗口采用保守阻塞：尚未提供远程回读并恢复上传回执/继续首次
 提交的机制，不得将“防重放”称为“任意中断自动续跑”。受信配置入口、失败终态
 与 DAG/画布仍需接入。
+
+### 受信图像 profile API
+
+ComfyImageProfile.load 读取本地、最多 4 MiB 的严格 JSON 配置；声明 endpoint、API
+prompt、参数 schema/defaults、标量与图片映射、单图片输出槽位及部署声明。整个
+规范化配置参与 RemoteIdentity.backend_digest，空白排版不影响身份。拒绝未知
+字段、重复 JSON key、非法输出模式/索引及参数/图片映射冲突。
+
+profile.request 固定输入 ArtifactRef 和规范化参数；start 验证请求身份与参数后
+进入首次执行入口，finish 按 profile 固定的输出槽位导入并发布结果。返回配置
+与构造的 workflow 都是独立副本。内部 AdapterSpec 仅用于参数校验，不等于已经
+注册 Core Operator；端口的最终权威仍是后续 OperatorSpec。
+
+96 项 ComfyUI 测试及 Ruff 格式/检查、mypy 通过。新 profile 测试覆盖配置往返、
+身份变化、非法配置拒绝及调用转发；组合 HTTP 测试仍走已有函数入口。尚无 CLI、
+profile HTTP 联调或 DAG/画布接入，部署声明仍非实际模型身份验收。
