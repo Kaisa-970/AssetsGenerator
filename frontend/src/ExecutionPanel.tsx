@@ -92,7 +92,19 @@ function restoreCreation(): { request?: CreationRequest; error?: string } {
         (value.observations_ref &&
           typeof value.observations_ref.artifact_id === "string" &&
           !value.image_path &&
-          !value.image_ref)
+          !value.image_ref) ||
+        (value.input_refs &&
+          typeof value.input_refs === "object" &&
+          !Array.isArray(value.input_refs) &&
+          !value.image_path &&
+          !value.image_ref &&
+          !value.observations_ref &&
+          Object.values(value.input_refs).every(
+            (ref) =>
+              !!ref &&
+              typeof ref === "object" &&
+              typeof (ref as Record<string, unknown>).artifact_id === "string",
+          ))
       )
     )
       throw Error("保存的请求格式无效");
@@ -123,9 +135,13 @@ export function ExecutionPanel({
   const [imagePath, setImagePath] = useState("");
   const [observationsId, setObservationsId] = useState("");
   const [observationFiles, setObservationFiles] = useState<string[]>([]);
+  const [inputRefs, setInputRefs] = useState<
+    Record<string, Record<string, unknown>>
+  >({});
   const multiView =
     Object.keys(pipeline.inputs).length === 1 &&
     "observations" in pipeline.inputs;
+  const multiInput = Object.keys(pipeline.inputs).length > 1;
   const rgbaInput = pipeline.inputs.image?.kind === "rgba_image";
   const [imageSource, setImageSource] = useState("path");
   const [uploaded, setUploaded] = useState<{
@@ -239,6 +255,44 @@ export function ExecutionPanel({
   const unresolvedCreation = !!creation.request || !!creation.error;
   const run = envelope?.run;
   const executing = pending || !!envelope?.busy;
+  const setInputArtifact = (name: string, artifactId: string) => {
+    setInputRefs((old) => ({
+      ...old,
+      [name]: artifactId.trim() ? { artifact_id: artifactId.trim() } : {},
+    }));
+  };
+  const uploadInputArtifact = async (name: string, file?: File) => {
+    if (!file || uploadPending.current) return;
+    const kind = pipeline.inputs[name]?.kind;
+    if (kind !== "rgb_image" && kind !== "rgba_image") {
+      setUploadMessage(
+        `输入 ${name} 暂不支持浏览器上传，请填写已有 Artifact ID。`,
+      );
+      return;
+    }
+    uploadPending.current = true;
+    setUploading(true);
+    try {
+      const response = await fetch(
+        kind === "rgba_image" ? "/api/inputs/rgba" : "/api/inputs/image",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/octet-stream" },
+          body: file,
+        },
+      );
+      const value = await response.json();
+      if (!response.ok || typeof value.image_ref?.artifact_id !== "string")
+        throw Error(value.error || "服务未返回有效 Artifact 引用");
+      setInputArtifact(name, value.image_ref.artifact_id);
+      setUploadMessage(`输入 ${name} 已上传并绑定。`);
+    } catch (error) {
+      setUploadMessage(`输入 ${name} 上传失败：${String(error)}`);
+    } finally {
+      uploadPending.current = false;
+      setUploading(false);
+    }
+  };
   const upload = async (file?: File) => {
     if (uploadPending.current) return;
     setUploaded(undefined);
@@ -317,7 +371,44 @@ export function ExecutionPanel({
     <section className="execution-panel">
       <div className="section-label">创建新运行</div>
       <p>已配置模型：{profile || "本地服务配置"}</p>
-      {multiView ? (
+      {multiInput ? (
+        <div>
+          <p>
+            此管线有多个命名输入。每个输入必须绑定一个 Artifact ID；RGB/RGBA
+            图片可直接上传，其他类型请使用已导入引用。
+          </p>
+          {Object.entries(pipeline.inputs).map(([name, port]) => {
+            const artifactId = String(inputRefs[name]?.artifact_id || "");
+            return (
+              <div className="run-node" key={name}>
+                <strong>{name}</strong> ·{" "}
+                {port.kind || port.kinds?.join(" | ") || "未声明类型"}
+                {(port.kind === "rgb_image" || port.kind === "rgba_image") && (
+                  <input
+                    type="file"
+                    accept="image/*"
+                    aria-label={`上传输入 ${name}`}
+                    disabled={pending || uploading}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      e.target.value = "";
+                      void uploadInputArtifact(name, file);
+                    }}
+                  />
+                )}
+                <input
+                  aria-label={`输入 ${name} Artifact ID`}
+                  placeholder="sha256:…"
+                  value={artifactId}
+                  disabled={pending || uploading}
+                  onChange={(e) => setInputArtifact(name, e.target.value)}
+                />
+              </div>
+            );
+          })}
+          {uploadMessage && <p role="status">{uploadMessage}</p>}
+        </div>
+      ) : multiView ? (
         <div>
           <label>
             选择多视图照片（RGB，2–32 张）
@@ -420,11 +511,15 @@ export function ExecutionPanel({
           pending ||
           unresolvedCreation ||
           uploading ||
-          (multiView
-            ? !observationsId.trim()
-            : imageSource === "path"
-              ? !imagePath.trim()
-              : !uploaded || uploaded.rgba !== rgbaInput) ||
+          (multiInput
+            ? Object.keys(pipeline.inputs).some(
+                (name) => !String(inputRefs[name]?.artifact_id || "").trim(),
+              )
+            : multiView
+              ? !observationsId.trim()
+              : imageSource === "path"
+                ? !imagePath.trim()
+                : !uploaded || uploaded.rgba !== rgbaInput) ||
           !!executionReason
         }
         onClick={() =>
@@ -432,11 +527,20 @@ export function ExecutionPanel({
             submitCreation({
               pipeline: structuredClone(pipeline),
               idempotency_key: crypto.randomUUID(),
-              ...(multiView
-                ? { observations_ref: { artifact_id: observationsId.trim() } }
-                : imageSource === "path"
-                  ? { image_path: imagePath.trim() }
-                  : { image_ref: structuredClone(uploaded!.ref) }),
+              ...(multiInput
+                ? {
+                    input_refs: Object.fromEntries(
+                      Object.keys(pipeline.inputs).map((name) => [
+                        name,
+                        structuredClone(inputRefs[name]),
+                      ]),
+                    ),
+                  }
+                : multiView
+                  ? { observations_ref: { artifact_id: observationsId.trim() } }
+                  : imageSource === "path"
+                    ? { image_path: imagePath.trim() }
+                    : { image_ref: structuredClone(uploaded!.ref) }),
             }),
           )
         }
