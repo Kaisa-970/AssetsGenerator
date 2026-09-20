@@ -115,6 +115,7 @@ function App() {
   const [result, setResult] = useState<unknown>();
   const [busy, setBusy] = useState(false);
   const [filter, setFilter] = useState("");
+  const [registeredOnly, setRegisteredOnly] = useState(false);
   const [parameters, setParameters] = useState("{}");
   const [inputSpec, setInputSpec] = useState("{}");
   const [tab, setTab] = useState("inspector");
@@ -362,6 +363,15 @@ function App() {
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
           />
+          <label>
+            <input
+              type="checkbox"
+              checked={registeredOnly}
+              onChange={(e) => setRegisteredOnly(e.target.checked)}
+            />
+            只看已注册实现
+          </label>
+          <p>注册表示配置可绑定，不代表模型已验收。</p>
           <button
             className="add-input"
             onClick={() => {
@@ -382,8 +392,13 @@ function App() {
           </button>
           <div className="catalog-list">
             {Object.entries(catalog.operators)
-              .filter(([key]) =>
-                key.toLowerCase().includes(filter.toLowerCase()),
+              .filter(
+                ([key]) =>
+                  key.toLowerCase().includes(filter.toLowerCase()) &&
+                  (!registeredOnly ||
+                    [...catalog.adapters, ...(catalog.backends || [])].some(
+                      (adapter) => adapter.operators.includes(key),
+                    )),
               )
               .map(([key, op]) => (
                 <button
@@ -397,6 +412,13 @@ function App() {
                   onClick={() => addOperator(key)}
                 >
                   <strong>{op.name}</strong>
+                  <span>
+                    {[...catalog.adapters, ...(catalog.backends || [])].some(
+                      (adapter) => adapter.operators.includes(key),
+                    )
+                      ? "已注册实现"
+                      : "仅契约 · 未配置实现"}
+                  </span>
                   <span>
                     v{op.version} · {Object.keys(op.inputs).length} 输入 /{" "}
                     {Object.keys(op.outputs).length} 输出

@@ -1584,3 +1584,54 @@ test("current failure is visible while old successful-retry errors remain in his
   ).toHaveCount(0);
   expect(mutations).toBe(0);
 });
+
+test("operator catalog distinguishes registered implementations from contracts", async ({
+  page,
+}) => {
+  const operator = (name: string) => ({
+    name,
+    version: "1",
+    inputs: {},
+    outputs: {},
+  });
+  await page.route("**/api/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    await route.fulfill({
+      json:
+        path === "/api/catalog"
+          ? {
+              operators: {
+                "local@1": operator("local"),
+                "remote@1": operator("remote"),
+                "contract@1": operator("contract"),
+              },
+              adapters: [
+                { name: "local", version: "1", operators: ["local@1"] },
+              ],
+              backends: [
+                {
+                  name: "remote",
+                  version: "1",
+                  adapter: "remote@1",
+                  backend: "installed",
+                  operators: ["remote@1"],
+                },
+              ],
+              templates: [],
+            }
+          : { drafts: [] },
+    });
+  });
+  await page.goto("/");
+  const items = page.locator(".catalog-item");
+  await expect(items).toHaveCount(3);
+  await expect(items.filter({ hasText: "contract" })).toContainText("仅契约");
+  await page.getByLabel("只看已注册实现").check();
+  await expect(items).toHaveCount(2);
+  await expect(items.filter({ hasText: "remote" })).toContainText("已注册实现");
+  await page.getByPlaceholder("搜索算子…").fill("remote");
+  await expect(items).toHaveCount(1);
+  await page.getByLabel("只看已注册实现").uncheck();
+  await page.getByPlaceholder("搜索算子…").fill("");
+  await expect(items).toHaveCount(3);
+});
