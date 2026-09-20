@@ -176,3 +176,11 @@ RemoteNodeAdapter.input_blobs 显式选择待上传的直接输入 ArtifactRef�
 修正已成功远程节点的损坏恢复：节点变为 recovery_blocked 但 attempt 保持 succeeded 时，仅走本地证据验证，禁止重新进入下载/导入路径。回归连续恢复两次，确认缺失输出不被重建且下载数不增加。
 
 本轮 engine/adapter/remote bridge 合跑 62 项通过，Ruff lint/format（187 文件）及 mypy（94 源文件）通过。新增上传回执失败时不提交、恢复不重传，以及已完成输出损坏不重建测试。无真实模型/GPU 验证；未声称服务端已持久化上传内容或已实际消费输入。
+
+### 实际输入变换与导入中断测试
+
+本机 HTTP fixture 已能按 payload.input_blobs.image 中的 Blob 摘要读取先前 PUT 的图像，实际解码并反色为 PNG。验收输入红色 2×2 图像，Core 导入后回读像素为青色，输出 Artifact 不同于输入；输出 provenance 引用原固定远程终态。该 fixture 是内存服务，仅用于 CPU 协议验收，不是生产模型服务。
+
+在导入前、导入完成但父成功快照保存前分别注入 BaseException 模拟进程中断；关闭并重开客户端 Repository 后完成同一个 job/attempt，POST 和上传均只有一次。后一个窗口允许重新执行尚未固定到父快照的确定性导入；已经固定的成功输出损坏仍由前一轮回归保证只阻塞、不重建。此次中断由测试注入，不声称执行了真实 SIGKILL。
+
+验证记录：远程执行/HTTP/日志/桥接/绑定/既有引擎合跑 78 项通过；fixture 增加终态不重复处理条件后，远程执行单文件再次 8 项通过。两轮重叠不相加。Ruff lint/format、mypy（94 源文件）通过；无真实模型/GPU 或服务端重启验收。

@@ -38,6 +38,7 @@ def server():
             if self.path != "/v1/blobs/" + digest.split(":")[1]:
                 self.respond(400, {})
                 return
+            state.setdefault("blobs", {})[digest] = data
             receipt = {
                 "protocol_version": "1",
                 "service_id": self.headers["X-Service-Id"],
@@ -68,6 +69,34 @@ def server():
                     "result": None,
                     "error": None,
                 }
+            if state.get("transform_image") and state["jobs"][key]["state"] == "running":
+                import io
+
+                from PIL import Image, ImageOps
+
+                from assets_generator.serialization import sha256_bytes
+
+                descriptor = request["payload"]["input_blobs"]["image"]
+                data = state["blobs"][descriptor["identity"]["blob_digest"]]
+                with Image.open(io.BytesIO(data)) as image:
+                    output = ImageOps.invert(image.convert("RGB"))
+                    buffer = io.BytesIO()
+                    output.save(buffer, format="PNG")
+                state["blob"] = buffer.getvalue()
+                state["media"] = "image/png"
+                state["jobs"][key].update(
+                    state="succeeded",
+                    result={
+                        "outputs": [
+                            {
+                                "output_id": "mesh",
+                                "blob_digest": sha256_bytes(state["blob"]),
+                                "byte_length": len(state["blob"]),
+                                "media_type": "image/png",
+                            }
+                        ]
+                    },
+                )
             if state["drop"]:
                 self.connection.shutdown(socket.SHUT_RDWR)
                 self.connection.close()

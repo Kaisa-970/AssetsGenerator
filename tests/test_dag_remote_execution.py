@@ -247,3 +247,57 @@ def test_upload_receipt_failure_never_submits_or_reuploads_on_recovery(tmp_path,
         engine.recover(run.run_id)
         assert state["submissions"] == 0
         assert state["uploads"] == [data]
+
+
+@pytest.mark.parametrize("crash_point", ["before_import", "before_parent_save"])
+def test_actual_remote_transform_recovers_import_crash_same_job(
+    tmp_path, http_server, monkeypatch, crash_point
+):
+    state, client = http_server
+    state["transform_image"] = True
+    store, registry, _, plan, source, data = setup(tmp_path, client.endpoint)
+    directory = tmp_path / "repo"
+
+    class SimulatedCrash(BaseException):
+        pass
+
+    with DagRepository(store, directory) as repo:
+        engine = DagEngine(repo, registry)
+        run = engine.create(plan, {"source": source})
+        if crash_point == "before_import":
+            original = ImageAdapter.import_result
+
+            def interrupt(*args, **kwargs):
+                raise SimulatedCrash()
+
+            monkeypatch.setattr(ImageAdapter, "import_result", interrupt)
+        else:
+            original_save = engine._save
+
+            def interrupt_save(record):
+                if record.dag.node_states["B"].status == "succeeded":
+                    raise SimulatedCrash()
+                original_save(record)
+
+            monkeypatch.setattr(engine, "_save", interrupt_save)
+        with pytest.raises(SimulatedCrash):
+            engine.drain(run.run_id)
+        saved = repo.load(run.run_id).dag.node_states["B"].current()
+        assert saved.remote_result is not None
+        assert saved.status == "running"
+        if crash_point == "before_import":
+            monkeypatch.setattr(ImageAdapter, "import_result", original)
+    with DagRepository(store, directory) as repo:
+        engine = DagEngine(repo, registry)
+        completed = engine.drain(run.run_id)
+        assert completed.status == "succeeded"
+        attempt = completed.dag.node_states["B"].current()
+        assert attempt.attempt == 1
+        assert attempt.remote_binding == saved.remote_binding
+        assert state["submissions"] == 1
+        assert state["uploads"] == [data]
+        with Image.open(store.blob_path(attempt.outputs["image"])) as output:
+            assert output.getpixel((0, 0)) == (0, 255, 255)
+        assert attempt.outputs["image"] != source
+        provenance = store.read_structured(attempt.provenance["image"][0])
+        assert attempt.remote_result.artifact_id in provenance["derived_from_artifact_ids"]
