@@ -149,6 +149,7 @@ class RemoteServiceStore:
         state: str,
         result: dict[str, Any] | None = None,
         error: dict[str, str] | None = None,
+        require_idle: bool = False,
     ) -> RemoteJob:
         """CAS transition: only queued→running and running→terminal are allowed."""
         if (expected, state) not in {
@@ -157,6 +158,8 @@ class RemoteServiceStore:
             ("running", "failed"),
         }:
             raise ValueError("invalid service job transition")
+        if require_idle and (expected, state) != ("queued", "running"):
+            raise ValueError("idle admission only applies to queued job claims")
         _identifier(request.submission_key, "submission_key")
         with self._lock:
             self.db.execute("BEGIN IMMEDIATE")
@@ -164,6 +167,14 @@ class RemoteServiceStore:
                 previous = self.lookup(request)
                 if previous is None or previous.state != expected:
                     raise ValueError("service job state conflict")
+                if require_idle:
+                    for key, raw in self.db.execute("SELECT key, job FROM jobs"):
+                        other = self.request_for(key)
+                        if other is None:
+                            raise ValueError("service request disappeared")
+                        job = RemoteJob.parse(json.loads(raw), other, expected_job_id=key)
+                        if job.state == "running":
+                            raise ValueError("service blocked by unresolved running job: " + key)
                 if state in {"succeeded", "failed"}:
                     self._validate_worker_terminal(request, state)
                 wire = self._wire(request)

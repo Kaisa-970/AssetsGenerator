@@ -96,3 +96,7 @@ PYTHONPATH=src python -m assets_generator.remote_shape_cli drain \
 不领取新作业，不改写其状态；需要先核实原作业。领取由 SQLite 事务保护，多个 drain
 连接不会同时领取任务。它不是常驻轮询守护进程；新任务需要再次执行 drain。
 进程门控仍生效，不同数据库之间仍无统一 GPU 调度。本命令仅 CPU 回归验证，未重新跑 GPU。
+
+`execute --job` 与 `drain` 使用同样的数据库级空闲准入：若另一作业仍 running，
+显式执行也在领取阶段拒绝，目标作业保留 queued，不调用 handler。底层模型进程门控继续作为
+第二层保护；这不自动消除历史中断作业，也不跨数据库调度。

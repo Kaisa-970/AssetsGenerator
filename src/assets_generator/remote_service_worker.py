@@ -29,7 +29,7 @@ def execute_service_job(
     subprocess launch or remote cancellation in this CPU/service worker primitive.
     Storage failures propagate without converting an uncertain commit into failure.
     """
-    store.transition(request, expected="queued", state="running")
+    store.transition(request, expected="queued", state="running", require_idle=True)
     return _execute_claimed_job(store, request, handler)
 
 

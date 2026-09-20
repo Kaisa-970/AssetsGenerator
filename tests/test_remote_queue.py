@@ -5,7 +5,11 @@ from test_remote_http import request
 
 from assets_generator.remote_protocol import RemoteRequest
 from assets_generator.remote_service_store import RemoteServiceStore
-from assets_generator.remote_service_worker import ServiceOutput, execute_next_service_job
+from assets_generator.remote_service_worker import (
+    ServiceOutput,
+    execute_next_service_job,
+    execute_service_job,
+)
 
 
 def test_queue_claim_is_serial_across_connections_and_preserves_interrupted_jobs(tmp_path):
@@ -29,6 +33,10 @@ def test_queue_claim_is_serial_across_connections_and_preserves_interrupted_jobs
         assert entered.wait(5)
         with pytest.raises(ValueError, match="unresolved running"):
             execute_next_service_job(second, handler)
+        with pytest.raises(ValueError, match="unresolved running"):
+            execute_service_job(second, RemoteRequest.create(identity, "second", {}), handler)
+        assert second.lookup(RemoteRequest.create(identity, "second", {})).state == "queued"
+        assert calls == ["first"]
         release.set()
         thread.join(10)
         assert not thread.is_alive()
@@ -45,3 +53,25 @@ def test_queue_claim_is_serial_across_connections_and_preserves_interrupted_jobs
         release.set()
         first.close()
         second.close()
+
+
+def test_explicit_job_blocks_queue_without_consuming_other_request(tmp_path):
+    identity = request().identity
+    store = RemoteServiceStore(tmp_path / "db", identity)
+    a = RemoteRequest.create(identity, "a", {})
+    b = RemoteRequest.create(identity, "b", {})
+    try:
+        store.submit(a)
+        store.submit(b)
+
+        def interrupted(req, current):
+            with pytest.raises(ValueError, match="unresolved running"):
+                execute_next_service_job(current, lambda *args: {})
+            raise KeyboardInterrupt()
+
+        with pytest.raises(KeyboardInterrupt):
+            execute_service_job(store, b, interrupted)
+        assert store.lookup(a).state == "queued"
+        assert store.lookup(b).state == "running"
+    finally:
+        store.close()
