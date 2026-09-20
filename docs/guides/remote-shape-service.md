@@ -134,8 +134,10 @@ alive/unknown/缺失身份一律拒绝；已有 succeeded/其他 failed 不覆�
 
 人工确认之前无远程提交。prepare 从 SelectionInputBinding 读取原图和最终 mask，复用
 绑定验证与 binary-mask 校验，输出 RGBA、ObservationBundle 和 SelectionImportVerification。
-这三个输出及 provenance 保留在 DAG；现有 shape assembly 仍只绑定 RGBA 来源，不把
-ObservationBundle ID 自动补进资产。后续可通过显式观测关联扩展组装契约。
+这三个输出及 provenance 保留在 DAG。示例将 observations 显式连接到 shape assembly：
+Core 核验单视图 RGB/mask 与实际 RGBA 内容一致后，将 observation_id 写入资产，
+精确 ObservationBundle Artifact 保留在组装输入和 provenance。该可选输入不提供时，
+旧 RGBA 管线仍不推断观测来源；损坏证据不会由比较过程重新生成。
 
 CPU 集成测试覆盖人工等待/决定、alpha 保留、精确 RGBA 输入、HTTP shape 发布及服务关闭后恢复。
 此示例已完成真实 SAM + 远程 TRELLIS.2 同次运行验收；当前运行因 TRELLIS.2 `CuMesh` 后处理失败采用无纹理几何 fallback，详见真实运行报告。服务目录、编辑器内逐节点服务选择和完整纹理后处理仍待完成。

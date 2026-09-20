@@ -276,7 +276,10 @@ class ShapeAssetInputsValidator:
         )
 
     def validate_static(self, context: StaticRelationContext) -> None:
-        if set(context.inputs) != {"mesh", "image", "quality", "spatial"}:
+        if set(context.inputs) not in (
+            {"mesh", "image", "quality", "spatial"},
+            {"mesh", "image", "quality", "spatial", "observations"},
+        ):
             raise ContractError("shape asset relation requires mesh, image, quality and spatial")
 
     def validate_runtime(self, context: RuntimeRelationContext) -> None:
@@ -286,6 +289,8 @@ class ShapeAssetInputsValidator:
         values = {}
         for key in context.inputs:
             value = context.values.get(key)
+            if key == "observations" and value is None:
+                continue
             if not isinstance(value, (ArtifactRef, StructuredValue)):
                 raise ContractError("shape asset relation requires scalar inputs")
             values[key] = value

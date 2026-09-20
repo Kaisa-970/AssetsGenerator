@@ -227,12 +227,13 @@ operators:
     version: 1
     relations:
       - validator: shape_asset_inputs@1
-        inputs: [mesh, image, quality, spatial]
+        inputs: [mesh, image, quality, spatial, observations]
     inputs:
       mesh: {kind: triangle_mesh, carriers: [artifact_ref], requires_frame: true, requires_unit: true}
       image: {kind: rgba_image, carriers: [artifact_ref]}
       quality: {kind: quality_report, carriers: [artifact_ref], schema_name: QualityReport, schema_version: "1.0"}
       spatial: {kind: asset_spatial_info, carriers: [structured]}
+      observations: {kind: observation_bundle, cardinality: zero_or_one, carriers: [artifact_ref], schema_name: ObservationBundle, schema_version: "1.0"}
     outputs:
       asset: {kind: asset_definition, carriers: [artifact_ref], schema_name: AssetDefinition, schema_version: "1.0"}
 

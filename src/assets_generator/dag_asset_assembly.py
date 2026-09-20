@@ -23,11 +23,38 @@ from .operators import _load_scene, _scene_vertices, material_from_glb
 from .serialization import cache_key, sha256_bytes, to_primitive
 
 
+def shape_observation_id(
+    store: LocalArtifactStore, inputs: Mapping[str, PortValue | list[PortValue]]
+) -> str | None:
+    reference = inputs.get("observations")
+    if reference is None:
+        return None
+    if not isinstance(reference, ArtifactRef):
+        raise ContractError("shape observations must be an ArtifactRef")
+    from .dag_image_adapters import _ComparisonStore
+    from .observations import observation_bundle_from_artifact
+    from .operators import prepare_observation
+
+    image = inputs.get("image")
+    if not isinstance(image, ArtifactRef) or not store.verify_digest(image):
+        raise ContractError("shape prepared RGBA is missing or corrupt")
+    bundle = observation_bundle_from_artifact(reference, store)
+    if len(bundle.views) != 1 or bundle.views[0].mask is None:
+        raise ContractError("shape observations require one RGB view with a mask")
+    view = bundle.views[0]
+    assert view.mask is not None
+    prepared = prepare_observation(_ComparisonStore(store), view.image, view.mask)
+    if prepared.rgba != inputs.get("image"):
+        raise ContractError("shape observations do not match prepared RGBA")
+    return bundle.observation_id
+
+
 def validate_shape_asset_inputs(
     store: LocalArtifactStore,
     inputs: Mapping[str, PortValue | list[PortValue]],
     run_id: str | None = None,
 ) -> None:
+    shape_observation_id(store, inputs)
     mesh, image, quality, spatial = (
         inputs.get(key) for key in ("mesh", "image", "quality", "spatial")
     )
@@ -139,6 +166,7 @@ class ShapeAssetAssemblyAdapter:
             and isinstance(spatial, StructuredValue)
         )
         info = AssetSpatialInfo(**{**spatial.value, "aabb": AABB(**spatial.value["aabb"])})
+        observation_id = shape_observation_id(context.store, dict(context.inputs))
         asset = AssetDefinition(
             "asset_"
             + cache_key(
@@ -151,7 +179,7 @@ class ShapeAssetAssemblyAdapter:
             info,
             SemanticInfo(None, "unknown"),
             None,
-            [],
+            [observation_id] if observation_id else [],
             [quality.artifact_id],
             [],
         )

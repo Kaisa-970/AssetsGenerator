@@ -101,6 +101,27 @@ def test_confirmed_rgb_selection_connects_to_remote_shape_and_release(tmp_path):
             )
             completed = engine.drain(run.run_id)
             assert completed.status == "succeeded"
+            from assets_generator.dag_asset_assembly import shape_observation_id
+
+            assembled = completed.dag.node_states["assemble"].current()
+            observation = prepared.outputs["observations"]
+            assert assembled.resolved_inputs["observations"] == observation
+            asset = store.read_structured(assembled.outputs["asset"])
+            assert asset["source_observation_ids"] == [
+                store.read_structured(observation)["observation_id"]
+            ]
+            with pytest.raises(ValueError, match="do not match prepared"):
+                shape_observation_id(store, {"observations": observation, "image": image})
+            assert shape_observation_id(store, {"image": rgba}) is None
+            # Comparison must not regenerate a missing prepared image.
+            rgba_path = store.blob_path(rgba)
+            rgba_bytes = rgba_path.read_bytes()
+            rgba_path.unlink()
+            with pytest.raises(ValueError):
+                shape_observation_id(store, {"observations": observation, "image": rgba})
+            assert not rgba_path.exists()
+            rgba_path.write_bytes(rgba_bytes)
+
             repo.verify_reference_closure(
                 completed.dag.node_states["publish"].current().outputs["release"]
             )
