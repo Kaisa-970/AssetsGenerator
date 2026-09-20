@@ -122,3 +122,58 @@ def test_killed_worker_keeps_durable_running_claim(tmp_path):
             process.kill()
             process.join(10)
         reader.close()
+
+
+def test_comfy_lost_ack_preserves_claim_and_blocks_queue_after_restart(tmp_path):
+    from assets_generator.comfy_submission import ComfySubmissionJournal, ComfySubmissionUnknown
+    from assets_generator.remote_service_store import RemoteServiceStore
+    from assets_generator.remote_service_worker import execute_next_service_job
+
+    req = request()
+    second = RemoteRequest.create(req.identity, "next", {})
+    path = tmp_path / "service.sqlite"
+    journal_path = tmp_path / "comfy.sqlite"
+    store = RemoteServiceStore(path, req.identity)
+    journal = ComfySubmissionJournal(journal_path)
+    calls = []
+
+    def lost_ack(body):
+        calls.append(body["prompt_id"])
+        raise ConnectionError("accepted upstream, acknowledgement lost")
+
+    def submit(req, _store):
+        journal.prepare(
+            req.submission_key,
+            deployment={"endpoint": "http://127.0.0.1:8188"},
+            prompt={"1": {"class_type": "Example", "inputs": {}}},
+        )
+        journal.submit_once(req.submission_key, lost_ack)
+        return {}
+
+    try:
+        store.submit(req)
+        store.submit(second)
+        with pytest.raises(ComfySubmissionUnknown):
+            execute_service_job(store, req, submit)
+        assert store.lookup(req).state == "running"
+        assert journal.read(req.submission_key)["phase"] == "sending"
+    finally:
+        store.close()
+        journal.close()
+
+    store = RemoteServiceStore(path, req.identity)
+    journal = ComfySubmissionJournal(journal_path)
+    try:
+        assert store.lookup(req).state == "running"
+        assert store.lookup(req).error_json is None
+        with pytest.raises(ValueError, match="state conflict"):
+            execute_service_job(store, req, submit)
+        with pytest.raises(ValueError, match="unresolved running job"):
+            execute_next_service_job(store, submit)
+        with pytest.raises(ComfySubmissionUnknown):
+            journal.submit_once(req.submission_key, lost_ack)
+        assert len(calls) == 1
+        assert store.lookup(second).state == "queued"
+    finally:
+        store.close()
+        journal.close()

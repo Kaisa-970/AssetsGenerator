@@ -22,6 +22,14 @@ class PipelineError(RuntimeError):
         self.retryable = retryable
 
 
+class ServiceExecutionUncertain(ValueError):
+    """Execution may still exist; preserve the durable claim and do not retry.
+
+    Service handlers raise this instead of reporting a terminal failure when
+    remote acknowledgement or execution evidence is unavailable.
+    """
+
+
 def classify_error(error: Exception) -> ErrorCode:
     from .contracts import ContractError
 

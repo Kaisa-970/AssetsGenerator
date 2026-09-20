@@ -194,3 +194,14 @@ SQLite 首次创建前写独立 journal UUID 标记，初始化由文件锁串�
 62 项 ComfyUI 测试、Ruff 格式/检查及 mypy 通过。这是供外层使用的接口，尚未接入
 BuildRun 或 RemoteServiceStore 的持久化路径；相同 UUID 数据库的 phase 回滚、导入
 回执删除仍未由该不可变请求绑定覆盖，不宣称完整恢复或真实 ComfyUI 验收完成。
+
+### 外层执行器保留不确定占用
+
+服务 handler 的 ServiceExecutionUncertain 异常现在穿过执行器，不转换成 failed；
+ComfySubmissionUnknown 继承此类型。上游可能已收包时，外层 job 保持 running，
+串行队列继续阻塞。已确认的普通 handler 错误仍保留原有失败处理。
+
+86 项 ComfyUI 与服务相关测试通过，包含一次收包后断连接、重开外层数据库和内部
+日志、再次执行及排队任务均被拒绝，prompt 回调总计仅一次。Ruff/mypy 通过。
+这只补齐执行器异常语义；查询恢复和复合 handler 的生产集成仍待完成，不能通过
+本地进程退出或任意异常将远程未知状态宣布为终态。

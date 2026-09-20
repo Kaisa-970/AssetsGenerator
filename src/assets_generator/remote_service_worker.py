@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
-from .errors import PipelineError
+from .errors import PipelineError, ServiceExecutionUncertain
 from .remote_protocol import RemoteJob, RemoteOutput, RemoteRequest
 from .remote_service_store import RemoteServiceStore
 from .serialization import sha256_bytes
@@ -58,6 +58,10 @@ def _execute_claimed_job(
             descriptors.append(
                 RemoteOutput(key, sha256_bytes(output.data), len(output.data), output.media_type)
             )
+    except ServiceExecutionUncertain:
+        # A remote process may still be running. Keep its claim across restart;
+        # terminal failure would incorrectly release serial queue admission.
+        raise
     except Exception as error:
         return store.transition(
             request,

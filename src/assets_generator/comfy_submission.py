@@ -14,10 +14,11 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from .errors import ServiceExecutionUncertain
 from .serialization import canonical_json_bytes, sha256_bytes
 
 
-class ComfySubmissionUnknown(ValueError):
+class ComfySubmissionUnknown(ServiceExecutionUncertain):
     """A prompt may have been received; only query the recorded prompt ID."""
 
 
