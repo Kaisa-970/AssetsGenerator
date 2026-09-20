@@ -176,7 +176,8 @@ def test_local_selection_and_remote_shape_profiles_bind_composed_template(tmp_pa
     assert plan.bindings["shape"].parameters["service_id"] == "second"
 
 
-def test_two_http_services_keep_node_jobs_and_offline_results_separate(tmp_path):
+@pytest.mark.parametrize("full_release", [False, True])
+def test_two_http_services_keep_node_jobs_and_offline_results_separate(tmp_path, full_release):
     import io
     from contextlib import ExitStack
 
@@ -232,6 +233,14 @@ def test_two_http_services_keep_node_jobs_and_offline_results_separate(tmp_path)
                 for name in services
             },
         }
+        if full_release:
+            graph = yaml.safe_load(Path("examples/remote-shape-compare.yaml").read_text())
+            for name in services:
+                graph["nodes"][name + "_shape"]["backend"] = name
+
+        def node_id(name):
+            return name + "_shape" if full_release else name
+
         plan = registry.bind_plan(
             compile_pipeline(
                 _pipeline_from_raw(graph),
@@ -244,7 +253,7 @@ def test_two_http_services_keep_node_jobs_and_offline_results_separate(tmp_path)
             run = engine.drain(engine.create(plan, {"image": image}).run_id)
             keys = []
             for name, (service, identity) in services.items():
-                attempt = run.dag.node_states[name].current()
+                attempt = run.dag.node_states[node_id(name)].current()
                 assert attempt.resolved_inputs["image"] == image
                 assert attempt.remote_binding.service_id == name
                 key = attempt.remote_binding.submission_key
@@ -258,10 +267,32 @@ def test_two_http_services_keep_node_jobs_and_offline_results_separate(tmp_path)
                 assert execute_service_job(service, request, handler).state == "succeeded"
                 run = engine.drain(run.run_id)
                 if name == "first":
-                    assert run.dag.node_states["first"].status == "succeeded"
-                    assert run.dag.node_states["second"].status == "running"
+                    assert run.dag.node_states[node_id("first")].status == "succeeded"
+                    assert run.dag.node_states[node_id("second")].status == "running"
             assert len(set(keys)) == 2
             assert run.status == "succeeded"
+            if full_release:
+                from assets_generator.models import ArtifactRef
+
+                assets, releases = [], []
+                for name in services:
+                    assembled = run.dag.node_states[name + "_assemble"].current()
+                    published = run.dag.node_states[name + "_publish"].current()
+                    assets.append(assembled.outputs["asset"])
+                    releases.append(published.outputs["release"])
+                    release = store.read_structured(releases[-1])
+                    assert release["asset_definition"] == {"artifact_id": assets[-1].artifact_id}
+                    repo.verify_reference_closure(releases[-1])
+                    records = [
+                        store.read_structured(ArtifactRef(**ref))
+                        for path, ref in release["files"].items()
+                        if path.startswith("provenance/assembly-")
+                    ]
+                    assert len(records) == 1
+                    assert records[0]["node_id"] == name + "_assemble"
+                    assert records[0]["output_artifact_id"] == assets[-1].artifact_id
+                assert assets[0] != assets[1]
+                assert releases[0] != releases[1]
             completed = run.dag.node_states
             assert all(len(state.attempts) == 1 for state in completed.values())
     with DagRepository(store, tmp_path / "core") as repo:

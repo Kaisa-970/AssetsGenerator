@@ -199,4 +199,6 @@ PYTHONPATH=src python -m assets_generator.cli node-editor \
 服务端作业仍需显式执行；若共享 GPU，请串行执行，Core 不提供跨服务 GPU 互斥。
 
 双 HTTP 服务的 CPU 回归验证了同输入、独立身份与作业、分支完成状态和关闭服务后恢复；
-模板编译验证覆盖两路独立发布连接。尚未对两个真实模型运行此对比模板，不构成质量排名。
+另已直接执行对比模板的 10 个节点，验证两份独立 AssetDefinition/Release、各自组装
+provenance 和服务关闭后的离线恢复；每节点一次 attempt。测试 Backend 使用小型 CPU
+几何输出，尚未对两个真实模型运行此对比模板，不构成质量排名。
