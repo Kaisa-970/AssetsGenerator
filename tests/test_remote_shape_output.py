@@ -64,3 +64,28 @@ def test_shape_transport_rejects_invalid_evidence(tmp_path, damage):
     blobs["shape_metadata"] = canonical_json_bytes(raw)
     with pytest.raises(ValueError):
         import_shape_output(LocalArtifactStore(tmp_path / "target"), blobs)
+
+
+@pytest.mark.parametrize(
+    "uri", ["texture.png", "https://example.invalid/image", "data:image/png;base64,AA=="]
+)
+def test_remote_glb_rejects_resource_uris_before_loading(uri):
+    import struct
+
+    from assets_generator.remote_shape_output import validate_self_contained_glb
+
+    body = canonical_json_bytes({"asset": {"version": "2.0"}, "images": [{"uri": uri}]})
+    body += b" " * (-len(body) % 4)
+    data = struct.pack("<4sIIII", b"glTF", 2, 20 + len(body), len(body), 0x4E4F534A) + body
+    with pytest.raises(ValueError, match="without URI"):
+        validate_self_contained_glb(data)
+
+
+def test_glb_rejects_truncated_or_wrong_declared_length():
+    from assets_generator.remote_shape_output import validate_self_contained_glb
+
+    data = trimesh.creation.box().export(file_type="glb")
+    validate_self_contained_glb(data)
+    for bad in (data[:-1], data + b"extra", b"not a GLB"):
+        with pytest.raises(ValueError):
+            validate_self_contained_glb(bad)

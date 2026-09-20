@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import struct
 from collections.abc import Mapping
 
 import numpy as np
@@ -15,6 +16,49 @@ from .remote_service_worker import ServiceOutput
 from .serialization import canonical_json_bytes, sha256_bytes, to_primitive
 from .spatial import validate_mesh_native_frame
 from .workbench_models import _decode
+
+
+def validate_self_contained_glb(data: bytes) -> None:
+    """Validate framing and prohibit URI resolution before handing bytes to trimesh."""
+    if len(data) < 20 or len(data) > 128 * 1024 * 1024:
+        raise ValueError("invalid remote GLB size")
+    magic, version, length = struct.unpack_from("<4sII", data)
+    if magic != b"glTF" or version != 2 or length != len(data):
+        raise ValueError("invalid remote GLB header")
+    offset = 12
+    chunks = []
+    while offset < len(data):
+        if offset + 8 > len(data):
+            raise ValueError("truncated GLB chunk")
+        size, kind = struct.unpack_from("<II", data, offset)
+        offset += 8
+        if size % 4 or offset + size > len(data):
+            raise ValueError("invalid GLB chunk length")
+        chunks.append((kind, data[offset : offset + size]))
+        offset += size
+    if [kind for kind, _ in chunks] not in ([0x4E4F534A], [0x4E4F534A, 0x004E4942]):
+        raise ValueError("unsupported remote GLB chunks")
+    raw = decode_remote_json(chunks[0][1])
+    if (
+        not isinstance(raw, dict)
+        or not isinstance(raw.get("asset"), dict)
+        or raw["asset"].get("version") != "2.0"
+    ):
+        raise ValueError("invalid GLB asset version")
+
+    def check(value: object) -> None:
+        if isinstance(value, dict):
+            if "uri" in value:
+                raise ValueError("remote GLB must embed all resources without URI")
+            for child in value.values():
+                check(child)
+        elif isinstance(value, list):
+            for child in value:
+                check(child)
+
+    check(raw)
+    if raw.get("extensionsRequired"):
+        raise ValueError("required GLB extensions are not supported by remote shape import")
 
 
 def import_shape_output(store: LocalArtifactStore, blobs: Mapping[str, bytes]) -> ShapeOutput:
@@ -78,6 +122,7 @@ def import_shape_output(store: LocalArtifactStore, blobs: Mapping[str, bytes]) -
         )
     ):
         raise ValueError("standalone material textures require explicit transport support")
+    validate_self_contained_glb(blobs["mesh"])
     scene = _load_scene(blobs["mesh"])
     vertices = _scene_vertices(scene)
     if not np.isfinite(vertices).all() or not any(len(g.faces) for g in scene.geometry.values()):

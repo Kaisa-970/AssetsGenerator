@@ -271,3 +271,7 @@ import_shape_rgba 按现有 prepare_observation 的 rgba_image/png@1.0 契约读
 此模块未注册进 DAG 或模型服务 handler；后续还需自包含 GLB 资源边界、Backend 身份与响应一致性校验，以及真实模型输出验收。输入/输出测试合跑覆盖小型 GLB 往返、frame 冲突、摘要损坏、非法颜色和悬空纹理引用；不宣称真实模型接入已完成。
 
 本轮输入/输出合跑 8 项通过，Ruff 与 mypy（100 源文件）通过，无真实模型/GPU 验证。
+
+### GLB 自包含边界
+
+远程 shape 导入在调用 trimesh 前检查 GLB 2.0 header、精确总长度、对齐 chunk 和唯一 JSON/可选 BIN 顺序，严格解析 JSON，拒绝任意层级 URI（含相对路径、HTTP 和 data URI）以及 required extensions。首版仅接受已嵌入 BIN 的资源，避免解析器隐式读取外部文件；扩展支持须单独增加验收。输入/输出合跑 12 项通过，含资源 URI 与截断/长度不符回归；Ruff/mypy 通过。仍未接真实模型 handler。
