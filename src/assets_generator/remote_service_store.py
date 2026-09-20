@@ -38,6 +38,10 @@ class RemoteServiceStore:
             self.db.execute(
                 "CREATE TABLE IF NOT EXISTS blobs (digest TEXT PRIMARY KEY, body BLOB NOT NULL)"
             )
+            self.db.execute(
+                "CREATE TABLE IF NOT EXISTS process_workers "
+                "(key TEXT PRIMARY KEY, body BLOB NOT NULL)"
+            )
             body = canonical_json_bytes(identity)
             self.db.execute("BEGIN IMMEDIATE")
             existing = self.db.execute("SELECT body FROM service WHERE id=1").fetchone()
@@ -206,3 +210,61 @@ class RemoteServiceStore:
             if canonical_json_bytes(request.to_dict()) != row[0]:
                 raise ValueError("corrupt service request")
             return request
+
+    def worker_record(self, request: RemoteRequest) -> bytes | None:
+        self._request(request)
+        with self._lock:
+            row = self.db.execute(
+                "SELECT body FROM process_workers WHERE key=?", (request.submission_key,)
+            ).fetchone()
+            return bytes(row[0]) if row else None
+
+    def save_worker(self, request: RemoteRequest, body: bytes, *, previous: bytes | None) -> None:
+        """CAS callback evidence; one unfinished process slot per service database."""
+        from .workbench_models import WorkerExecution, _decode
+
+        record = _decode(WorkerExecution, json.loads(body))
+        if record.child_run_id != request.submission_key:
+            raise ValueError("service worker owner mismatch")
+        phases = ["prepared", "identity_recorded", "release_authorized", "exit_observed"]
+        with self._lock:
+            self.db.execute("BEGIN IMMEDIATE")
+            try:
+                job = self.lookup(request)
+                if job is None or job.state != "running":
+                    raise ValueError("worker requires running service job")
+                if self.worker_record(request) != previous:
+                    raise ValueError("service worker revision conflict")
+                if previous is None:
+                    if record.launch_phase != "prepared":
+                        raise ValueError("worker must begin prepared")
+                    for (raw,) in self.db.execute("SELECT body FROM process_workers"):
+                        existing = _decode(WorkerExecution, json.loads(raw))
+                        if existing.launch_phase != "exit_observed":
+                            raise ValueError("service process slot remains occupied")
+                else:
+                    old = _decode(WorkerExecution, json.loads(previous))
+                    if (record.job_id, record.child_run_id, record.launch_request_digest) != (
+                        old.job_id,
+                        old.child_run_id,
+                        old.launch_request_digest,
+                    ) or phases.index(record.launch_phase) != phases.index(old.launch_phase) + 1:
+                        raise ValueError("invalid worker transition")
+                    if old.launch_phase != "prepared" and record.identity() != old.identity():
+                        raise ValueError("worker process identity changed")
+                if record.launch_phase != "prepared":
+                    record.identity()
+                if record.launch_phase == "exit_observed" and (
+                    record.last_probe is None
+                    or record.last_probe.result != "exited"
+                    or record.exit_code is None
+                ):
+                    raise ValueError("worker exit requires observed empty process group")
+                self.db.execute(
+                    "INSERT OR REPLACE INTO process_workers VALUES (?, ?)",
+                    (request.submission_key, body),
+                )
+                self.db.execute("COMMIT")
+            except BaseException:
+                self.db.execute("ROLLBACK")
+                raise

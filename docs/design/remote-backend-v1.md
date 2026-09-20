@@ -231,3 +231,11 @@ DAG/服务 worker/HTTP/存储合跑 13 项通过，Ruff lint/format（194 文件
 首次模型服务选择现有已验证独立环境，不下载模型或 PyTorch。模型代码/权重/环境身份由已有 profile 身份工具计算并固定，上传输入按明确格式/尺寸/schema 验证。GLB 输出还须携带并核验 BackendNativeFrame、frame/unit、材质和关系，CPU PNG 反色验收不替代这些规则。服务 handler 捕获 PipelineError 时应保留其 error code；无法确认进程退出的超时不能直接变成可重试的终态失败。
 
 验收至少覆盖启动授权前崩溃不执行、授权后服务退出不重复启动、孤儿进程阻止新 GPU 作业、原组退出后显式处理、同一次远程 shape 输出导入与 provenance，以及完整单图发布。自动排队、服务目录 UI、公网认证和 ComfyUI 后续另行实现。
+
+## 服务端进程门控基础接口
+
+ServiceProcessWorker 复用 run_gated_process，将 prepared、identity_recorded、release_authorized、exit_observed 的 WorkerExecution 写入服务 SQLite。每次回调以旧记录 bytes 作 CAS，固定作业归属、启动摘要与进程身份；同作业只能登记一次进程，不能重放。事务内检查整个服务数据库的未退出记录，当前同一数据库串行占用一个进程槽。
+
+授权写入失败时 launcher 不释放命令；不完整记录保守保留占用，数据库重开不会自动清除。尚未接重新探测、显式释放占用或真实模型 handler，因此不要将其包装进现有通用 execute_service_job 后声称超时/孤儿进程可重试：后者目前会将普通异常记为失败，模型服务需先按退出证据区分不确定状态。此接口也不提供不同数据库之间的 GPU 互斥。
+
+服务进程/存储合跑 10 项通过：真实独立 Python 命令及退出记录、同作业拒绝重放、授权保存失败不执行、重开数据库后未退出记录阻止另一个作业。Ruff 和 mypy（98 源文件）通过，无真实模型/GPU 验证。
