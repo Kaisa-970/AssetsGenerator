@@ -1,7 +1,7 @@
 pipeline: cpu_image_editor
 version: 1
 inputs:
-  image: {kind: rgb_image, carriers: [artifact_ref], schema_name: raster_image, schema_version: "1.0"}
+  image: {kind: rgb_image, carriers: [artifact_ref]}
 nodes:
   encode:
     operator: encode_png@1

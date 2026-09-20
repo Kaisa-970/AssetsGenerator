@@ -151,6 +151,9 @@ export function ExecutionPanel({
     setInputRefs({});
     setReusedImage(undefined);
   }, [inputSignature]);
+  useEffect(() => {
+    if (reusedImage) setImageSource("reference");
+  }, [reusedImage]);
   const multiView =
     Object.keys(pipeline.inputs).length === 1 &&
     "observations" in pipeline.inputs;
@@ -491,16 +494,19 @@ export function ExecutionPanel({
             图片来源
             <select
               aria-label="图片来源"
-              value={imageSource}
+              value={reusedImage ? "reference" : imageSource}
               disabled={pending || uploading}
-              onChange={(e) => setImageSource(e.target.value)}
+              onChange={(e) => {
+                setImageSource(e.target.value);
+                if (e.target.value !== "reference") setReusedImage(undefined);
+              }}
             >
               <option value="path">服务器本地路径</option>
               <option value="upload">从浏览器上传</option>
               <option value="reference">使用历史输出</option>
             </select>
           </label>
-          {imageSource === "reference" ? (
+          {reusedImage || imageSource === "reference" ? (
             <div>
               <p>在下方选择历史运行，点击匹配输出的“用作输入”。</p>
               {reusedImage && (
@@ -800,6 +806,7 @@ export function ExecutionPanel({
                         key={`reuse:${output.node_id}:${output.port}:${name}`}
                         disabled={pending || uploading || unresolvedCreation}
                         onClick={() => {
+                          if (!multiInput) setImageSource("reference");
                           const revision = inputGeneration.current.revision;
                           void mutate(async () => {
                             const source = await request(
