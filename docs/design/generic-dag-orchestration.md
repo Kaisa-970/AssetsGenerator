@@ -2,7 +2,7 @@
 
 **状态**：通用 DAG 编译、串行调度、人工等待、受控进程及单图/多视图 Adapter 已实现；React Flow B1 和 B2 单图执行已接入，完整 B2/C 尚未关闭\
 **目标版本**：Generic DAG Core v1 / Node Editor v1\
-**适用范围**：本地单机执行、人工等待与恢复；HTTP/ComfyUI 为后续目标\
+**适用范围**：本地单机执行、人工等待与恢复；HTTP shape 已接入；ComfyUI 为后续目标\
 **验收边界**：真实单图画布及完成后恢复见 [B2 报告](../reports/node-editor-b2-real-smoke.md)。设计描述不代替运行证据，Fake Backend 不证明模型质量。
 
 ## 1. 目标
@@ -39,7 +39,7 @@ Artifact Store + BuildRun + Provenance + QualityReport
 - React Flow 可编辑草稿、编译、执行单图、展示固定运行图、基础参数表单及嵌入 mask 审查。
 - 本地 profile 可按节点选择，名称及身份进入绑定和 provenance；多实例共享选区的独立发布已做 CPU 验证，尚未验收同图两种真实模型。
 
-浏览器图像上传已接入，输入持久化为 Artifact 后显式启动。画布多视图已接入已有 ObservationBundle 引用的执行入口，并完成真实 DA3/Open3D 双视图功能 smoke；多视图浏览器支持逐张上传 RGB 并组包（CPU 测试）；仍未接入：通用 HTTP Backend 和 ComfyUI；复杂嵌套参数仍使用 JSON。运行创建已支持耐久幂等回执及浏览器原请求显式重试；重复 POST 不自动恢复或派发已有运行。真实 SAM→人工选区→远程 TRELLIS.2→发布链已完成一次 smoke（当前 TRELLIS.2 后处理采用无纹理几何 fallback）；完整 B2 和远程 Milestone C 仍需后续验收。
+浏览器图像上传已接入，输入持久化为 Artifact 后显式启动。画布多视图已接入已有 ObservationBundle 引用的执行入口，并完成真实 DA3/Open3D 双视图功能 smoke；多视图浏览器支持逐张上传 RGB 并组包（CPU 测试）；HTTP shape 服务已通过受信配置接入；任意 HTTP 模型协议适配和 ComfyUI 仍未接入；复杂嵌套参数仍使用 JSON。运行创建已支持耐久幂等回执及浏览器原请求显式重试；重复 POST 不自动恢复或派发已有运行。真实 SAM→人工选区→远程 TRELLIS.2→发布链已完成一次 smoke（当前 TRELLIS.2 后处理采用无纹理几何 fallback）；完整 B2 和远程 Milestone C 仍需后续验收。
 
 ## 3. 范围与非目标
 
@@ -594,7 +594,7 @@ Milestone A 前允许独立的纯前端技术 spike，但它不得触发真实�
 1. 编译采用不可变 `CompiledPlan`，执行采用 `BoundDagPlan`。原 `ResolvedPlan` 仍用于复合单图/多视图 workflow 内部 Backend 绑定；它不是 DAG 父运行的身份替代。
 2. 关系由 OperatorSpec 显式声明，RelationValidatorRegistry 提供具名版本化实现，编译及固定计划记录关系身份。
 3. 既有固定 WorkbenchPlan/WorkbenchState 入口继续保留；通用 DAG 使用 BuildRun.dag。旧记录不原地迁移，不把未验证的旧状态当成新 DAG 成功。
-4. 单图首批拆为 proposals、人工选择、asset build；多视图拆为 geometry、reconstruction、release。发布内部 canonicalize/QA/assemble/export 仍为复合操作，尚未作为任意可组合节点开放。
+4. 单图首批拆为 proposals、人工选择、asset build；多视图拆为 geometry、reconstruction、release。远程单图链已另行提供 canonicalize、QA、shape assembly、export 独立 Adapter 和明确关系校验；原本地和多视图复合发布保留，不能据此认定所有组合均受支持。
 
 这些决定并不表示完整模块目录或所有 paper workflow 均可表达。结果交互预览、复杂参数编辑、更多明确 relation 的组合算子及远程 Backend 仍需分别实现和验收。
 

@@ -1,6 +1,6 @@
 # 本机远程 shape 服务实验入口
 
-当前供开发验收使用。已完成 [TRELLIS.2 远程 shape GPU smoke](../reports/remote-shape-real-smoke.md)，以及 [真实 SAM 选区到远程 TRELLIS.2 发布链](../reports/remote-selected-trellis-fallback-real-smoke.md)；编辑器服务目录仍未接入。这些 smoke 不代表质量验收。复用已有 TripoSR/TRELLIS2 环境和模型，不安装 PyTorch 或下载权重。
+当前供开发验收使用。已完成 [TRELLIS.2 远程 shape GPU smoke](../reports/remote-shape-real-smoke.md)，以及 [真实 SAM 选区到远程 TRELLIS.2 发布链](../reports/remote-selected-trellis-fallback-real-smoke.md)；编辑器可通过 `--remote-config` 加载可信服务目录并按节点选择。这些 smoke 不代表质量验收。复用已有 TripoSR/TRELLIS2 环境和模型，不安装 PyTorch 或下载权重。
 
 配置 JSON 只包含 `profiles`，每个 profile 的字段沿用 workbench shape 配置（backend/python/repo/model，以及可选模型参数）；不包含 `sam`。所有资源路径指向现有本地资源，TripoSR 仍要求 frame_validation。
 

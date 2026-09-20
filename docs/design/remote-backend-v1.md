@@ -1,18 +1,26 @@
 # 远程 Backend v1：作业协议与恢复边界
 
-状态：协议、HTTP 上传/下载、耐久提交日志和 DAG attempt 归属桥接已实现；DAG 已有受信注册的 remote 调度实验路径及 CPU HTTP 回归，已接显式输入上传，尚无生产服务目录或真实模型验收。对应通用编排设计 Milestone C。以下“当前落地证据”及其后各节是按提交追加的历史记录，其中“尚未实现”描述只适用于该节当时状态；以本节和下表为当前状态。
+状态：耐久 HTTP 作业服务、DAG remote 调度、进程门控、可信启动配置目录和编辑器逐节点 Backend 选择已接入。真实 TRELLIS.2 shape 及 SAM 选区到发布链已有脚本 smoke；完整 Milestone C 尚未关闭。以下历史追加章节中的“尚未实现”仅适用于当时状态，当前状态以本节为准。
 
 | 能力 | 当前状态 |
 | --- | --- |
 | 请求与服务身份、严格 JSON、有限 HTTP 传输 | 已实现，本机 HTTP 回归覆盖 |
-| 输入 Blob 上传、固定成功结果下载 | 已实现；CPU 图像测试有实际解码导入，真实模型输出导入待接 |
-| 耐久提交日志、父 DAG attempt 归属 | 已实现内部桥接；不能直接作为公开执行入口 |
-| remote Adapter、非终态调度、恢复与重试门控 | 实验路径已实现并经 CPU HTTP 回归；尚未接生产目录或 UI |
-| 服务端耐久作业、HTTP、显式 worker | 已实现 SQLite 基础、本机 HTTP 重开与 CPU worker SIGKILL 不重放测试 |
-| 真实模型 | TRELLIS.2 已完成真实远程 shape 与 SAM→选区→发布链 smoke；当前一次运行记录了 `CuMesh` 后处理 fallback，不代表完整纹理质量 |
-| 服务目录与 UI | 尚未实现；编辑器仍需显式受信配置 |
+| 输入 Blob 上传、固定成功结果下载 | 已实现；实际 RGBA/GLB 解码与契约校验，真实 TRELLIS.2 输出已导入 |
+| 耐久提交日志、父 DAG attempt 归属 | 已接调度、固定结果与恢复；重试须核实旧作业状态 |
+| remote Adapter、非终态调度、恢复与重试门控 | 已接编辑器运行入口；查询不自动派发，显式恢复继续核实结果 |
+| 服务端耐久作业与进程门控 | SQLite、HTTP 重开、CPU worker 中断回归；显式执行/队列命令与进程退出核实 |
+| 真实模型 | TRELLIS.2 shape 和 SAM→选区→发布链脚本 smoke；一次 CuMesh 后处理采用无纹理 fallback，不代表质量验收 |
+| 服务目录与 UI | 启动时 `--remote-config` 注册可信 profiles，画布逐节点选择；固定部署参数随切换清除，后端重新绑定 |
+| 本地分割与远程生成 | `--proposal-config` 只加载 SAM，无本地 Shape 依赖；真实 SAM 启动核验及 CPU 发布/恢复回归 |
+| 双服务组合 | 两个 HTTP 服务的 CPU 独立作业、10 节点双发布与离线恢复；真实双模型尚未验收 |
+| ComfyUI | 尚未实现；需独立定义复合 workflow 与内部证据边界 |
 
-首批使用模拟 HTTP 服务验证，再接真实独立模型服务，ComfyUI 另行封装。
+当前目录是启动配置，不是自动服务发现、在线注册或部署管理。新配置入口的真实浏览器
+全链、远程真实模型推理中的服务异常退出仍需单独验收；CPU 测试不能替代这些证据。
+验证与使用见 [服务指南](../guides/remote-shape-service.md)、
+[真实 shape](../reports/remote-shape-real-smoke.md)、
+[选区发布链](../reports/remote-selected-trellis-fallback-real-smoke.md) 和
+[SAM-only 启动](../reports/sam-only-editor-startup.md)。
 
 ## 固定身份
 
