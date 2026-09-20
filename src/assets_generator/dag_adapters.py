@@ -309,6 +309,14 @@ class BoundDagPlan:
         return cls.from_dict(raw, registry=registry, relation_registry=relation_registry)
 
 
+class NodeBindingError(ContractError):
+    """A binding diagnostic tied to a known compiled node instance."""
+
+    def __init__(self, node_id: str, message: str):
+        self.node_id = node_id
+        super().__init__(f"node {node_id}: {message}")
+
+
 class AdapterRegistry:
     def catalog(self) -> list[dict[str, Any]]:
         """Describe registered capabilities without invoking an adapter."""
@@ -397,7 +405,7 @@ class AdapterRegistry:
                 else list(self._adapters.values())
             )
             if node.backend is not None and not candidates:
-                raise ContractError(f"unresolved Backend: {node.backend}")
+                raise NodeBindingError(node.node_id, f"unresolved Backend: {node.backend}")
             choices = [
                 a
                 for a in candidates
@@ -405,15 +413,19 @@ class AdapterRegistry:
                 and (node.adapter is None or a.spec.key == node.adapter)
             ]
             if len(choices) != 1:
-                raise ContractError(f"node {node.node_id} requires exactly one compatible adapter")
+                raise NodeBindingError(node.node_id, "requires exactly one compatible adapter")
             adapter = choices[0]
             spec = adapter.spec.to_dict()
+            try:
+                parameters = adapter.spec.normalize_parameters(node.parameters)
+            except ContractError as error:
+                raise NodeBindingError(node.node_id, str(error)) from error
             bindings[node.node_id] = BoundAdapter(
                 adapter.spec.key,
                 spec,
                 digest(spec),
                 adapter_implementation_digest(adapter),
-                adapter.spec.normalize_parameters(node.parameters),
+                parameters,
                 node.backend,
             )
         provisional = BoundDagPlan("", plan, bindings)

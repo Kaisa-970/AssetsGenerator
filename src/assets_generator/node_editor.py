@@ -16,7 +16,7 @@ from urllib.parse import urlsplit
 import yaml
 
 from .contracts import ContractError
-from .dag_adapters import AdapterRegistry
+from .dag_adapters import AdapterRegistry, NodeBindingError
 from .multi_view_relations import register_multi_view_relations
 from .node_editor_execution import NodeEditorExecution, validate_editor_inputs
 from .pipeline import (
@@ -103,6 +103,9 @@ class DraftEditor:
         except (ValueError, KeyError, TypeError, AttributeError) as error:
             message = str(error)
             diagnostic: dict[str, Any] = {"message": message}
+            if isinstance(error, NodeBindingError):
+                diagnostic["node_id"] = error.node_id
+                return {"ok": False, "diagnostics": [diagnostic]}
             location = re.match(r"^([\w-]+)\.([\w-]+)\s", message)
             if location:
                 diagnostic.update(node_id=location[1], port=location[2])

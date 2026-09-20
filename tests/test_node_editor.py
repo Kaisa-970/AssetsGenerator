@@ -107,7 +107,13 @@ def test_catalog_and_compile_use_optional_registered_adapter(tmp_path):
         },
     }
     assert editor.catalog()["adapters"][0]["defaults"] == {"count": 1}
-    assert not editor.compile(raw)["ok"]
+    # A second instance named like the parameter must not confuse location.
+    raw["nodes"]["count"] = {**raw["nodes"]["copy"], "parameters": {"count": 1}}
+    failure = editor.compile(raw)
+    assert not failure["ok"]
+    assert failure["diagnostics"][0]["node_id"] == "copy"
+    assert "parameters.count" in failure["diagnostics"][0]["message"]
+    assert "port" not in failure["diagnostics"][0]
     raw["nodes"]["copy"]["parameters"]["count"] = 1
     result = editor.compile(raw)
     assert result["ok"], result
