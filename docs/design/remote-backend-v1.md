@@ -303,3 +303,7 @@ profile/原 workbench loader/DAG shape 合跑 26 项通过；新增测试将 SAM
 ## 独立命令入口
 
 新增 python -m assets_generator.remote_shape_cli：serve 仅监听登记/查询，execute 显式执行指定 queued 作业，inspect 只读结果，observe 重新探测进程。全部使用 shape-only profile，并固定数据库服务身份；操作说明见 ../guides/remote-shape-service.md。命令/profile 合跑 5 项通过，Ruff/mypy（104 文件）通过；CLI 测试替换 profile/handler，不证明真实模型可用。尚未进行真实资源启动或 GPU 验收。
+
+## 首次真实模型结果
+
+TRELLIS.2 已完成单个远程 shape DAG 节点的真实 GPU smoke，含完成后关闭 HTTP 服务的离线恢复。详见[报告](../reports/remote-shape-real-smoke.md)。该结果不关闭完整发布、编辑器目录、自动队列或推理中真实模型中断验收。

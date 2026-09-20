@@ -2,7 +2,7 @@
 
 [节点编辑器使用指南](guides/node-editor.md) · [B2 实现状态与剩余项](reports/node-editor-b2-status.md)
 
-[远程 shape 服务实验入口](guides/remote-shape-service.md)
+[远程 shape 服务实验入口](guides/remote-shape-service.md) · [TRELLIS.2 远程真实 smoke](reports/remote-shape-real-smoke.md)
 
 ## 架构与契约 · design
 
