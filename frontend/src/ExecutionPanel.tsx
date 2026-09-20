@@ -31,7 +31,7 @@ type Envelope = {
   run: Run;
   busy?: boolean;
   error?: string | null;
-  outputs?: { node_id: string; port: string; url: string }[];
+  outputs?: { node_id: string; port: string; kind?: string; url: string }[];
 };
 async function request(path: string, body?: unknown, signal?: AbortSignal) {
   const response = await fetch(path, {
@@ -526,9 +526,9 @@ export function ExecutionPanel({
           </button>
           {!!envelope.outputs?.length && (
             <div className="run-node">
-              <strong>已发布输出</strong>
+              <strong>可查看的节点输出</strong>
               {envelope.outputs
-                .filter((output) => output.port === "glb")
+                .filter((output) => output.kind === "gltf_asset" || (!output.kind && output.port === "glb"))
                 .map((output) => (
                   <button
                     key={`preview:${output.node_id}`}

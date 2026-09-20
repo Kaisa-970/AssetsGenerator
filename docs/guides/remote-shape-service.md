@@ -76,3 +76,7 @@ endpoint/service_id/backend_digest 固定在参数 enum 中，草稿不能任意
 远程节点运行面板展示上次保存的 queued/running/unknown 提示、服务名称和可复制的 submission key。
 把该标识传给服务端 `execute --job`。提示不是实时服务状态；点击“恢复 / 继续此运行”才会核实
 原作业并继续后续节点，普通页面轮询不会派发或重复提交。
+
+运行面板按 Artifact kind 列出 GLB、AssetDefinition、AssetRelease 和 QualityReport，
+因此 `quality.report` 也可直接查看。读取前验证证据闭包；报告节点成功只说明报告生成成功，
+质量结论以 JSON 内 `overall_status` 和各项检查为准。中间 triangle_mesh 不作为交付 GLB 展示。

@@ -89,6 +89,16 @@ class NodeEditorExecution:
         run = self.engine.repository.load(run_id)
         return self.engine._plan(run).to_dict()
 
+    def _viewable_output(self, ref: object) -> bool:
+        if not isinstance(ref, ArtifactRef):
+            return False
+        return self.engine.store.get_manifest(ref.artifact_id).identity.kind in {
+            "gltf_asset",
+            "asset_release",
+            "asset_definition",
+            "quality_report",
+        }
+
     def snapshot(self, run_id: str) -> dict[str, Any]:
         self._owned(run_id)
         run = self.engine.repository.load(run_id)
@@ -107,12 +117,13 @@ class NodeEditorExecution:
                 {
                     "node_id": state.node_id,
                     "port": port,
+                    "kind": self.engine.store.get_manifest(ref.artifact_id).identity.kind,
                     "url": f"/api/runs/{run_id}/outputs/{state.node_id}/{port}",
                 }
                 for state in run.dag.node_states.values()
                 if state.status == "succeeded"
                 for port, ref in state.current().outputs.items()
-                if port in {"glb", "release", "asset", "qa"} and isinstance(ref, ArtifactRef)
+                if isinstance(ref, ArtifactRef) and self._viewable_output(ref)
             ],
             "busy": bool(self._active_run == run_id and self._worker and self._worker.is_alive())
             or review_busy,
@@ -123,14 +134,14 @@ class NodeEditorExecution:
     def output(self, run_id: str, node_id: str, port: str) -> OutputPayload:
         self._owned(run_id)
         run = self.engine.repository.load(run_id)
-        if run.dag is None or port not in {"glb", "release", "asset", "qa"}:
+        if run.dag is None:
             raise ContractError("unsupported output")
         state = run.dag.node_states[node_id]
         if state.status != "succeeded":
             raise ContractError("output requires a successful node")
         ref = state.current().outputs[port]
-        if not isinstance(ref, ArtifactRef):
-            raise ContractError("output is not an artifact")
+        if not isinstance(ref, ArtifactRef) or not self._viewable_output(ref):
+            raise ContractError("unsupported output artifact kind")
         self.engine.repository.verify_reference_closure(ref)
         media = self.engine.store.get_manifest(ref.artifact_id).identity.identity_metadata.get(
             "media_type", "application/octet-stream"
