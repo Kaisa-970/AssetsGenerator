@@ -140,18 +140,27 @@ class NodeEditorExecution:
             "quality_report",
         }
 
+    def _run_busy(self, run_id: str) -> bool:
+        review = self._review
+        return bool(
+            (self._active_run == run_id and self._worker and self._worker.is_alive())
+            or (
+                review
+                and review[0].run_id == run_id
+                and review[0]._thread
+                and review[0]._thread.is_alive()
+            )
+        )
+
     def snapshot(self, run_id: str) -> dict[str, Any]:
         self._owned(run_id)
+        # A worker can publish its final snapshot and exit while this read is in
+        # flight. Never label the earlier snapshot idle; let the next poll reload.
+        busy_before = self._run_busy(run_id)
         run = self.engine.repository.load(run_id)
         if run.dag is None:
             raise ContractError("not a DAG run")
         review = self._review
-        review_busy = bool(
-            review
-            and review[0].run_id == run_id
-            and review[0]._thread
-            and review[0]._thread.is_alive()
-        )
         return {
             "run": to_primitive(run),
             "outputs": [
@@ -166,8 +175,7 @@ class NodeEditorExecution:
                 for port, ref in state.current().outputs.items()
                 if isinstance(ref, ArtifactRef) and self._viewable_output(ref)
             ],
-            "busy": bool(self._active_run == run_id and self._worker and self._worker.is_alive())
-            or review_busy,
+            "busy": busy_before or self._run_busy(run_id),
             "error": self._errors.get(run_id)
             or (review[0]._error if review and review[0].run_id == run_id else None),
         }

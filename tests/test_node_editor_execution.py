@@ -558,3 +558,42 @@ def test_observation_import_preserves_order_and_does_not_execute(tmp_path):
                 service.import_observations(refs)
         finally:
             service.close()
+
+
+@pytest.mark.parametrize("human", [False, True])
+def test_snapshot_cannot_label_pre_completion_read_idle(tmp_path, monkeypatch, human):
+    from types import SimpleNamespace
+
+    store, _, profile = fixture_engine(tmp_path)
+    registry, _ = image_plan(profile)
+    with DagRepository(store, tmp_path / "dag") as repo:
+        service = NodeEditorExecution(DagEngine(repo, registry))
+        try:
+            run_id = service.start(raw(), str(tmp_path / "fixture/scene.png"))["run"]["run_id"]
+            wait(service, run_id)
+            active = True
+            worker = SimpleNamespace(is_alive=lambda: active)
+            if human:
+                service._worker = None
+                service._review = (
+                    SimpleNamespace(run_id=run_id, _thread=worker, _error=None),
+                    None,
+                    None,
+                )
+            else:
+                service._active_run, service._worker = run_id, worker
+            original_load = repo.load
+
+            def finish_during_load(key):
+                nonlocal active
+                snapshot = original_load(key)
+                active = False
+                return snapshot
+
+            monkeypatch.setattr(repo, "load", finish_during_load)
+            assert service.snapshot(run_id)["busy"] is True
+            assert service.snapshot(run_id)["busy"] is False
+        finally:
+            service._review = None
+            service._worker = None
+            service.close()
