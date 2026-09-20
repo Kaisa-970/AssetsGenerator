@@ -46,3 +46,13 @@ Vite 仍提示 GLB 预览 chunk 超过 500 kB；此次没有改变打包策略�
 新增单图 workflow 回归验证 `postprocess_mode` 进入 shape provenance；
 这不追溯修改既有发布证据，也不证明真实运行使用了某一种后处理路径。
 本轮未重跑 GPU，没有新增纹理质量或模型能力结论。
+
+## SAM-only、观测关联与双服务模板后的全量回归
+
+代码基线 `05037ba`，测试期间未修改实现。单次完整 Python 测试
+**1123 passed in 337.81s**；Ruff lint、format（221 文件）和 mypy
+（110 源文件）通过。覆盖当前 Operator 可选观测输入、观测关联、Release 组装证据、
+SAM-only profiles 与双 HTTP 服务 CPU 发布/恢复的已登记回归。
+
+本轮没有重新运行前端浏览器、构建或 GPU 验收。之前的真实浏览器配置编译仅证明
+启动与绑定，不能替代待完成的真实选区→远程推理→发布完整浏览器验收。
