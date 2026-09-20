@@ -57,8 +57,17 @@ validate 仅校验本地配置，不证明服务或模型可用。start 领取�
 只查询一次结果，不持续轮询。未完成、历史缺失或传输不确定返回退出码 3；之后
 使用 resume 查询原任务，不要重复 start 或更换 key 来绕过占用。status 只读取记录。
 
-成功结果在作业数据库中提供 `image` 和 `evidence` 输出，现阶段通过已有服务
-Store API 读取；此 CLI 尚无下载到文件命令。证据同时固定在 Artifact Store，
+成功结果在作业数据库中提供 `image` 和 `evidence` 输出，可分别下载：
+
+```bash
+assets-generator comfy-image download --profile /path/to/profile.json \
+  --directory /path/to/jobs --key image-001 --output-id image --output /path/to/image.png
+assets-generator comfy-image download --profile /path/to/profile.json \
+  --directory /path/to/jobs --key image-001 --output-id evidence --output /path/to/evidence.json
+```
+
+下载验证已发布 Blob 摘要与长度，原子写入新文件，拒绝覆盖已有路径。它不恢复或
+派发计算，也不是包含所有依赖的可移植 Store 备份。证据同时固定在 Artifact Store，
 只覆盖复合边界，内部模型、自定义节点身份仍标为 unverified。保留 jobs 与 Store。
 上传后、提交绑定前中断会保守阻塞，尚不支持自动续跑或远程取消。上游明确失败
 历史的终态发布仍待接入，不应手工删除日志来解锁。

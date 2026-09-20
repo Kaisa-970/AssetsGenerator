@@ -97,3 +97,70 @@ def test_cli_resume_missing_database_does_not_recreate(tmp_path):
     with pytest.raises(ValueError, match="refusing to recreate"):
         _execute(parser, args)
     assert not directory.exists()
+
+
+def test_cli_download_verified_output_without_execution_or_overwrite(tmp_path, monkeypatch, capsys):
+    from assets_generator.serialization import sha256_bytes
+
+    raw = profile()
+    raw["image_targets"] = {}
+    path = tmp_path / "profile.json"
+    path.write_text(json.dumps(raw))
+    loaded = ComfyImageProfile.load(path)
+    req = loaded.request("one", images={}, parameters={})
+    directory = tmp_path / "jobs"
+    owner = RemoteServiceStore(directory / "service.sqlite", loaded.identity)
+    data = b"verified service output"
+    digest = sha256_bytes(data)
+    owner.submit(req)
+    owner.transition(req, expected="queued", state="running")
+    owner.put_blob(data, digest)
+    owner.transition(
+        req,
+        expected="running",
+        state="succeeded",
+        result={
+            "outputs": [
+                {
+                    "output_id": "image",
+                    "blob_digest": digest,
+                    "byte_length": len(data),
+                    "media_type": "image/png",
+                }
+            ]
+        },
+    )
+    owner.close()
+    monkeypatch.setattr(ComfyImageProfile, "start", lambda *a: pytest.fail("started"))
+    monkeypatch.setattr(ComfyImageProfile, "finish", lambda *a: pytest.fail("resumed"))
+    parser = _parser()
+    output = tmp_path / "downloads" / "image.png"
+    args = parser.parse_args(
+        [
+            "comfy-image",
+            "download",
+            "--profile",
+            str(path),
+            "--directory",
+            str(directory),
+            "--key",
+            "one",
+            "--output-id",
+            "image",
+            "--output",
+            str(output),
+        ]
+    )
+    assert _execute(parser, args) == 0
+    assert output.read_bytes() == data
+    assert json.loads(capsys.readouterr().out)["descriptor"]["blob_digest"] == digest
+    with pytest.raises(FileExistsError):
+        _execute(parser, args)
+    assert output.read_bytes() == data
+    owner = RemoteServiceStore(directory / "service.sqlite", loaded.identity)
+    owner.db.execute("UPDATE blobs SET body=? WHERE digest=?", (b"corrupt", digest))
+    owner.close()
+    args.output = tmp_path / "corrupt-output.png"
+    with pytest.raises(ValueError, match="missing/corrupt"):
+        _execute(parser, args)
+    assert not args.output.exists()

@@ -19,12 +19,14 @@ def add_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) 
     parser = subparsers.add_parser(
         "comfy-image", help="Experimental trusted ComfyUI image workflow"
     )
-    parser.add_argument("action", choices=("validate", "start", "resume", "status"))
+    parser.add_argument("action", choices=("validate", "start", "resume", "status", "download"))
     parser.add_argument("--profile", type=Path, required=True)
     parser.add_argument("--directory", type=Path)
     parser.add_argument("--store", type=Path)
     parser.add_argument("--key")
     parser.add_argument("--request", type=Path, help="JSON images ArtifactRefs and parameters")
+    parser.add_argument("--output-id", choices=("image", "evidence"))
+    parser.add_argument("--output", type=Path)
 
 
 def execute(args: argparse.Namespace) -> int:
@@ -38,6 +40,8 @@ def execute(args: argparse.Namespace) -> int:
         return 0
     if args.directory is None or not args.key:
         raise ValueError("ComfyUI action requires --directory and --key")
+    if args.action == "download" and (args.output_id is None or args.output is None):
+        raise ValueError("ComfyUI download requires --output-id and --output")
     path = args.directory / "service.sqlite"
     if args.action != "start" and not path.is_file():
         raise ValueError("ComfyUI service database missing; refusing to recreate")
@@ -80,6 +84,17 @@ def execute(args: argparse.Namespace) -> int:
             req = owner.request_for(args.key)
             if req is None:
                 raise ValueError("ComfyUI job missing")
+        if args.action == "download":
+            from .workbench_persistence import DurableIO
+
+            descriptor, data = owner.download(req, args.output_id)
+            DurableIO().write(args.output, data, exclusive=True)
+            print(
+                json.dumps(
+                    {"output": str(args.output), "descriptor": to_primitive(descriptor)}, indent=2
+                )
+            )
+            return 0
         if args.action != "status":
             assert store is not None
             profile.finish(owner, req, args.directory / "comfy.sqlite", store)

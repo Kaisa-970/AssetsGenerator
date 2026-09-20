@@ -345,3 +345,13 @@ start 显式领取 queued 任务并调用一次首次入口/完成入口；resum
 方法验证动作与恢复路由；带图片 HTTP 测试仍不经过 CLI。使用说明见
 [图像 profile 实验入口](../guides/comfy-image-profile.md)。没有真实服务验收，
 也未实现结果文件下载命令、失败历史终态发布或 DAG/画布节点。
+
+### CLI 结果下载
+
+comfy-image download 按 job key 和 image/evidence 输出 ID 读取已发布服务 Blob，
+验证摘要和长度后使用耐久原子写入创建文件，拒绝覆盖已有路径。不要求打开本地
+Artifact Store，也不调用 start/finish 或远程服务。下载的证据 JSON 仍引用原始
+Store Artifact，不是完整依赖闭包的可移植备份。
+
+CLI 3 项回归、Ruff 格式/检查和 mypy 通过；新增覆盖内容一致、无计算调用、已有
+文件不覆盖和损坏 Blob 不生成输出。未重跑完整 ComfyUI 套件，也未运行真实模型。
