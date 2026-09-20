@@ -434,3 +434,43 @@ def test_direct_resume_establishes_creation_marker(tmp_path, monkeypatch):
                 service.start(raw(), str(tmp_path / "fixture/scene.png"), idempotency_key="resume")
         finally:
             service.close()
+
+
+def test_multi_view_editor_start_replay_and_resume(tmp_path, monkeypatch):
+    from test_dag_multi_view import setup
+
+    from assets_generator.node_editor import DraftEditor
+    from assets_generator.pipeline import load_operator_specs
+
+    store, observations, registry, relations, _, calls = setup(tmp_path, monkeypatch)
+    specs_path = Path("examples/dag-multi-view-operators.yaml")
+    graph = yaml.safe_load(Path("examples/dag-multi-view-asset.yaml").read_text())
+    with DagRepository(store, tmp_path / "editor") as repo:
+        service = NodeEditorExecution(
+            DagEngine(repo, registry, relations),
+            specs=load_operator_specs(specs_path),
+            relations=relations,
+        )
+        editor = DraftEditor(tmp_path / "drafts", operators=specs_path, execution=service)
+        try:
+            assert editor.compile(graph)["execution_ready"]
+            options = {
+                "observations_ref": {"artifact_id": observations.artifact_id},
+                "idempotency_key": "multiview",
+            }
+            started = service.start(graph, **options)
+            run_id = started["run"]["run_id"]
+            result = wait(service, run_id)
+            assert result["run"]["status"] == "succeeded", result
+            assert calls == {"geometry": 1, "reconstruction": 1}
+            assert service.start(graph, **options)["run"]["run_id"] == run_id
+            service.resume(run_id, result["run"]["dag"]["revision"])
+            assert wait(service, run_id)["run"]["status"] == "succeeded"
+            assert calls == {"geometry": 1, "reconstruction": 1}
+            assert repo.load(run_id).dag.named_actual_inputs == {"observations": observations}
+            with pytest.raises(ContractError, match="input source"):
+                service.start(graph, image_ref={"artifact_id": observations.artifact_id})
+            for output in result["outputs"]:
+                assert service.output(run_id, output["node_id"], output["port"]).data
+        finally:
+            service.close()

@@ -1,4 +1,4 @@
-"""Local draft editor with optional owned single-image DAG execution."""
+"""Local draft editor with owned image or multi-view DAG execution."""
 
 from __future__ import annotations
 
@@ -255,14 +255,19 @@ def create_editor_server(editor: DraftEditor, port: int = 8767) -> ThreadingHTTP
                     if not isinstance(body, dict) or set(body) - {"idempotency_key"} not in (
                         {"pipeline", "image_path"},
                         {"pipeline", "image_ref"},
+                        {"pipeline", "observations_ref"},
                     ):
-                        raise ValueError("run requires pipeline and exactly one image source")
+                        raise ValueError("run requires pipeline and exactly one input source")
                     options: dict[str, Any] = {}
                     if "idempotency_key" in body:
                         if not isinstance(body["idempotency_key"], str):
                             raise ValueError("idempotency_key must be text")
                         options["idempotency_key"] = body["idempotency_key"]
-                    if "image_ref" in body:
+                    if "observations_ref" in body:
+                        value = editor.execution.start(
+                            body["pipeline"], observations_ref=body["observations_ref"], **options
+                        )
+                    elif "image_ref" in body:
                         value = editor.execution.start(
                             body["pipeline"], image_ref=body["image_ref"], **options
                         )
@@ -320,15 +325,20 @@ def serve_editor(
     config: Path | None = None,
     store: Path | None = None,
     profile: str | None = None,
+    multi_view_config: Path | None = None,
 ) -> None:
     from contextlib import ExitStack
 
     with ExitStack() as stack:
         execution = None
         editor = DraftEditor(directory, operators, templates)
-        if any(value is not None for value in (config, store, profile)):
-            if config is None or store is None or profile is None:
-                raise ValueError("execution requires --config, --store and --profile together")
+        if any(value is not None for value in (config, store, profile, multi_view_config)):
+            if store is None or (multi_view_config is None and (config is None or profile is None)):
+                raise ValueError(
+                    "execution requires --store and an image or multi-view configuration"
+                )
+            if (config is None) != (profile is None):
+                raise ValueError("image execution requires --config and --profile together")
             from .artifact_store import LocalArtifactStore
             from .dag_engine import DagEngine
             from .dag_persistence import DagRepository
@@ -336,11 +346,26 @@ def serve_editor(
             from .serialization import read_json
             from .workbench_profiles import load_profiles
 
-            profiles = load_profiles(
-                read_json(config),
-                progress=lambda message: print(message, file=sys.stderr, flush=True),
-            )
-            registry = image_adapter_registry(profiles, profile)
+            registry = AdapterRegistry()
+            if config is not None and profile is not None:
+                profiles = load_profiles(
+                    read_json(config),
+                    progress=lambda message: print(message, file=sys.stderr, flush=True),
+                )
+                registry = image_adapter_registry(profiles, profile)
+            if multi_view_config is not None:
+                from .dag_profiles import register_multi_view_profiles
+                from .multi_view_profiles import load_multi_view_profile
+
+                raw = read_json(multi_view_config)
+                if set(raw) != {"default_profile", "profiles"} or not isinstance(
+                    raw["profiles"], dict
+                ):
+                    raise ValueError("multi-view config requires default_profile and profiles")
+                configured = {
+                    name: load_multi_view_profile(value) for name, value in raw["profiles"].items()
+                }
+                register_multi_view_profiles(registry, configured, raw["default_profile"])
             repository = DagRepository(LocalArtifactStore(store), directory / "runtime")
             stack.enter_context(repository)
             execution = NodeEditorExecution(

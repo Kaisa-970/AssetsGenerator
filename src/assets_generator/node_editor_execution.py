@@ -30,18 +30,25 @@ from .workbench_persistence import CreationReceipt
 from .workflow import _import_image
 
 
-def validate_editor_inputs(plan: CompiledPlan) -> None:
-    """Check the input shape supported by the canvas start endpoint."""
-    if set(plan.inputs) != {"image"}:
-        raise ContractError("canvas execution currently requires exactly one input named image")
-    contract = plan.inputs["image"].contract
-    if tuple(contract["kinds"]) != ("rgb_image",):
-        raise ContractError("canvas image input must have rgb_image kind")
+def validate_editor_inputs(plan: CompiledPlan) -> str:
+    """Return the supported input name; compilation and creation share this gate."""
+    if set(plan.inputs) == {"image"}:
+        name, kind = "image", "rgb_image"
+    elif set(plan.inputs) == {"observations"}:
+        name, kind = "observations", "observation_bundle"
+    else:
+        raise ContractError(
+            "canvas execution requires exactly one input named image or observations"
+        )
+    contract = plan.inputs[name].contract
+    if tuple(contract["kinds"]) != (kind,):
+        raise ContractError(f"canvas {name} input must have {kind} kind")
     if "artifact_ref" not in contract["carriers"] or contract["cardinality"] not in {
         "one",
         "zero_or_one",
     }:
-        raise ContractError("canvas image input must accept a scalar ArtifactRef")
+        raise ContractError(f"canvas {name} input must accept a scalar ArtifactRef")
+    return name
 
 
 class NodeEditorExecution:
@@ -239,6 +246,7 @@ class NodeEditorExecution:
         image_path: str | None = None,
         *,
         image_ref: dict[str, Any] | None = None,
+        observations_ref: dict[str, Any] | None = None,
         idempotency_key: str | None = None,
     ) -> dict[str, Any]:
         with self._lock:
@@ -260,21 +268,29 @@ class NodeEditorExecution:
                 ),
                 relation_registry=self.relations,
             )
-            validate_editor_inputs(plan.static_plan)
-            contract = plan.static_plan.inputs["image"].contract
-            if (image_path is None) == (image_ref is None):
-                raise ContractError("provide exactly one of image_path or image_ref")
-            if image_ref is not None:
-                if not isinstance(image_ref, dict) or set(image_ref) != {"artifact_id"}:
-                    raise ContractError("image_ref must be an ArtifactRef")
-                image = ArtifactRef(**image_ref)
+            name = validate_editor_inputs(plan.static_plan)
+            contract = plan.static_plan.inputs[name].contract
+            if sum(v is not None for v in (image_path, image_ref, observations_ref)) != 1:
+                raise ContractError("provide exactly one input source")
+            if (name == "observations") != (observations_ref is not None):
+                raise ContractError("input source does not match pipeline input")
+            reference = observations_ref if name == "observations" else image_ref
+            if reference is not None:
+                if not isinstance(reference, dict) or set(reference) != {"artifact_id"}:
+                    raise ContractError("input reference must be an ArtifactRef")
+                image = ArtifactRef(**reference)
             else:
                 if not isinstance(image_path, str) or not image_path.strip():
                     raise ContractError("image path is required")
                 image = _import_image(self.engine.store, Path(image_path).expanduser(), "rgb_image")
+            if name == "observations":
+                from .observations import observation_bundle_from_artifact
+
+                observation_bundle_from_artifact(image, self.engine.store)
+                self.engine.repository.verify_reference_closure(image)
             validate_port_value(
                 operator=plan.static_plan.pipeline_name,
-                port_name="image",
+                port_name=name,
                 spec=_port_spec(thaw(contract)),
                 value=image,
                 store=self.engine.store,
@@ -288,7 +304,7 @@ class NodeEditorExecution:
                 receipt = repository.reserve_creation(
                     CreationReceipt(
                         "node-editor:" + idempotency_key,
-                        cache_key({"plan": plan.to_dict(), "image": to_primitive(image)}),
+                        cache_key({"plan": plan.to_dict(), name: to_primitive(image)}),
                         f"dag_{uuid.uuid4().hex}",
                     )
                 )
@@ -300,7 +316,7 @@ class NodeEditorExecution:
                     if (
                         existing.dag is None
                         or existing.dag.plan_id != plan.plan_id
-                        or existing.dag.named_actual_inputs != {"image": image}
+                        or existing.dag.named_actual_inputs != {name: image}
                     ):
                         raise ContractError("creation receipt does not match persisted run")
                     if not marker.exists():
@@ -317,7 +333,7 @@ class NodeEditorExecution:
                     raise ContractError("created run index is missing; refusing to recreate it")
             self._idle()
             self._stop_review()
-            run = self.engine.create(plan, {"image": image}, run_id=run_id)
+            run = self.engine.create(plan, {name: image}, run_id=run_id)
             if marker is not None:
                 repository._mutate(
                     lambda: repository.io.write(

@@ -48,7 +48,7 @@ PYTHONPATH=src <MAIN_CHECKOUT>/.venv/bin/python -m assets_generator.cli node-edi
 
 运行创建使用幂等键：浏览器先在当前标签页 sessionStorage 保存请求，再发送启动命令。若响应丢失或页面刷新，可点击“重试原创建请求”重发原图和输入；修改草稿不会改变待重试请求。同一键绑定同一计划和图片内容，返回原运行且不重复派发；参数、模型身份或服务器路径图片内容发生变化会拒绝复用旧键。重复返回的运行若尚未派发，可显式点击恢复/继续。明确放弃请求只清除浏览器待办，不取消可能已经创建的服务端运行；创建新运行前应先核对列表。恢复和重试使用当前 revision，失败时先重新读取状态。服务串行接收执行命令，人工决定执行期间不能启动另一条任务。
 
-边界：模型 profile 属于服务配置，可按节点选择已安装且兼容的条目；输入支持浏览器上传与本地图像路径。基础参数表单从 Adapter schema 生成，支持字符串、数字、布尔值和枚举；单值枚举只读。数字失焦时应用，非法值显示“尚未应用”，保留先前草稿值；复杂对象与数组仍用 JSON 编辑。可移除显式覆盖以恢复默认值；多视图执行、HTTP Backend、ComfyUI 尚未接入画布。GLB 输出可通过链接读取，现有人工审查页可查看模型。
+边界：模型 profile 属于服务配置，可按节点选择已安装且兼容的条目；输入支持浏览器上传与本地图像路径。基础参数表单从 Adapter schema 生成，支持字符串、数字、布尔值和枚举；单值枚举只读。数字失焦时应用，非法值显示“尚未应用”，保留先前草稿值；复杂对象与数组仍用 JSON 编辑。可移除显式覆盖以恢复默认值；多视图支持已有 ObservationBundle 引用（见下文）；HTTP Backend、ComfyUI 尚未接入画布。GLB 输出可通过链接读取，现有人工审查页可查看模型。
 
 ## 固定运行图
 
@@ -96,3 +96,35 @@ node frontend/smoke/embedded-review.cjs <SMOKE_ROOT>/browser-config.json --uploa
 ```
 
 脚本通过浏览器上传真实图片；验证上传不创建运行后，将启动 POST 转发给真实服务，服务端创建成功后仅丢弃浏览器响应。刷新页面并重试原请求，核对请求内容、幂等键、ArtifactRef 和 run ID 不变，再完成 iframe mask 审查、发布和输出下载。脚本使用 Fake Backend，人工决定明确标注自动化测试，不是用户质量批准。
+
+## 多视图运行入口
+
+已导入同一 Store 的 ObservationBundle 可从画布启动。先按已有 `import-observations` 指南导入数据，保留返回的 Artifact ID；本入口不会把任意图片集合隐式转换成观测包。
+
+多视图配置文件使用独立目录，例如（路径替换为已有本地资源）：
+
+```json
+{
+  "default_profile": "da3-open3d",
+  "profiles": {
+    "da3-open3d": {
+      "da3_python": "/existing/da3/env/bin/python",
+      "da3_repo": "/existing/Depth-Anything-3",
+      "da3_model": "/existing/DA3-BASE",
+      "open3d_python": "/existing/open3d/env/bin/python"
+    }
+  }
+}
+```
+
+```bash
+PYTHONPATH=src <MAIN_CHECKOUT>/.venv/bin/python -m assets_generator.cli node-editor \
+  --directory <RUN_ROOT>/editor --store <RUN_ROOT>/store \
+  --multi-view-config <MULTI_VIEW_CONFIG>.json \
+  --operators examples/dag-multi-view-operators.yaml \
+  --template examples/dag-multi-view-asset.yaml --port 8767
+```
+
+加载模板后，在运行面板填写 ObservationBundle Artifact ID，点击启动。三个节点都可选择具名多视图配置；同一重建链必须满足既有 profile 和证据关系约束，不能任意混用不兼容来源。配置在服务启动时核验，使用已有环境，不下载权重。可同时增加单图的 `--config` 和 `--profile`，在同一服务使用两类模板。
+
+编译与启动共用输入适用性检查：仅支持单个 `image` RGB 或 `observations` ObservationBundle 输入，均须接收标量 ArtifactRef。启动再次验证观测内容、证据闭包和绑定；幂等键、固定计划、输出读取及恢复与单图一致。当前多视图浏览器批量导入尚未实现；真实画布 DA3/Open3D GPU 端到端仍待验收。

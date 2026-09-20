@@ -24,7 +24,7 @@ def _parser() -> argparse.ArgumentParser:
 
     add_parser(subparsers)
     editor = subparsers.add_parser(
-        "node-editor", help="Local DAG editor with optional single-image execution"
+        "node-editor", help="Local DAG editor with optional image or multi-view execution"
     )
     editor.add_argument("--directory", type=Path, required=True)
     editor.add_argument("--port", type=int, default=8767)
@@ -33,6 +33,7 @@ def _parser() -> argparse.ArgumentParser:
     editor.add_argument("--config", type=Path)
     editor.add_argument("--store", type=Path)
     editor.add_argument("--profile")
+    editor.add_argument("--multi-view-config", type=Path)
     compile_command = subparsers.add_parser("compile-pipeline")
     compile_command.add_argument("--pipeline", type=Path)
     compile_command.add_argument("--operators", type=Path)
@@ -269,6 +270,7 @@ def _execute(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
             config=args.config,
             store=args.store,
             profile=args.profile,
+            multi_view_config=args.multi_view_config,
         )
         return 0
     if args.command == "dag-image":

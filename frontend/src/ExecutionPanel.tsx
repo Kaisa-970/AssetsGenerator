@@ -44,6 +44,7 @@ type CreationRequest = {
   idempotency_key: string;
   image_path?: string;
   image_ref?: Record<string, unknown>;
+  observations_ref?: Record<string, unknown>;
 };
 const creationStorageKey = "assets-generator:pending-creation:v1";
 function restoreCreation(): { request?: CreationRequest; error?: string } {
@@ -61,10 +62,11 @@ function restoreCreation(): { request?: CreationRequest; error?: string } {
       !(
         (typeof value.image_path === "string" &&
           value.image_path.length > 0 &&
-          !value.image_ref) ||
+          !value.image_ref && !value.observations_ref) ||
         (value.image_ref &&
           typeof value.image_ref.artifact_id === "string" &&
-          !value.image_path)
+          !value.image_path && !value.observations_ref) ||
+        (value.observations_ref && typeof value.observations_ref.artifact_id === "string" && !value.image_path && !value.image_ref)
       )
     )
       throw Error("保存的请求格式无效");
@@ -86,6 +88,8 @@ export function ExecutionPanel({
   const [showReview, setShowReview] = useState(false);
   const [showGraph, setShowGraph] = useState(false);
   const [imagePath, setImagePath] = useState("");
+  const [observationsId, setObservationsId] = useState("");
+  const multiView = Object.keys(pipeline.inputs).length === 1 && "observations" in pipeline.inputs;
   const [imageSource, setImageSource] = useState("path");
   const [uploaded, setUploaded] = useState<{
     name: string;
@@ -230,6 +234,13 @@ export function ExecutionPanel({
     <section className="execution-panel">
       <div className="section-label">创建新运行</div>
       <p>已配置模型：{profile || "本地服务配置"}</p>
+      {multiView ? <label>
+        已导入的 ObservationBundle Artifact ID
+        <input aria-label="观测包 Artifact ID" value={observationsId}
+          placeholder="sha256:…" disabled={pending}
+          onChange={(e) => setObservationsId(e.target.value)} />
+        <p>先用 import-observations 将多视图数据导入此服务的 Store，再填写引用。</p>
+      </label> : <>
       <label>
         图片来源
         <select
@@ -278,6 +289,7 @@ export function ExecutionPanel({
           {uploadMessage && <p role="status">{uploadMessage}</p>}
         </div>
       )}
+      </>}
       <p>启动时后端重新编译当前草稿并固定计划。修改画布只影响下一次新运行。</p>
       {executionReason && (
         <p role="alert">当前入口不可运行：{executionReason}</p>
@@ -288,7 +300,7 @@ export function ExecutionPanel({
           pending ||
           unresolvedCreation ||
           uploading ||
-          (imageSource === "path" ? !imagePath.trim() : !uploaded) ||
+          (multiView ? !observationsId.trim() : imageSource === "path" ? !imagePath.trim() : !uploaded) ||
           !!executionReason
         }
         onClick={() =>
@@ -296,7 +308,7 @@ export function ExecutionPanel({
             submitCreation({
               pipeline: structuredClone(pipeline),
               idempotency_key: crypto.randomUUID(),
-              ...(imageSource === "path"
+              ...(multiView ? {observations_ref: {artifact_id: observationsId.trim()}} : imageSource === "path"
                 ? { image_path: imagePath.trim() }
                 : { image_ref: structuredClone(uploaded!.ref) }),
             }),

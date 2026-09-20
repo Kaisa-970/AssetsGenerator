@@ -820,3 +820,40 @@ test("creation is not sent if browser cannot persist its receipt", async ({
   await expect(page.getByText(/storage disabled/)).toBeVisible();
   expect(starts).toBe(0);
 });
+
+test("multi-view creation preserves observation reference across reload retry", async ({ page }) => {
+  page.on("dialog", d => d.accept());
+  const requests: any[] = [];
+  let fail = true;
+  await page.route("**/api/**", async route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === "/api/runs" && route.request().method() === "POST") {
+      requests.push(route.request().postDataJSON());
+      if (fail) return route.abort("failed");
+    }
+    await route.fulfill({json: path === "/api/catalog" ? {
+      operators: {}, adapters: [], execution_enabled: true,
+      templates: [{id: "multiview", label: "multiview", pipeline: {
+        pipeline: "multiview", version: "1", inputs: {observations: {kind: "observation_bundle"}}, nodes: {}
+      }}]
+    } : path === "/api/drafts" ? {drafts: []} : path === "/api/runs" && route.request().method() === "GET" ? {runs: []} : {
+      run: {run_id: "dag_multiview", status: "succeeded", dag: {revision: 1, node_states: {}}}
+    }});
+  });
+  await page.goto("/");
+  await page.getByRole("button", {name: "multiview", exact: true}).click();
+  await page.getByRole("button", {name: "运行", exact: true}).click();
+  await page.getByLabel("观测包 Artifact ID").fill("sha256:" + "a".repeat(64));
+  await expect(page.getByLabel("运行图片路径")).toHaveCount(0);
+  await page.getByRole("button", {name: "启动新运行", exact: true}).click();
+  await expect(page.getByRole("button", {name: "重试原创建请求", exact: true})).toBeEnabled();
+  expect(requests[0].observations_ref).toEqual({artifact_id: "sha256:" + "a".repeat(64)});
+  expect(requests[0].image_ref).toBeUndefined();
+  await page.reload();
+  await page.getByRole("button", {name: "运行", exact: true}).click();
+  fail = false;
+  await page.getByRole("button", {name: "重试原创建请求", exact: true}).click();
+  await expect(page.getByText("dag_multiview", {exact: true})).toBeVisible();
+  expect(requests).toHaveLength(2);
+  expect(requests[1]).toEqual(requests[0]);
+});

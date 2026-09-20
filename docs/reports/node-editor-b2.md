@@ -68,3 +68,9 @@
 上传及创建幂等的实际 HTTP/浏览器 CPU 验收：可复现脚本 `frontend/smoke/embedded-review.cjs --upload-retry` 已接入真实服务。真实上传后运行列表为空；首次 POST 经真实服务处理后由测试拦截器丢弃响应；浏览器刷新并显式重试，原请求、图片引用与 run ID 均相同，列表只有一个运行。随后在实际 iframe 选择 mask、填写自动化检查人、确认发布；三个节点均 succeeded、各一次 attempt，决定回执一个，四类输出读取均 200 且非空，浏览器错误为 0。
 
 外部证据：`<SMOKE_ROOT>/embedded-result.json`、`embedded-completed.png`；本次 run 为 `dag_c02d4669e4764242b703d04ae9b98ed7`。独立读取 Store 中该 BuildRun 后验证完整证据闭包通过，BuildRun Artifact 为 `sha256:581f9d187062a3f80156e05f37dd7ae31d14eb5b6843783d4ff6673c9b8fb6e4`。首次脚本读取浏览器响应体触发 Playwright inspector cache 错误，未创建运行；改用 route.fetch 转发真实请求并保留响应用于核对后通过。无新增模型/GPU 推理，不将本轮 CPU 流程验收等同于模型质量验收。
+
+多视图画布执行首片：服务新增独立 `--multi-view-config`，严格加载具名 DA3/Open3D profiles，可与单图配置并存；通过专用 OperatorSpec 和多视图模板使用现有三个 Adapter。运行面板根据观测包输入显示 Artifact ID 字段；POST 使用 observations_ref，与 image_path/image_ref 互斥。编译和启动共用适用性检查，启动验证 ObservationBundle 内容及证据闭包后固定输入；复用原幂等请求与恢复路径，单图请求摘要形式保持兼容。
+
+CPU 测试确认多视图编译就绪、启动/发布、重复请求、显式恢复、输出读取及输入来源拒绝，模型契约替身各调用一次；服务配置测试确认目录加载；浏览器测试确认观测包精确引用与刷新重试。后端 editor/execution 合跑 18 项通过，前端单测 9 项通过。首次浏览器新增用例漏处理模板覆盖确认框导致超时，修正脚本后该用例通过；未将其归为产品故障。Ruff、mypy 通过。当前尚未从真实画布运行 DA3/Open3D GPU，批量图片导入未实现；不得宣称完整 B2 完成。
+
+最终前端回归单次 12 项 Playwright 全部通过；TypeScript/Vite 与 Python wheel/sdist 构建通过。本轮未获得独立 subagent review（现有 agent 线程配额已满），由主 agent 检查改动和验证结果。

@@ -5,6 +5,7 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 import pytest
+import yaml
 
 from assets_generator.node_editor import DraftEditor, create_editor_server
 
@@ -128,10 +129,20 @@ def test_http_execution_routes_and_strict_requests(tmp_path):
             assert data == b"image bytes"
             return {"image_ref": {"artifact_id": "sha256:" + "a" * 64}}
 
-        def start(self, pipeline, image_path=None, *, image_ref=None, idempotency_key=None):
+        def start(
+            self,
+            pipeline,
+            image_path=None,
+            *,
+            image_ref=None,
+            observations_ref=None,
+            idempotency_key=None,
+        ):
             assert idempotency_key in (None, "request-one")
             assert pipeline == {"pipeline": "draft"}
-            if image_ref is None:
+            if observations_ref is not None:
+                assert observations_ref == {"artifact_id": "sha256:" + "b" * 64}
+            elif image_ref is None:
                 assert image_path == "/tmp/input.png"
             else:
                 assert image_path is None
@@ -214,6 +225,14 @@ def test_http_execution_routes_and_strict_requests(tmp_path):
             },
         ) as response:
             assert response.status == 202
+        with post(
+            "/api/runs",
+            {
+                "pipeline": {"pipeline": "draft"},
+                "observations_ref": {"artifact_id": "sha256:" + "b" * 64},
+            },
+        ) as response:
+            assert response.status == 202
         with urlopen(base + "/api/runs") as response:
             assert len(json.load(response)["runs"]) == 1
         with urlopen(base + "/api/runs/dag_example") as response:
@@ -241,3 +260,53 @@ def test_http_execution_routes_and_strict_requests(tmp_path):
         server.shutdown()
         server.server_close()
         thread.join()
+
+
+def test_multi_view_service_configuration(tmp_path, monkeypatch):
+    from test_multi_view_workflow import ContractGeometryFrontend, ContractReconstruction, _plan
+
+    from assets_generator import multi_view_profiles, node_editor
+    from assets_generator.dag_multi_view import MultiViewProfile
+
+    config = tmp_path / "multi.json"
+    config.write_text(
+        json.dumps({"default_profile": "local", "profiles": {"local": {"fixture": True}}})
+    )
+    loaded = []
+
+    def load(raw):
+        loaded.append(raw)
+        return MultiViewProfile(
+            _plan(ContractGeometryFrontend(), ContractReconstruction()),
+            {"fixture": True},
+            test_only=True,
+        )
+
+    monkeypatch.setattr(multi_view_profiles, "load_multi_view_profile", load)
+
+    class Server:
+        server_port = 0
+
+        def serve_forever(self):
+            pass
+
+        def server_close(self):
+            pass
+
+    def create(editor, port):
+        assert editor.execution is not None
+        assert len(editor.catalog()["backends"]) == 3
+        graph = yaml.safe_load(Path("examples/dag-multi-view-asset.yaml").read_text())
+        assert editor.compile(graph)["execution_ready"]
+        return Server()
+
+    monkeypatch.setattr(node_editor, "create_editor_server", create)
+    node_editor.serve_editor(
+        tmp_path / "editor",
+        0,
+        Path("examples/dag-multi-view-operators.yaml"),
+        [],
+        store=tmp_path / "store",
+        multi_view_config=config,
+    )
+    assert loaded == [{"fixture": True}]

@@ -39,7 +39,7 @@ Artifact Store + BuildRun + Provenance + QualityReport
 - React Flow 可编辑草稿、编译、执行单图、展示固定运行图、基础参数表单及嵌入 mask 审查。
 - 本地 profile 可按节点选择，名称及身份进入绑定和 provenance；多实例共享选区的独立发布已做 CPU 验证，尚未验收同图两种真实模型。
 
-浏览器图像上传已接入，输入持久化为 Artifact 后显式启动。仍未接入：画布多视图运行、通用 HTTP Backend 和 ComfyUI；复杂嵌套参数仍使用 JSON。运行创建已支持耐久幂等回执及浏览器原请求显式重试；重复 POST 不自动恢复或派发已有运行。完整 B2 和远程 Milestone C 仍需后续验收。
+浏览器图像上传已接入，输入持久化为 Artifact 后显式启动。画布多视图已接入已有 ObservationBundle 引用的执行入口（CPU 验证）；仍未接入：多视图浏览器批量导入、通用 HTTP Backend 和 ComfyUI；复杂嵌套参数仍使用 JSON。运行创建已支持耐久幂等回执及浏览器原请求显式重试；重复 POST 不自动恢复或派发已有运行。完整 B2 和远程 Milestone C 仍需后续验收。
 
 ## 3. 范围与非目标
 
