@@ -146,7 +146,7 @@ PYTHONPATH=src <MAIN_CHECKOUT>/.venv/bin/python -m assets_generator.cli node-edi
 
 加载模板后，在运行面板填写 ObservationBundle Artifact ID，点击启动。三个节点都可选择具名多视图配置；同一重建链必须满足既有 profile 和证据关系约束，不能任意混用不兼容来源。配置在服务启动时核验，使用已有环境，不下载权重。可同时增加单图的 `--config` 和 `--profile`，在同一服务使用两类模板。
 
-编译与启动共用输入适用性检查：仅支持单个 `image` RGB 或 `observations` ObservationBundle 输入，均须接收标量 ArtifactRef。启动再次验证观测内容、证据闭包和绑定；幂等键、固定计划、输出读取及恢复与单图一致。可在运行面板直接选择 2–32 张 RGB PNG/JPEG/WebP 照片，每张最多 20 MiB；按浏览器选择顺序分配 view_000 等 ID，并显示文件列表。先逐张上传，再校验组包，只有点击启动才执行模型。拒绝重复 Artifact 和非 RGB 图片，不隐式转换，也不补相机、mask 或深度。失败时清除当前输入，可重新选择；之前成功上传的不可变图片可能留在 Store，重传相同字节会复用身份。仍可手填已有 ObservationBundle ID。真实画布 DA3/Open3D 的已有引用与批量上传路径均已完成 GPU smoke；批量上传后的服务重启恢复见[验收报告](../reports/multiview-browser-upload-real.md)。
+编译与启动共用输入适用性检查：专用表单支持单个 `image` RGB/RGBA 或 `observations` ObservationBundle 输入；多个命名输入可通过标量 ArtifactRef 映射绑定（见下文多输入章节）。启动再次验证观测内容、证据闭包和绑定；幂等键、固定计划、输出读取及恢复与单图一致。可在运行面板直接选择 2–32 张 RGB PNG/JPEG/WebP 照片，每张最多 20 MiB；按浏览器选择顺序分配 view_000 等 ID，并显示文件列表。先逐张上传，再校验组包，只有点击启动才执行模型。拒绝重复 Artifact 和非 RGB 图片，不隐式转换，也不补相机、mask 或深度。失败时清除当前输入，可重新选择；之前成功上传的不可变图片可能留在 Store，重传相同字节会复用身份。仍可手填已有 ObservationBundle ID。真实画布 DA3/Open3D 的已有引用与批量上传路径均已完成 GPU smoke；批量上传后的服务重启恢复见[验收报告](../reports/multiview-browser-upload-real.md)。
 
 真实服务启动后，可用 `frontend/smoke/multi-view.cjs <BROWSER_CONFIG>.json` 验收画布路径。配置包含 `url`（不含尾斜杠）、`root`（已存在的仓库外证据目录），以及二选一的 `observations`（Store 中现有观测包 Artifact ID）或 `images`（2–32 张本地 RGB 图片的绝对路径数组）。提供 `images` 时，脚本实际操作浏览器多图上传并记录组包请求。脚本通过 UI 启动，等待发布，核对精确输入与每节点一次 attempt，读取各输出并截图固定运行图。此命令会实际调用所配置模型，GPU 验收请串行执行。
 
