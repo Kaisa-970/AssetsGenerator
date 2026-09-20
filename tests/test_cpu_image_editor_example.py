@@ -74,3 +74,60 @@ def test_empty_canvas_can_compile_but_cannot_create_a_successful_run(tmp_path):
             assert service.list_runs() == []
         finally:
             service.close()
+
+
+def test_shared_fanout_output_loss_blocks_both_nodes_without_reencoding(tmp_path, monkeypatch):
+    from copy import deepcopy
+
+    from assets_generator.models import ArtifactRef
+
+    graph = yaml.safe_load(
+        (Path(__file__).parents[1] / "examples/cpu-image-editor.yaml").read_text()
+    )
+    graph["nodes"]["second"] = deepcopy(graph["nodes"]["encode"])
+    registry = AdapterRegistry()
+    registry.register(EncodePngAdapter())
+    store = LocalArtifactStore(tmp_path / "store")
+    source = BytesIO()
+    # JPEG ensures deleting the PNG result does not also delete the input Blob.
+    Image.new("RGB", (3, 2), (25, 90, 140)).save(source, format="JPEG")
+    with DagRepository(store, tmp_path / "runtime") as repo:
+        service = NodeEditorExecution(DagEngine(repo, registry))
+        try:
+            uploaded = service.upload_image(source.getvalue())
+            started = service.start(graph, image_ref=uploaded["image_ref"])
+            run_id = started["run"]["run_id"]
+            completed = wait(service, run_id)
+            assert completed["run"]["status"] == "succeeded"
+            states = completed["run"]["dag"]["node_states"]
+            output = states["encode"]["attempts"][0]["outputs"]["image"]
+            assert output == states["second"]["attempts"][0]["outputs"]["image"]
+        finally:
+            service.close()
+    blob = store.blob_path(ArtifactRef(output["artifact_id"]))
+    blob.unlink()
+    assert store.verify_digest(ArtifactRef(uploaded["image_ref"]["artifact_id"]))
+    with DagRepository(store, tmp_path / "runtime") as repo:
+        engine = DagEngine(repo, registry)
+        service = NodeEditorExecution(engine)
+        try:
+            # Keep the registered implementation identity intact, but detect any dispatch.
+            def unexpected_execute(*args, **kwargs):
+                pytest.fail("recovery must not execute adapters to repair evidence")
+
+            monkeypatch.setattr(engine, "_execute", unexpected_execute)
+            snapshot = service.snapshot(run_id)
+            service.resume(run_id, snapshot["run"]["dag"]["revision"])
+            restored = wait(service, run_id)
+            assert restored["run"]["status"] == "recovery_blocked", restored
+            for node_id in ("encode", "second"):
+                state = restored["run"]["dag"]["node_states"][node_id]
+                assert state["status"] == "recovery_blocked"
+                assert state["recovery_blocked_reason"]
+                assert state["attempts"] == states[node_id]["attempts"]
+                with pytest.raises(ContractError, match="output requires a successful node"):
+                    service.output(run_id, node_id, "image")
+            assert not blob.exists()
+            assert repo.load(run_id).status == "recovery_blocked"
+        finally:
+            service.close()

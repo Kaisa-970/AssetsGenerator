@@ -85,3 +85,13 @@ sdist/wheel 构建通过，核对 wheel 的执行入口、PNG Adapter、Operator
 另有实际 CPU 服务浏览器验证：从空画布配置输入、添加 encode_png、连线、
 编译、上传、执行、预览与显式恢复成功；成功节点 attempt 数保持 1。
 可重复脚本见 add-dag-module 指南，使用真实 Core/Store/HTTP，但不涉及模型。
+
+## 共享图片输出损坏的恢复边界
+
+在 `6abd50a` 后补充 CPU 示例服务回归：JPEG 输入扇出两个 encode_png 实例，
+成功后关闭 Repository；确认两个输出共享 ArtifactRef，再删除隔离 fixture 的
+PNG Blob 并重新打开服务。显式恢复将两个节点均记为 recovery_blocked，历史
+attempt 原样保留，原 JPEG 输入摘要仍有效，PNG 未被重建，输出入口拒绝读取。
+测试同时拦截执行器，禁止恢复通过重新运行 Adapter 修复缺失证据。
+`tests/test_cpu_image_editor_example.py` 的三项测试通过；Ruff lint/format 通过。
+本次没有修改 Core 行为，没有新增 GPU 或推理中断验收结论。
