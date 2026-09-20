@@ -470,3 +470,9 @@ footer {
 .image-output img[hidden] {
   display: none;
 }
+
+.run-binding-details {
+  max-height: 220px;
+  overflow: auto;
+  flex-shrink: 0;
+}

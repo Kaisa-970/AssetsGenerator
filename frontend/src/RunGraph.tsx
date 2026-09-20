@@ -10,6 +10,16 @@ import {
 
 type Plan = {
   plan_id: string;
+  bindings?: Record<
+    string,
+    {
+      adapter: string;
+      backend?: string;
+      parameters: Record<string, unknown>;
+      implementation_digest: string;
+      spec_digest: string;
+    }
+  >;
   static_plan: {
     pipeline_name: string;
     nodes: {
@@ -38,9 +48,11 @@ export function RunGraph({
 }) {
   const [plan, setPlan] = useState<Plan>();
   const [error, setError] = useState("");
+  const [selectedNode, setSelectedNode] = useState<string>();
   useEffect(() => {
     const abort = new AbortController();
     setPlan(undefined);
+    setSelectedNode(undefined);
     setError("");
     fetch(`/api/runs/${encodeURIComponent(runId)}/plan`, {
       signal: abort.signal,
@@ -114,6 +126,32 @@ export function RunGraph({
       <p>
         此图来自该运行的不可变计划，只读显示持久化节点状态；不会修改草稿或启动计算。
       </p>
+      {plan && selectedNode && (
+        <details open className="run-binding-details">
+          <summary>固定节点配置 · {selectedNode}</summary>
+          {plan.bindings?.[selectedNode] ? (
+            <pre>
+              {JSON.stringify(
+                {
+                  operator: plan.static_plan.nodes.find(
+                    (node) => node.node_id === selectedNode,
+                  )?.operator,
+                  ...plan.bindings[selectedNode],
+                },
+                null,
+                2,
+              )}
+            </pre>
+          ) : (
+            <p>
+              {selectedNode.startsWith("input:")
+                ? "这是管线输入，不绑定 Adapter。"
+                : "计划未提供此节点的绑定信息。"}
+            </p>
+          )}
+        </details>
+      )}
+      {plan && <p>点击节点查看该运行固定的实现、参数与身份摘要。</p>}
       {error ? (
         <p role="alert">{error}</p>
       ) : plan ? (
@@ -126,6 +164,7 @@ export function RunGraph({
               nodesDraggable={false}
               nodesConnectable={false}
               elementsSelectable={false}
+              onNodeClick={(_, node) => setSelectedNode(node.id)}
               deleteKeyCode={null}
               fitView
             >

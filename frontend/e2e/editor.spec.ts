@@ -627,6 +627,15 @@ test("fixed run graph displays persisted plan instead of edited draft", async ({
     const path = new URL(route.request().url()).pathname;
     const plan = {
       plan_id: "fixed-id",
+      bindings: {
+        original: {
+          adapter: "saved_adapter@2",
+          backend: "saved_backend",
+          parameters: { seed: 123 },
+          implementation_digest: "saved-code",
+          spec_digest: "saved-spec",
+        },
+      },
       static_plan: {
         pipeline_name: "fixed",
         inputs: {},
@@ -690,6 +699,16 @@ test("fixed run graph displays persisted plan instead of edited draft", async ({
   await expect(
     dialog.locator('.react-flow__node[data-id="original"]'),
   ).toContainText("succeeded");
+  await dialog.locator('.react-flow__node[data-id="original"]').click();
+  const binding = dialog.locator(".run-binding-details pre");
+  await expect(binding).toBeVisible();
+  expect(JSON.parse(await binding.innerText())).toMatchObject({
+    operator: "copy@1",
+    adapter: "saved_adapter@2",
+    backend: "saved_backend",
+    parameters: { seed: 123 },
+    implementation_digest: "saved-code",
+  });
   await dialog.locator(".react-flow__controls-zoomout").click();
   await expect(draftNode).toBeAttached();
   await expect(
