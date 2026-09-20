@@ -80,3 +80,10 @@ class DagRemoteSubmission:
         with self.repository._command_lock:
             self._owner(binding, must_be_bound=True)
             return self.journal.recover(binding.request())
+
+    def download(
+        self, binding: RemoteAttemptBinding, output_id: str, *, max_bytes: int = 128 * 1024 * 1024
+    ) -> bytes:
+        with self.repository._command_lock:
+            self._owner(binding, must_be_bound=True)
+            return self.journal.download(binding.request(), output_id, max_bytes=max_bytes)

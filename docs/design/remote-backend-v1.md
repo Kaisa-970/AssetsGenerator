@@ -88,3 +88,9 @@ HTTP/协议合跑最终 26 项通过；相关 Ruff、mypy（89 源码文件）�
 这只验证传输字节，不信任媒体类型字符串等同于正确编码；未导入 Artifact Store，也不认领 kind、schema、frame/unit 或 provenance。未来 Adapter 必须对照耐久 observed 结果固定描述符，并做实际格式/关系校验；当前低层下载查询不是耐久终态证据的替代。输入上传、下载重连续传、流式落盘及远程 Scheduler 尚未完成。
 
 本轮协议/HTTP/日志/DAG 桥接合跑 44 项通过；修正下载返回类型后 HTTP 文件再次 16 项通过。Ruff、mypy（92 源码文件）通过；无 GPU 或真实远程模型验收。
+
+### 下载绑定到耐久终态
+
+`RemoteSubmission.download` 只接受本地已观察并耐久保存的 succeeded JobRecord；不会在下载过程中认领新的成功结果。客户端重新查询得到的完整 JobRecord 必须与固定记录一致，之后才下载并核对原描述符。`DagRemoteSubmission.download` 再次验证磁盘上的父运行/attempt 所有权。因此服务后来同时修改文件和摘要，也无法被当成原结果接受；日志丢失时拒绝下载，不补建证据。
+
+新增真实本机 HTTP 回归覆盖：仅服务端成功但未本地落盘时拒绝、客户端仓库重开后读取原成功输出、读取前后日志不变、服务换摘要时下载次数不增加、日志缺失时不下载。协议/HTTP/日志/桥接合跑 45 项通过，相关 Ruff 与 mypy 通过。仍仅返回验证后的 bytes，尚未执行 GLB/图像语义校验或创建 Artifact；远程 Scheduler 未开放。

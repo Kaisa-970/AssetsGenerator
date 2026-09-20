@@ -141,3 +141,19 @@ class RemoteSubmission:
             self._write(request, {**record, "phase": "authorized"})
             job = self.client.submit(request)
             return self._observe(request, self._load(request), job)
+
+    def download(
+        self, request: RemoteRequest, output_id: str, *, max_bytes: int = 128 * 1024 * 1024
+    ) -> bytes:
+        """Require an already durable success; never adopt a changed result during download."""
+        with self.repository._command_lock:
+            self.repository._ready()
+            record = self._load(request)
+            if record["phase"] != "observed":
+                raise ValueError("remote download requires persisted successful job")
+            job = RemoteJob.parse(record["job"], request)
+            if job.state != "succeeded":
+                raise ValueError("remote download requires persisted successful job")
+            return self.client.download(
+                request, job.job_id, output_id, max_bytes=max_bytes, expected_job=job
+            )

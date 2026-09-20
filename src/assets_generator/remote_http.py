@@ -75,11 +75,14 @@ class RemoteJobClient:
         output_id: str,
         *,
         max_bytes: int = 128 * 1024 * 1024,
+        expected_job: RemoteJob | None = None,
     ) -> bytes:
         """Validate current job identity and return digest-checked bytes, not an Artifact."""
         if type(max_bytes) is not int or max_bytes <= 0:
             raise ValueError("download limit must be positive")
         job = self.query(request, job_id)
+        if expected_job is not None and job != expected_job:
+            raise ValueError("remote result differs from pinned job evidence")
         descriptor = RemoteOutput.from_job(job, output_id)
         if descriptor.byte_length > max_bytes:
             raise ValueError("remote output exceeds configured download limit")

@@ -113,3 +113,51 @@ def test_parent_save_failure_keeps_prepared_request_unsent(tmp_path, http_server
         bridge.prepare(owned, expected_revision=0)
         assert bridge.submit(owned).job_id == "job-one"
         assert state["submissions"] == 1
+
+
+def test_download_requires_durable_success_and_rejects_changed_result(tmp_path, http_server):
+    from assets_generator.serialization import sha256_bytes
+
+    state, client = http_server
+    store = LocalArtifactStore(tmp_path / "store")
+    directory = tmp_path / "service"
+    with DagRepository(store, directory) as repo:
+        owned = setup(repo, client)
+        bridge = DagRemoteSubmission(repo, client)
+        bridge.prepare(owned, expected_revision=0)
+        bridge.submit(owned)
+        job = state["jobs"][owned.submission_key]
+        job.update(
+            state="succeeded",
+            result={
+                "outputs": [
+                    {
+                        "output_id": "mesh",
+                        "blob_digest": sha256_bytes(b"test output"),
+                        "byte_length": len(b"test output"),
+                        "media_type": "model/gltf-binary",
+                    }
+                ]
+            },
+        )
+        # A success existing only on the server must first be observed durably.
+        with pytest.raises(ValueError, match="persisted successful"):
+            bridge.download(owned, "mesh")
+        assert state.get("downloads", 0) == 0
+        bridge.recover(owned)
+    with DagRepository(store, directory) as repo:
+        bridge = DagRemoteSubmission(repo, client)
+        before = bridge.journal._path(owned.request()).read_bytes()
+        assert bridge.download(owned, "mesh") == b"test output"
+        assert state["downloads"] == 1
+        assert bridge.journal._path(owned.request()).read_bytes() == before
+        state["blob"] = b"other bytes"
+        job["result"]["outputs"][0]["blob_digest"] = sha256_bytes(state["blob"])
+        with pytest.raises(ValueError, match="pinned"):
+            bridge.download(owned, "mesh")
+        assert state["downloads"] == 1
+        assert bridge.journal._path(owned.request()).read_bytes() == before
+        bridge.journal._path(owned.request()).unlink()
+        with pytest.raises(OSError):
+            bridge.download(owned, "mesh")
+        assert state["downloads"] == 1
