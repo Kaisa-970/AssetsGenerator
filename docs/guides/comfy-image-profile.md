@@ -77,7 +77,8 @@ assets-generator comfy-image download --profile /path/to/profile.json \
 ## DAG 服务端实验命令
 
 同一 profile 可用于单 RGB 图片输入/输出的服务端。监听器只接收作业，执行需另一个
-终端显式调用，尚无后台自动调度；DAG 客户端 Adapter 仍待接入。
+终端显式调用，尚无后台自动调度。DAG 客户端 Adapter 已接入，编辑器配置见下文；
+协议 fixture 的通过不代表真实 ComfyUI 部署已验收。
 
 ```bash
 assets-generator comfy-service serve --profile /path/to/profile.json \

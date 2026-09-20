@@ -50,3 +50,25 @@ TypeScript/Vite 构建通过；本次未重复运行前端测试。随后实际�
 ComfyUI 浏览器创建→服务执行→输出→完成后恢复的 CPU 协议链现已跑通，
 但其上游仍为注入 fixture，不代表真实 ComfyUI 部署或模型验收。
 本轮没有运行 GPU，不新增重建质量、纹理质量或推理中断结论。
+
+## 模块配置与 CPU 画布示例后的回归
+
+在 `54ebf3a` 启动完整 Python 套件，运行期间只修改文档：
+**1323 passed，4 failed，403.37s**。四处失败均位于
+`tests/test_editor_input_contract.py`：空图启动门槛被放进入口契约校验函数，
+遮住了原本独立的输入 schema 检查。随后分离输入契约检查与完整启动门槛；
+编辑器编译和创建共用完整门槛，空图仍不允许启动。
+
+同基线前端单次执行 **19 项 Vitest、22 项 Playwright 全部通过**，
+TypeScript/Vite 构建通过；main/GLB chunk 仍有超过 500 kB 的构建提示。
+Ruff lint、format（269 文件）、mypy（130 源文件）通过。
+sdist/wheel 构建通过，核对 wheel 的执行入口、PNG Adapter、OperatorSpec
+及四个编辑器资源文件与源码逐字节一致。此包构建发生在校验函数拆分之前，
+不能用于证明之后源码的打包结果。
+
+本轮没有 GPU 或真实 ComfyUI 验收。CPU 画布浏览器脚本在上一提交验证过
+上传、节点输出预览及刷新恢复；不将其归入本轮 22 项路由 fixture 浏览器测试。
+
+修复后定向重跑输入契约、CPU 示例、编辑器后端与执行入口：**31 passed in
+22.17s**；再次运行仓库 Ruff lint/format 与 mypy，均通过。本次没有第二次
+完整 Python 回归，不将 1323 项与定向结果相加宣称全量通过。

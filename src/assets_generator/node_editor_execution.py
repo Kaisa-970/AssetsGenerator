@@ -31,9 +31,7 @@ from .workbench_persistence import CreationReceipt
 
 
 def validate_editor_inputs(plan: CompiledPlan) -> str:
-    """Return the supported input name; compilation and creation share this gate."""
-    if not plan.nodes:
-        raise ContractError("canvas execution requires at least one processing node")
+    """Return the supported input name after validating the entry contract."""
     if set(plan.inputs) == {"image"}:
         name = "image"
         kinds = tuple(plan.inputs[name].contract["kinds"])
@@ -65,6 +63,14 @@ def validate_editor_inputs(plan: CompiledPlan) -> str:
                 raise ContractError(
                     f"canvas {name} input requires {field}={expected}; got {declared}"
                 )
+    return name
+
+
+def validate_editor_execution(plan: CompiledPlan) -> str:
+    """Shared creation gate: supported input contract and executable graph."""
+    name = validate_editor_inputs(plan)
+    if not plan.nodes:
+        raise ContractError("canvas execution requires at least one processing node")
     return name
 
 
@@ -415,7 +421,7 @@ class NodeEditorExecution:
                 ),
                 relation_registry=self.relations,
             )
-            name = validate_editor_inputs(plan.static_plan)
+            name = validate_editor_execution(plan.static_plan)
             contract = plan.static_plan.inputs[name].contract
             if sum(v is not None for v in (image_path, image_ref, observations_ref)) != 1:
                 raise ContractError("provide exactly one input source")

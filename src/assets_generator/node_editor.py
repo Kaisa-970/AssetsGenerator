@@ -18,7 +18,7 @@ import yaml
 from .contracts import ContractError
 from .dag_adapters import AdapterRegistry, NodeBindingError
 from .multi_view_relations import register_multi_view_relations
-from .node_editor_execution import NodeEditorExecution, validate_editor_inputs
+from .node_editor_execution import NodeEditorExecution, validate_editor_execution
 from .pipeline import (
     _pipeline_from_raw,
     compile_pipeline,
@@ -94,7 +94,7 @@ class DraftEditor:
             execution_reason = None
             if self.execution and bound:
                 try:
-                    validate_editor_inputs(plan)
+                    validate_editor_execution(plan)
                 except ContractError as error:
                     execution_reason = str(error)
             return {
