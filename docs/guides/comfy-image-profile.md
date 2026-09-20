@@ -91,3 +91,29 @@ assets-generator comfy-service recover --profile /path/to/profile.json \
 serve 只绑定本机地址，不代表提供公网认证。execute-next 只领取一项，未知结果保持
 running 并阻塞后续领取；recover 不重新提交推理。不要将此前本地图像 CLI 请求混入
 DAG 服务队列，二者请求格式不同，建议使用独立 jobs 目录。
+
+## 编辑器启动配置
+
+新增 --comfy-config，文件中 endpoint 是本项目 comfy-service 网关地址，profile 文件
+中的 endpoint 则是上游 ComfyUI 地址，二者不要混淆。相对 profile 路径按配置文件
+所在目录解析。例如：
+
+```json
+{
+  "default_profile": "comfy_first",
+  "profiles": {
+    "comfy_first": {"endpoint": "http://127.0.0.1:8771", "profile": "profile.json"},
+    "comfy_second": {"endpoint": "http://127.0.0.1:8771", "profile": "profile.json"}
+  }
+}
+```
+
+```bash
+assets-generator node-editor --directory /path/to/editor --store /path/to/core-store \
+  --comfy-config /path/to/comfy-backends.json \
+  --template pipelines/comfy_image_chain_v1.yaml --port 8767
+```
+
+节点目录提供 image_transform@1 / comfy_image@1，实例通过 Backend 选择配置。
+该接线有启动/目录测试，尚未完成浏览器交互验收或真实 ComfyUI 验收。网关监听
+和显式执行命令仍需单独运行，不会因编辑器轮询自动派发远程模型。

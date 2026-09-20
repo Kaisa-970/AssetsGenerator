@@ -346,6 +346,7 @@ def serve_editor(
     profile: str | None = None,
     multi_view_config: Path | None = None,
     remote_config: Path | None = None,
+    comfy_config: Path | None = None,
     proposal_config: Path | None = None,
 ) -> None:
     from contextlib import ExitStack
@@ -355,11 +356,20 @@ def serve_editor(
         editor = DraftEditor(directory, operators, templates)
         if any(
             value is not None
-            for value in (config, store, profile, multi_view_config, remote_config, proposal_config)
+            for value in (
+                config,
+                store,
+                profile,
+                multi_view_config,
+                remote_config,
+                proposal_config,
+                comfy_config,
+            )
         ):
             if store is None or (
                 proposal_config is None
                 and remote_config is None
+                and comfy_config is None
                 and multi_view_config is None
                 and (config is None or profile is None)
             ):
@@ -413,6 +423,10 @@ def serve_editor(
                 from .dag_remote_profiles import register_remote_shape_profiles
 
                 register_remote_shape_profiles(registry, read_json(remote_config))
+            if comfy_config is not None:
+                from .dag_comfy_profiles import register_comfy_profiles
+
+                register_comfy_profiles(registry, read_json(comfy_config), base=comfy_config.parent)
             repository = DagRepository(LocalArtifactStore(store), directory / "runtime")
             stack.enter_context(repository)
             execution = NodeEditorExecution(

@@ -470,3 +470,13 @@ HTTP 上传输入/提交请求，由 execute_next_image 调用 profile 执行并
 11 项 DAG ComfyUI/执行器测试及 Ruff 格式/检查通过。本轮仅新增测试，未重跑
 mypy。Core↔服务使用真实 HTTP，但服务↔ComfyUI 传输采用注入 fixture，没有运行
 ComfyUI 模型，也不是两个 HTTP 层的全链路。尚未注册启动配置或开放画布入口。
+
+### 编辑器启动注册
+
+node-editor --comfy-config 加载受信网关/profile 映射，register_comfy_profiles 注册
+默认 Adapter 及命名 Backend，复用动态目录、参数与绑定机制。相对 profile 路径
+按配置文件目录解析；网关 endpoint 与上游 ComfyUI endpoint 各自固定。
+
+新增配置/编辑器启动回归验证两个 profile 的独立参数/digest、非法配置拒绝及
+仅 ComfyUI 配置也能构造执行器并进入节点目录。尚无浏览器真实交互验收或模型
+验收；服务执行仍显式运行，不因前端轮询而派发。
