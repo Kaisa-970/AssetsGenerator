@@ -251,6 +251,14 @@ def create_editor_server(editor: DraftEditor, port: int = 8767) -> ThreadingHTTP
                 path = urlsplit(self.path).path
                 if self.command == "POST" and path == "/api/compile":
                     self.respond(200, editor.compile(body.get("pipeline")))
+                elif (
+                    self.command == "POST"
+                    and path == "/api/inputs/observations"
+                    and editor.execution
+                ):
+                    if not isinstance(body, dict) or set(body) != {"images"}:
+                        raise ValueError("observations import requires images")
+                    self.respond(201, editor.execution.import_observations(body["images"]))
                 elif self.command == "POST" and path == "/api/runs" and editor.execution:
                     if not isinstance(body, dict) or set(body) - {"idempotency_key"} not in (
                         {"pipeline", "image_path"},

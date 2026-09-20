@@ -89,6 +89,7 @@ export function ExecutionPanel({
   const [showGraph, setShowGraph] = useState(false);
   const [imagePath, setImagePath] = useState("");
   const [observationsId, setObservationsId] = useState("");
+  const [observationFiles, setObservationFiles] = useState<string[]>([]);
   const multiView = Object.keys(pipeline.inputs).length === 1 && "observations" in pipeline.inputs;
   const [imageSource, setImageSource] = useState("path");
   const [uploaded, setUploaded] = useState<{
@@ -230,17 +231,56 @@ export function ExecutionPanel({
       setUploading(false);
     }
   };
+  const uploadObservations = async (files: File[]) => {
+    if (uploadPending.current) return;
+    setObservationsId("");
+    setObservationFiles([]);
+    setUploadMessage("");
+    if (files.length < 2 || files.length > 32 || files.some(f => !f.size || f.size > 20 * 1024 * 1024)) {
+      setUploadMessage("请选择 2–32 张 RGB 图片，每张不超过 20 MiB。");
+      return;
+    }
+    uploadPending.current = true;
+    setUploading(true);
+    try {
+      const images = [];
+      for (const [index, file] of files.entries()) {
+        setUploadMessage(`正在上传 ${index + 1}/${files.length}：${file.name}`);
+        const response = await fetch("/api/inputs/image", {method: "POST", headers: {"Content-Type": "application/octet-stream"}, body: file});
+        const value = await response.json();
+        if (!response.ok) throw Error(value.error || "上传失败");
+        images.push(value.image_ref);
+      }
+      const bundle = await request("/api/inputs/observations", {images});
+      setObservationsId(bundle.observations_ref.artifact_id);
+      setObservationFiles(files.map(f => f.name));
+      setUploadMessage("观测包已创建；点击启动才会执行模型。");
+    } catch (error) {
+      setUploadMessage(`导入失败：${String(error)}。未创建运行，可重新选择文件。`);
+    } finally {
+      uploadPending.current = false;
+      setUploading(false);
+    }
+  };
   return (
     <section className="execution-panel">
       <div className="section-label">创建新运行</div>
       <p>已配置模型：{profile || "本地服务配置"}</p>
-      {multiView ? <label>
+      {multiView ? <div>
+        <label>选择多视图照片（RGB，2–32 张）
+          <input type="file" multiple accept="image/png,image/jpeg,image/webp" aria-label="上传多视图照片" disabled={pending || uploading}
+            onChange={e => { const files = Array.from(e.target.files || []); e.target.value = ""; if (files.length) void uploadObservations(files); }} />
+        </label>
+        <p>按选择顺序分配视图 ID；不自动补充相机、mask 或深度。</p>
+        {observationFiles.length > 0 && <ol>{observationFiles.map((name, i) => <li key={i}>{name}</li>)}</ol>}
+        {uploadMessage && <p role="status">{uploadMessage}</p>}
+        <label>
         已导入的 ObservationBundle Artifact ID
         <input aria-label="观测包 Artifact ID" value={observationsId}
-          placeholder="sha256:…" disabled={pending}
+          placeholder="sha256:…" disabled={pending || uploading}
           onChange={(e) => setObservationsId(e.target.value)} />
-        <p>先用 import-observations 将多视图数据导入此服务的 Store，再填写引用。</p>
-      </label> : <>
+        <p>也可使用 import-observations 导入后的已有引用。</p>
+      </label></div> : <>
       <label>
         图片来源
         <select

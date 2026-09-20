@@ -825,8 +825,18 @@ test("multi-view creation preserves observation reference across reload retry", 
   page.on("dialog", d => d.accept());
   const requests: any[] = [];
   let fail = true;
+  let uploads = 0;
   await page.route("**/api/**", async route => {
     const path = new URL(route.request().url()).pathname;
+    if (path === "/api/inputs/image") {
+      uploads++;
+      return route.fulfill({json: {image_ref: {artifact_id: `image_${uploads}`}}});
+    }
+    if (path === "/api/inputs/observations") {
+      expect(route.request().postDataJSON()).toEqual({images: [{artifact_id: "image_1"}, {artifact_id: "image_2"}]});
+      expect(requests).toHaveLength(0);
+      return route.fulfill({json: {observations_ref: {artifact_id: "sha256:" + "a".repeat(64)}}});
+    }
     if (path === "/api/runs" && route.request().method() === "POST") {
       requests.push(route.request().postDataJSON());
       if (fail) return route.abort("failed");
@@ -843,7 +853,13 @@ test("multi-view creation preserves observation reference across reload retry", 
   await page.goto("/");
   await page.getByRole("button", {name: "multiview", exact: true}).click();
   await page.getByRole("button", {name: "运行", exact: true}).click();
-  await page.getByLabel("观测包 Artifact ID").fill("sha256:" + "a".repeat(64));
+  await page.getByLabel("上传多视图照片").setInputFiles([
+    {name: "first.png", mimeType: "image/png", buffer: Buffer.from("first")},
+    {name: "second.png", mimeType: "image/png", buffer: Buffer.from("second")},
+  ]);
+  await expect(page.getByLabel("观测包 Artifact ID")).toHaveValue("sha256:" + "a".repeat(64));
+  expect(uploads).toBe(2);
+  expect(requests).toHaveLength(0);
   await expect(page.getByLabel("运行图片路径")).toHaveCount(0);
   await page.getByRole("button", {name: "启动新运行", exact: true}).click();
   await expect(page.getByRole("button", {name: "重试原创建请求", exact: true})).toBeEnabled();

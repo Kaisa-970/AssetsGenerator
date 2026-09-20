@@ -125,6 +125,10 @@ def test_diagnostic_locates_bad_input_port(tmp_path):
 
 def test_http_execution_routes_and_strict_requests(tmp_path):
     class Execution:
+        def import_observations(self, images):
+            assert images == [{"artifact_id": "one"}, {"artifact_id": "two"}]
+            return {"observations_ref": {"artifact_id": "bundle"}}
+
         def upload_image(self, data):
             assert data == b"image bytes"
             return {"image_ref": {"artifact_id": "sha256:" + "a" * 64}}
@@ -233,6 +237,13 @@ def test_http_execution_routes_and_strict_requests(tmp_path):
             },
         ) as response:
             assert response.status == 202
+        with post(
+            "/api/inputs/observations", {"images": [{"artifact_id": "one"}, {"artifact_id": "two"}]}
+        ) as response:
+            assert response.status == 201
+            assert json.load(response)["observations_ref"]["artifact_id"] == "bundle"
+        with pytest.raises(HTTPError):
+            post("/api/inputs/observations", {"images": [], "extra": True})
         with urlopen(base + "/api/runs") as response:
             assert len(json.load(response)["runs"]) == 1
         with urlopen(base + "/api/runs/dag_example") as response:

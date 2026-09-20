@@ -474,3 +474,54 @@ def test_multi_view_editor_start_replay_and_resume(tmp_path, monkeypatch):
                 assert service.output(run_id, output["node_id"], output["port"]).data
         finally:
             service.close()
+
+
+def test_observation_import_preserves_order_and_does_not_execute(tmp_path):
+    import io
+
+    from PIL import Image
+
+    from assets_generator.models import ArtifactRef
+    from assets_generator.observations import observation_bundle_from_artifact
+
+    store, _, profile = fixture_engine(tmp_path)
+    registry, _ = image_plan(profile)
+    with DagRepository(store, tmp_path / "dag") as repo:
+        service = NodeEditorExecution(DagEngine(repo, registry))
+        try:
+            refs = []
+            for color in ("red", "blue"):
+                stream = io.BytesIO()
+                Image.new("RGB", (8, 8), color).save(stream, format="PNG")
+                refs.append(service.upload_image(stream.getvalue())["image_ref"])
+            result = service.import_observations(refs)
+            assert service.import_observations(refs) == result
+            bundle = observation_bundle_from_artifact(
+                ArtifactRef(**result["observations_ref"]), store
+            )
+            assert [view.image.artifact_id for view in bundle.views] == [
+                ref["artifact_id"] for ref in refs
+            ]
+            assert [view.view_id for view in bundle.views] == ["view_000", "view_001"]
+            assert all(
+                view.camera is None and view.mask is None and view.depth is None
+                for view in bundle.views
+            )
+            assert (
+                service.import_observations(refs[::-1])["observations_ref"]
+                != result["observations_ref"]
+            )
+            assert service.list_runs() == []
+            for invalid in ([], refs[:1], refs * 17, [refs[0], refs[0]], [{}, refs[0]]):
+                with pytest.raises(ContractError):
+                    service.import_observations(invalid)
+            stream = io.BytesIO()
+            Image.new("RGBA", (8, 8)).save(stream, format="PNG")
+            rgba = service.upload_image(stream.getvalue())["image_ref"]
+            with pytest.raises(ContractError, match="RGB mode"):
+                service.import_observations([refs[0], rgba])
+            store.blob_path(ArtifactRef(**refs[0])).unlink()
+            with pytest.raises(ContractError, match="digest"):
+                service.import_observations(refs)
+        finally:
+            service.close()

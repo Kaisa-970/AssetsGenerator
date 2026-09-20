@@ -240,6 +240,37 @@ class NodeEditorExecution:
             )
         return {"image_ref": to_primitive(ref)}
 
+    def import_observations(self, images: list[dict[str, Any]]) -> dict[str, Any]:
+        """Assemble explicit ordered RGB references, without estimating cameras."""
+        from .models import ObservationView
+        from .observations import make_observation_bundle, observation_bundle_value
+
+        if not isinstance(images, list) or not 2 <= len(images) <= 32:
+            raise ContractError("select between 2 and 32 RGB images")
+        refs = []
+        for item in images:
+            if (
+                not isinstance(item, dict)
+                or set(item) != {"artifact_id"}
+                or not isinstance(item["artifact_id"], str)
+            ):
+                raise ContractError("images must contain ArtifactRef objects")
+            refs.append(ArtifactRef(**item))
+        if len({ref.artifact_id for ref in refs}) != len(refs):
+            raise ContractError("observation images must be distinct")
+        with self._lock:
+            if self._closed:
+                raise ContractError("editor execution service is closing")
+            bundle = make_observation_bundle(
+                [ObservationView(f"view_{index:03d}", ref) for index, ref in enumerate(refs)],
+                self.engine.store,
+            )
+            reference = self.engine.store.persist_structured(observation_bundle_value(bundle))
+            return {
+                "observations_ref": to_primitive(reference),
+                "views": to_primitive(bundle.views),
+            }
+
     def start(
         self,
         raw: dict[str, Any],
