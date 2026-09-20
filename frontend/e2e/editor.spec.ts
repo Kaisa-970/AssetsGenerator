@@ -514,7 +514,13 @@ test("parameter form sends typed values and preserves other instances", async ({
   await page.getByLabel("参数 seed", { exact: true }).fill("99");
   await page.getByLabel("参数 seed", { exact: true }).press("Tab");
   await page.getByLabel("参数 size", { exact: true }).selectOption("1");
+  await page
+    .getByLabel("参数 options JSON", { exact: true })
+    .fill('{"label":"pending"}');
   await page.getByLabel("参数 enabled", { exact: true }).selectOption("false");
+  await expect(
+    page.getByLabel("参数 options JSON", { exact: true }),
+  ).toHaveValue('{"label":"pending"}');
   await page.getByLabel("参数 matrix JSON", { exact: true }).fill("{}");
   await page
     .getByRole("button", { name: "应用字段 · matrix", exact: true })
@@ -526,6 +532,9 @@ test("parameter form sends typed values and preserves other instances", async ({
   await page
     .getByRole("button", { name: "应用字段 · matrix", exact: true })
     .click();
+  await expect(
+    page.getByLabel("参数 options JSON", { exact: true }),
+  ).toHaveValue('{"label":"pending"}');
   await page.getByLabel("参数 options JSON", { exact: true }).fill("null");
   await page
     .getByRole("button", { name: "应用字段 · options", exact: true })

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Adapter } from "./graph";
 
 type Field = {
@@ -18,9 +18,24 @@ export function ParameterForm({
 }) {
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
+  const previous = useRef({ adapter, parameters });
   useEffect(() => {
-    setDraft({});
-    setError("");
+    const old = previous.current;
+    previous.current = { adapter, parameters };
+    if (old.adapter !== adapter) {
+      setDraft({});
+      setError("");
+      return;
+    }
+    setDraft((pending) =>
+      Object.fromEntries(
+        Object.entries(pending).filter(
+          ([name]) =>
+            JSON.stringify(old.parameters[name]) ===
+            JSON.stringify(parameters[name]),
+        ),
+      ),
+    );
   }, [adapter, parameters]);
   const properties = (adapter?.parameter_schema?.properties || {}) as Record<
     string,
