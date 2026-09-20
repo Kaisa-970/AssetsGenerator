@@ -65,3 +65,9 @@ class ComfyClient:
         if str(uuid.UUID(prompt_id)) != prompt_id:
             raise ValueError("invalid ComfyUI prompt UUID")
         return self._json("/history/" + prompt_id)
+
+    def observe(self, journal: ComfySubmissionJournal, key: str) -> dict[str, Any]:
+        """Correlate history only; never resubmit or declare outputs imported."""
+        from .comfy_history import validate_history
+
+        return validate_history(journal.read(key), self.history(journal, key))

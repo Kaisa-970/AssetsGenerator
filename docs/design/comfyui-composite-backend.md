@@ -89,3 +89,14 @@ acknowledged 只代表收到对应提交回执，不代表 workflow 成功。
 JSON key，重开 SQLite 后均不产生第二次 POST。日志与 HTTP 合跑 10 项通过，
 Ruff/mypy 通过。历史内容关联、结果固定、上传下载及 DAG 仍未接入；没有运行
 真实 ComfyUI，不能声明复合节点可用。
+
+### 历史关联校验
+
+ComfyClient.observe 只查询原 UUID，再校验历史外层键、prompt 数组内 UUID 和
+实际提交图的规范化字节，拒绝另一图或另一作业的历史。成功要求 completed=true；
+失败保留原 messages。未知输出节点、错误状态类型和缺失历史保持不确定，
+不会重发或更改提交日志。返回值显式标记 composite_boundary_only，尚不作为
+导入完成或内部来源已验证的证据。上游修改 API 图时也会拒绝，不能静默接受差异。
+
+日志、HTTP 与历史关联测试合跑 20 项通过，Ruff/mypy 通过。下一步仍需耐久固定
+观察结果、按受信输出映射下载并验证 Artifact，以及外层作业和 DAG 接入。

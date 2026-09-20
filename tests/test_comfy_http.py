@@ -75,6 +75,9 @@ def test_comfy_submission_uses_one_http_post_across_restart(tmp_path, mode):
         assert posts[0][0] == "/prompt"
         assert posts[0][1]["prompt_id"] == record["prompt_id"]
         assert queries == ["/history/" + record["prompt_id"]]
+        with pytest.raises(ComfySubmissionUnknown, match="history missing"):
+            client.observe(journal, "one")
+        assert len(posts) == 1
         with pytest.raises(ValueError, match="endpoint differs"):
             ComfyClient("http://127.0.0.1:1").submit(journal, "one")
     finally:
