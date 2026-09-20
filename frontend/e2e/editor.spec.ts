@@ -693,3 +693,130 @@ test("node backend selection uses installed schema and clears stale identity", a
   expect(saved.nodes.right.parameters).toEqual({ profile_digest: "old" });
   expect(saved.nodes.right.backend).toBeUndefined();
 });
+
+test("lost creation response preserves exact intent through reload and explicit retry", async ({
+  page,
+}) => {
+  const starts: any[] = [];
+  let loseResponse = true;
+  await page.route("**/api/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === "/api/runs" && route.request().method() === "POST") {
+      starts.push(route.request().postDataJSON());
+      if (loseResponse) {
+        await route.abort("failed");
+        return;
+      }
+    }
+    await route.fulfill({
+      json:
+        path === "/api/catalog"
+          ? {
+              operators: {},
+              adapters: [],
+              templates: [],
+              execution_enabled: true,
+            }
+          : path === "/api/drafts"
+            ? { drafts: [] }
+            : path === "/api/runs" && route.request().method() === "GET"
+              ? { runs: [] }
+              : {
+                  run: {
+                    run_id: "dag_receipt",
+                    status: "succeeded",
+                    dag: { revision: 1, node_states: {} },
+                  },
+                },
+    });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "运行", exact: true }).click();
+  await page.getByLabel("运行图片路径").fill("/data/original.png");
+  const start = page.getByRole("button", { name: "启动新运行", exact: true });
+  await start.click();
+  const retry = page.getByRole("button", {
+    name: "重试原创建请求",
+    exact: true,
+  });
+  await expect(retry).toBeEnabled();
+  expect(starts).toHaveLength(1);
+  expect(starts[0].idempotency_key).toMatch(/^[a-f0-9-]{36}$/);
+  await expect(start).toBeDisabled();
+
+  await page.reload();
+  await page.getByRole("button", { name: "运行", exact: true }).click();
+  await expect(retry).toBeEnabled();
+  expect(starts).toHaveLength(1);
+  await page.getByLabel("运行图片路径").fill("/data/changed.png");
+  await page.getByLabel("管线名称").fill("changed_after_submission");
+  loseResponse = false;
+  await retry.click();
+  await expect(
+    page.getByText("运行已创建；请在下方查看真实节点状态。"),
+  ).toBeVisible();
+  expect(starts).toHaveLength(2);
+  expect(starts[1]).toEqual(starts[0]);
+  await expect(retry).toHaveCount(0);
+  expect(
+    await page.evaluate(() =>
+      sessionStorage.getItem("assets-generator:pending-creation:v1"),
+    ),
+  ).toBeNull();
+
+  await start.click();
+  await expect.poll(() => starts.length).toBe(3);
+  expect(starts[2].idempotency_key).not.toBe(starts[0].idempotency_key);
+  expect(starts[2].image_path).toBe("/data/changed.png");
+  expect(starts[2].pipeline.pipeline).toBe("changed_after_submission");
+
+  // A failed next intent can only be replaced by explicit discard.
+  await expect(start).toBeEnabled();
+  loseResponse = true;
+  await start.click();
+  await expect(retry).toBeEnabled();
+  expect(starts).toHaveLength(4);
+  await page
+    .getByRole("button", { name: "放弃待确认请求，允许新建", exact: true })
+    .click();
+  await expect(start).toBeEnabled();
+  expect(starts).toHaveLength(4);
+  loseResponse = false;
+  await start.click();
+  await expect.poll(() => starts.length).toBe(5);
+  expect(starts[4].idempotency_key).not.toBe(starts[3].idempotency_key);
+});
+
+test("creation is not sent if browser cannot persist its receipt", async ({
+  page,
+}) => {
+  let starts = 0;
+  await page.addInitScript(() => {
+    Storage.prototype.setItem = () => {
+      throw new Error("storage disabled");
+    };
+  });
+  await page.route("**/api/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === "/api/runs" && route.request().method() === "POST") starts++;
+    await route.fulfill({
+      json:
+        path === "/api/catalog"
+          ? {
+              operators: {},
+              adapters: [],
+              templates: [],
+              execution_enabled: true,
+            }
+          : path === "/api/drafts"
+            ? { drafts: [] }
+            : { runs: [] },
+    });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "运行", exact: true }).click();
+  await page.getByLabel("运行图片路径").fill("/data/robot.png");
+  await page.getByRole("button", { name: "启动新运行", exact: true }).click();
+  await expect(page.getByText(/storage disabled/)).toBeVisible();
+  expect(starts).toBe(0);
+});

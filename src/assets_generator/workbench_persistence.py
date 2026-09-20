@@ -146,6 +146,18 @@ class WorkbenchRepository:
             self._poisoned = True
             raise
 
+    def creation_receipt(self, idempotency_key: str) -> CreationReceipt | None:
+        with self._command_lock:
+            self._ready()
+            digest = sha256_bytes(idempotency_key.encode()).split(":")[1]
+            path = self.directory / "requests" / f"{digest}.json"
+            if not path.exists():
+                return None
+            receipt = decode_record(CreationReceipt, read_json(path))
+            if receipt.idempotency_key != idempotency_key:
+                raise ValueError("creation receipt key mismatch")
+            return receipt
+
     def reserve_creation(self, receipt: CreationReceipt) -> CreationReceipt:
         with self._command_lock:
             return self._reserve_creation(receipt)

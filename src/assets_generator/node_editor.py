@@ -252,17 +252,24 @@ def create_editor_server(editor: DraftEditor, port: int = 8767) -> ThreadingHTTP
                 if self.command == "POST" and path == "/api/compile":
                     self.respond(200, editor.compile(body.get("pipeline")))
                 elif self.command == "POST" and path == "/api/runs" and editor.execution:
-                    if not isinstance(body, dict) or set(body) not in (
+                    if not isinstance(body, dict) or set(body) - {"idempotency_key"} not in (
                         {"pipeline", "image_path"},
                         {"pipeline", "image_ref"},
                     ):
                         raise ValueError("run requires pipeline and exactly one image source")
+                    options: dict[str, Any] = {}
+                    if "idempotency_key" in body:
+                        if not isinstance(body["idempotency_key"], str):
+                            raise ValueError("idempotency_key must be text")
+                        options["idempotency_key"] = body["idempotency_key"]
                     if "image_ref" in body:
                         value = editor.execution.start(
-                            body["pipeline"], image_ref=body["image_ref"]
+                            body["pipeline"], image_ref=body["image_ref"], **options
                         )
                     else:
-                        value = editor.execution.start(body["pipeline"], body["image_path"])
+                        value = editor.execution.start(
+                            body["pipeline"], body["image_path"], **options
+                        )
                     self.respond(202, value)
                 elif self.command == "POST" and path.startswith("/api/runs/") and editor.execution:
                     parts = path.removeprefix("/api/runs/").split("/")

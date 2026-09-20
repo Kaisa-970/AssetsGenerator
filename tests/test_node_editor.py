@@ -128,7 +128,8 @@ def test_http_execution_routes_and_strict_requests(tmp_path):
             assert data == b"image bytes"
             return {"image_ref": {"artifact_id": "sha256:" + "a" * 64}}
 
-        def start(self, pipeline, image_path=None, *, image_ref=None):
+        def start(self, pipeline, image_path=None, *, image_ref=None, idempotency_key=None):
+            assert idempotency_key in (None, "request-one")
             assert pipeline == {"pipeline": "draft"}
             if image_ref is None:
                 assert image_path == "/tmp/input.png"
@@ -201,6 +202,15 @@ def test_http_execution_routes_and_strict_requests(tmp_path):
             {
                 "pipeline": {"pipeline": "draft"},
                 "image_ref": {"artifact_id": "sha256:" + "a" * 64},
+            },
+        ) as response:
+            assert response.status == 202
+        with post(
+            "/api/runs",
+            {
+                "pipeline": {"pipeline": "draft"},
+                "image_path": "/tmp/input.png",
+                "idempotency_key": "request-one",
             },
         ) as response:
             assert response.status == 202

@@ -39,6 +39,40 @@ async function request(path: string, body?: unknown, signal?: AbortSignal) {
   if (!response.ok) throw Error(value.error || `HTTP ${response.status}`);
   return value;
 }
+type CreationRequest = {
+  pipeline: Pipeline;
+  idempotency_key: string;
+  image_path?: string;
+  image_ref?: Record<string, unknown>;
+};
+const creationStorageKey = "assets-generator:pending-creation:v1";
+function restoreCreation(): { request?: CreationRequest; error?: string } {
+  try {
+    const raw = sessionStorage.getItem(creationStorageKey);
+    if (!raw) return {};
+    const value = JSON.parse(raw);
+    if (
+      !value ||
+      typeof value !== "object" ||
+      typeof value.idempotency_key !== "string" ||
+      !/^[A-Za-z0-9_-]{1,128}$/.test(value.idempotency_key) ||
+      !value.pipeline ||
+      typeof value.pipeline !== "object" ||
+      !(
+        (typeof value.image_path === "string" &&
+          value.image_path.length > 0 &&
+          !value.image_ref) ||
+        (value.image_ref &&
+          typeof value.image_ref.artifact_id === "string" &&
+          !value.image_path)
+      )
+    )
+      throw Error("保存的请求格式无效");
+    return { request: value };
+  } catch (error) {
+    return { error: `无法读取待确认请求：${String(error)}` };
+  }
+}
 export function ExecutionPanel({
   pipeline,
   profile,
@@ -48,6 +82,7 @@ export function ExecutionPanel({
   profile?: string;
   executionReason?: string;
 }) {
+  const [creation, setCreation] = useState(restoreCreation);
   const [showReview, setShowReview] = useState(false);
   const [showGraph, setShowGraph] = useState(false);
   const [imagePath, setImagePath] = useState("");
@@ -138,6 +173,27 @@ export function ExecutionPanel({
       setPending(false);
     }
   };
+  const submitCreation = async (submitted: CreationRequest) => {
+    // Persist before sending so an uncertain response retains the original intent.
+    sessionStorage.setItem(creationStorageKey, JSON.stringify(submitted));
+    setCreation({ request: submitted });
+    const value: Envelope = await request("/api/runs", submitted);
+    if (!value.run?.run_id) throw Error("服务未返回有效运行，原请求已保留");
+    choose(value.run.run_id);
+    accept(value);
+    setSnapshot({
+      runId: value.run.run_id,
+      pipeline: JSON.stringify(submitted.pipeline),
+    });
+    setRuns((old) => [
+      { run_id: value.run.run_id, status: value.run.status },
+      ...old.filter((item) => item.run_id !== value.run.run_id),
+    ]);
+    sessionStorage.removeItem(creationStorageKey);
+    setCreation({});
+    setMessage("运行已创建；请在下方查看真实节点状态。");
+  };
+  const unresolvedCreation = !!creation.request || !!creation.error;
   const run = envelope?.run;
   const executing = pending || !!envelope?.busy;
   const upload = async (file?: File) => {
@@ -230,35 +286,65 @@ export function ExecutionPanel({
         className="primary"
         disabled={
           pending ||
+          unresolvedCreation ||
           uploading ||
           (imageSource === "path" ? !imagePath.trim() : !uploaded) ||
           !!executionReason
         }
         onClick={() =>
-          void mutate(async () => {
-            const submitted = structuredClone(pipeline);
-            const value: Envelope = await request("/api/runs", {
-              pipeline: submitted,
+          void mutate(() =>
+            submitCreation({
+              pipeline: structuredClone(pipeline),
+              idempotency_key: crypto.randomUUID(),
               ...(imageSource === "path"
                 ? { image_path: imagePath.trim() }
-                : { image_ref: uploaded!.ref }),
-            });
-            choose(value.run.run_id);
-            accept(value);
-            setSnapshot({
-              runId: value.run.run_id,
-              pipeline: JSON.stringify(submitted),
-            });
-            setRuns((old) => [
-              { run_id: value.run.run_id, status: value.run.status },
-              ...old.filter((item) => item.run_id !== value.run.run_id),
-            ]);
-            setMessage("运行已创建；请在下方查看真实节点状态。");
-          })
+                : { image_ref: structuredClone(uploaded!.ref) }),
+            }),
+          )
         }
       >
         启动新运行
       </button>
+      {unresolvedCreation && (
+        <div className="run-node">
+          <p role="alert">
+            {creation.error ||
+              "上次创建请求尚未确认。重试会发送原来的管线和图片，不使用当前草稿；不会重复创建已登记的运行。"}
+          </p>
+          {creation.request && (
+            <>
+              <p className="run-identity">
+                请求 ID：{creation.request.idempotency_key}
+              </p>
+              <button
+                disabled={pending}
+                onClick={() =>
+                  void mutate(() => submitCreation(creation.request!))
+                }
+              >
+                重试原创建请求
+              </button>
+            </>
+          )}
+          <p>
+            放弃本地请求不会取消服务器可能已创建的运行；请先检查运行列表，再发起新的运行。
+          </p>
+          <button
+            disabled={pending}
+            onClick={() => {
+              try {
+                sessionStorage.removeItem(creationStorageKey);
+                setCreation({});
+                setMessage("已放弃本地待确认请求；服务器运行不会被取消。");
+              } catch (error) {
+                setMessage(`无法清除请求：${String(error)}`);
+              }
+            }}
+          >
+            放弃待确认请求，允许新建
+          </button>
+        </div>
+      )}
       <hr />
       <div className="section-label">运行记录</div>
       <button

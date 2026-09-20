@@ -9,6 +9,7 @@ from __future__ import annotations
 import io
 import re
 import threading
+import uuid
 from collections.abc import Callable
 from http.server import ThreadingHTTPServer
 from pathlib import Path
@@ -23,8 +24,9 @@ from .dag_review import DagMaskReviewService, create_dag_review_server
 from .models import ArtifactRef
 from .pipeline import _pipeline_from_raw, _port_spec, compile_pipeline, load_default_operator_specs
 from .relations import RelationValidatorRegistry
-from .serialization import read_json, to_primitive
+from .serialization import cache_key, canonical_json_bytes, read_json, to_primitive
 from .workbench_http import OutputPayload
+from .workbench_persistence import CreationReceipt
 from .workflow import _import_image
 
 
@@ -175,6 +177,18 @@ class NodeEditorExecution:
                     raise ContractError("a human decision is still executing")
 
     def _dispatch(self, run_id: str, command: Callable[[], Any]) -> None:
+        # All routes (including resume/retry after a pre-marker crash) must
+        # establish creation evidence before any execution can occur.
+        repository = self.engine.repository
+        marker = repository.directory / "created_runs" / f"{run_id}.json"
+        if not marker.exists():
+            repository._mutate(
+                lambda: repository.io.write(
+                    marker,
+                    canonical_json_bytes({"run_id": run_id}),
+                    exclusive=True,
+                )
+            )
         self._errors.pop(run_id, None)
         self._active_run = run_id
 
@@ -225,9 +239,16 @@ class NodeEditorExecution:
         image_path: str | None = None,
         *,
         image_ref: dict[str, Any] | None = None,
+        idempotency_key: str | None = None,
     ) -> dict[str, Any]:
         with self._lock:
-            self._idle()
+            if idempotency_key is not None and (
+                not isinstance(idempotency_key, str)
+                or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", idempotency_key)
+            ):
+                raise ContractError("invalid creation idempotency key")
+            if self._closed:
+                raise ContractError("editor execution service is closing")
             if not isinstance(raw, dict) or set(raw) - {"pipeline", "version", "inputs", "nodes"}:
                 raise ContractError("invalid pipeline object")
             plan = self.engine.registry.bind_plan(
@@ -258,8 +279,53 @@ class NodeEditorExecution:
                 value=image,
                 store=self.engine.store,
             )
+            run_id = None
+            marker = None
+            repository = self.engine.repository
+            if idempotency_key is not None:
+                if repository.creation_receipt("node-editor:" + idempotency_key) is None:
+                    self._idle()
+                receipt = repository.reserve_creation(
+                    CreationReceipt(
+                        "node-editor:" + idempotency_key,
+                        cache_key({"plan": plan.to_dict(), "image": to_primitive(image)}),
+                        f"dag_{uuid.uuid4().hex}",
+                    )
+                )
+                run_id = receipt.run_id
+                marker = repository.directory / "created_runs" / f"{run_id}.json"
+                index = self.engine.store.root / "runs" / f"{run_id}.json"
+                if index.exists():
+                    existing = repository.load(run_id)
+                    if (
+                        existing.dag is None
+                        or existing.dag.plan_id != plan.plan_id
+                        or existing.dag.named_actual_inputs != {"image": image}
+                    ):
+                        raise ContractError("creation receipt does not match persisted run")
+                    if not marker.exists():
+                        repository._mutate(
+                            lambda: repository.io.write(
+                                marker,
+                                canonical_json_bytes({"run_id": run_id}),
+                                exclusive=True,
+                            )
+                        )
+                    # No resume/dispatch on repeated POST, even after restart.
+                    return self.snapshot(run_id)
+                if marker.exists():
+                    raise ContractError("created run index is missing; refusing to recreate it")
+            self._idle()
             self._stop_review()
-            run = self.engine.create(plan, {"image": image})
+            run = self.engine.create(plan, {"image": image}, run_id=run_id)
+            if marker is not None:
+                repository._mutate(
+                    lambda: repository.io.write(
+                        marker,
+                        canonical_json_bytes({"run_id": run.run_id}),
+                        exclusive=True,
+                    )
+                )
             self._dispatch(run.run_id, lambda: self.engine.drain(run.run_id))
             return self.snapshot(run.run_id)
 

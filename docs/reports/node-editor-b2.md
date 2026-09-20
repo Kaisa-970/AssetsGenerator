@@ -58,3 +58,9 @@
 浏览器输入补齐：运行面板支持 PNG/JPEG/WebP 上传（20 MiB、25MP、单帧），保留服务器路径并显式选择来源。上传只持久化原始字节及图片身份，不创建运行；启动时提交精确 ArtifactRef，经端口及摘要验证后固定输入。失败替换会清除旧上传引用。独立审查发现超大声明尺寸触发 Pillow DecompressionBombError 时未转换 HTTP 错误，已修正并添加微型 PNG 回归。
 
 验证：11 项 editor/execution Python 测试、9 项 Vitest、9 项 Playwright、TypeScript/Vite 构建通过；Ruff、mypy 通过。覆盖上传不派发、相同字节身份稳定、精确运行输入、缺失 Blob 拒绝、非法/截断/超大声明尺寸图片、HTTP Origin 与两种启动请求、前端上传失败替换。浏览器测试模拟上传响应，实际图片解码由 Python 测试覆盖；本轮未新增真实 GPU 推理或浏览器上传到真实模型的端到端验收。创建幂等键及画布多视图仍未完成。
+
+运行创建幂等性：复用 Repository 的耐久 CreationReceipt，将客户端键绑定编译后的完整计划及精确图片 Artifact 身份。先预留 run ID，再写首份快照；重复 POST 返回现有运行而不重复 drain，参数或图片身份变化则冲突。已创建标记在任何执行派发前写入；索引丢失时拒绝重新创建。独立 review 找到“初始快照后、marker 前崩溃”和“忙时新键产生幽灵记录”边界，已修复并补测；直接从列表 resume/retry 也必须建立 marker。存储写入失败仍沿用 Repository poisoned 状态，不在不确定的写入状态下继续执行。
+
+浏览器在请求前保存 sessionStorage 原请求和 UUID；响应未确认时可明确重试原请求，刷新或修改草稿不会改变它。明确放弃仅清除本地待办，不取消已有服务端运行。旧 API 无 key 调用仍兼容，但没有幂等保证。当前已完成运行的重放仍会重新编译并校验当前资源与图片身份；配置或路径内容变化时拒绝重放，可从运行列表查看已有结果。本轮未新增 GPU 推理。
+
+本轮验证：67 项 editor/execution/workbench foundation/engine Python 回归单次通过（47.05 秒）；前端 9 项 Vitest、11 项 Playwright 及 TypeScript/Vite 构建通过，另单独重跑了改草稿后重试原请求的浏览器用例。Ruff、mypy（86 源码文件）及 Python 构建通过。测试包含预留后中断、快照后中断、运行中重放、服务重启、键冲突、索引损坏拒绝及直接恢复的 marker 修复；并未重复宣称全仓测试或真实 GPU 端到端已验证。

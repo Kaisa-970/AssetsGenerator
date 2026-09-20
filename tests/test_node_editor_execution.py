@@ -267,3 +267,170 @@ def test_upload_rejects_invalid_images_without_artifacts(tmp_path):
             assert service.list_runs() == []
         finally:
             service.close()
+
+
+def test_creation_retry_reuses_run_across_restart_and_detects_conflict(tmp_path, monkeypatch):
+    store, _, profile = fixture_engine(tmp_path)
+    registry, _ = image_plan(profile)
+    directory = tmp_path / "dag"
+    dispatched = []
+    with DagRepository(store, directory) as repo:
+        engine = DagEngine(repo, registry)
+        service = NodeEditorExecution(engine)
+        monkeypatch.setattr(engine, "drain", lambda run_id: dispatched.append(run_id))
+        uploaded = service.upload_image((tmp_path / "fixture/scene.png").read_bytes())
+        options = {"image_ref": uploaded["image_ref"], "idempotency_key": "request-one"}
+        try:
+            result = service.start(raw(), **options)
+            run_id = result["run"]["run_id"]
+            wait(service, run_id)
+            assert service.start(raw(), **options)["run"]["run_id"] == run_id
+            changed = raw()
+            changed["nodes"]["generate_asset"]["parameters"]["seed"] = 778
+            with pytest.raises(ValueError, match="conflict"):
+                service.start(changed, **options)
+            assert dispatched == [run_id]
+        finally:
+            service.close()
+    with DagRepository(store, directory) as repo:
+        engine = DagEngine(repo, registry)
+        service = NodeEditorExecution(engine)
+        monkeypatch.setattr(engine, "drain", lambda run_id: dispatched.append(run_id))
+        try:
+            assert service.start(raw(), **options)["run"]["run_id"] == run_id
+            assert dispatched == [run_id]
+            (store.root / "runs" / f"{run_id}.json").unlink()
+            with pytest.raises(ContractError, match="refusing to recreate"):
+                service.start(raw(), **options)
+            assert dispatched == [run_id]
+        finally:
+            service.close()
+
+
+def test_creation_reservation_survives_before_first_snapshot(tmp_path, monkeypatch):
+    store, _, profile = fixture_engine(tmp_path)
+    registry, _ = image_plan(profile)
+    directory = tmp_path / "dag"
+    with DagRepository(store, directory) as repo:
+        engine = DagEngine(repo, registry)
+        service = NodeEditorExecution(engine)
+        uploaded = service.upload_image((tmp_path / "fixture/scene.png").read_bytes())
+        options = {"image_ref": uploaded["image_ref"], "idempotency_key": "before-create"}
+        captured = []
+
+        def crash(plan, inputs, run_id=None):
+            captured.append(run_id)
+            raise RuntimeError("simulated crash before snapshot")
+
+        monkeypatch.setattr(engine, "create", crash)
+        with pytest.raises(RuntimeError, match="simulated crash"):
+            service.start(raw(), **options)
+        service.close()
+    with DagRepository(store, directory) as repo:
+        engine = DagEngine(repo, registry)
+        service = NodeEditorExecution(engine)
+        monkeypatch.setattr(engine, "drain", lambda run_id: None)
+        try:
+            result = service.start(raw(), **options)
+            assert result["run"]["run_id"] == captured[0]
+            wait(service, captured[0])
+            assert len(service.list_runs()) == 1
+        finally:
+            service.close()
+
+
+def test_creation_replay_while_worker_active_does_not_dispatch_again(tmp_path, monkeypatch):
+    store, _, profile = fixture_engine(tmp_path)
+    registry, _ = image_plan(profile)
+    with DagRepository(store, tmp_path / "dag") as repo:
+        engine = DagEngine(repo, registry)
+        service = NodeEditorExecution(engine)
+        entered, release = threading.Event(), threading.Event()
+        calls = []
+
+        def blocked(run_id):
+            calls.append(run_id)
+            entered.set()
+            assert release.wait(10)
+
+        monkeypatch.setattr(engine, "drain", blocked)
+        try:
+            uploaded = service.upload_image((tmp_path / "fixture/scene.png").read_bytes())
+            options = {"image_ref": uploaded["image_ref"], "idempotency_key": "active"}
+            first = service.start(raw(), **options)
+            assert entered.wait(2)
+            second = service.start(raw(), **options)
+            assert second["run"]["run_id"] == first["run"]["run_id"]
+            assert second["busy"]
+            with pytest.raises(ContractError, match="still executing"):
+                service.start(raw(), image_ref=uploaded["image_ref"], idempotency_key="new-active")
+            assert repo.creation_receipt("node-editor:new-active") is None
+            assert len(service.list_runs()) == 1
+            assert calls == [first["run"]["run_id"]]
+        finally:
+            release.set()
+            service.close()
+
+
+def test_creation_replay_after_snapshot_before_dispatch_does_not_resume(tmp_path, monkeypatch):
+    store, _, profile = fixture_engine(tmp_path)
+    registry, _ = image_plan(profile)
+    directory = tmp_path / "dag"
+    with DagRepository(store, directory) as repo:
+        engine = DagEngine(repo, registry)
+        service = NodeEditorExecution(engine)
+        uploaded = service.upload_image((tmp_path / "fixture/scene.png").read_bytes())
+        options = {"image_ref": uploaded["image_ref"], "idempotency_key": "after-create"}
+        original = engine.create
+
+        def crash(*args, **kwargs):
+            original(*args, **kwargs)
+            raise RuntimeError("simulated crash after snapshot")
+
+        monkeypatch.setattr(engine, "create", crash)
+        with pytest.raises(RuntimeError, match="simulated crash"):
+            service.start(raw(), **options)
+        run_id = service.list_runs()[0]["run_id"]
+        service.close()
+    with DagRepository(store, directory) as repo:
+        engine = DagEngine(repo, registry)
+        service = NodeEditorExecution(engine)
+        calls = []
+        monkeypatch.setattr(engine, "drain", lambda run_id: calls.append(run_id))
+        try:
+            assert service.start(raw(), **options)["run"]["run_id"] == run_id
+            assert calls == []
+            assert (directory / "created_runs" / f"{run_id}.json").exists()
+            (store.root / "runs" / f"{run_id}.json").unlink()
+            with pytest.raises(ContractError, match="refusing to recreate"):
+                service.start(raw(), **options)
+            assert calls == []
+
+        finally:
+            service.close()
+
+
+def test_direct_resume_establishes_creation_marker(tmp_path, monkeypatch):
+    store, _, profile = fixture_engine(tmp_path)
+    registry, _ = image_plan(profile)
+    directory = tmp_path / "dag"
+    with DagRepository(store, directory) as repo:
+        engine = DagEngine(repo, registry)
+        service = NodeEditorExecution(engine)
+        monkeypatch.setattr(engine, "drain", lambda run_id: None)
+        try:
+            result = service.start(
+                raw(), str(tmp_path / "fixture/scene.png"), idempotency_key="resume"
+            )
+            run_id = result["run"]["run_id"]
+            wait(service, run_id)
+            marker = directory / "created_runs" / f"{run_id}.json"
+            marker.unlink()  # initial snapshot survived but pre-dispatch marker did not
+            service.resume(run_id, result["run"]["dag"]["revision"])
+            wait(service, run_id)
+            assert marker.exists()
+            (store.root / "runs" / f"{run_id}.json").unlink()
+            with pytest.raises(ContractError, match="refusing to recreate"):
+                service.start(raw(), str(tmp_path / "fixture/scene.png"), idempotency_key="resume")
+        finally:
+            service.close()
