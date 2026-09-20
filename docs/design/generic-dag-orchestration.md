@@ -1,9 +1,9 @@
 # 通用 DAG 编排与节点编辑器实施设计
 
-**状态**：A1 静态编译、CPU／人工执行、受控进程及单图 YAML/审查切片已实现；真实 GPU 验收、完整里程碑 A 与节点编辑器尚未完成\
+**状态**：通用 DAG 编译、串行调度、人工等待、受控进程及单图/多视图 Adapter 已实现；React Flow B1 和 B2 单图执行已接入，完整 B2/C 尚未关闭\
 **目标版本**：Generic DAG Core v1 / Node Editor v1\
-**适用范围**：本地单机执行、人工等待与恢复、独立 Backend 进程或 HTTP 服务\
-**不构成证据**：本文不表示现有 Pipeline 已由通用 DAG 执行器驱动，也不表示 React Flow、HTTP Backend 或 ComfyUI 已接入。
+**适用范围**：本地单机执行、人工等待与恢复；HTTP/ComfyUI 为后续目标\
+**验收边界**：真实单图画布及完成后恢复见 [B2 报告](../reports/node-editor-b2-real-smoke.md)。设计描述不代替运行证据，Fake Backend 不证明模型质量。
 
 ## 1. 目标
 
@@ -32,24 +32,14 @@ Artifact Store + BuildRun + Provenance + QualityReport
 
 ## 2. 当前代码事实
 
-以下能力已经存在，可以复用：
+- `compile_pipeline()` 返回深层不可变 CompiledPlan，检测环、端口载体、kind、schema、cardinality，并固定关系校验器契约。
+- AdapterRegistry 绑定实现与参数；DagEngine 按依赖串行执行，支持扇出、汇合、人工等待、显式重试和证据校验恢复，不按节点名称分派。
+- 单图 SAM/选择/生成、多视图 geometry/reconstruction/release 已有 DAG Adapter。原 Python Workflow 作为算子内部子流程复用，固定工作台入口仍保留。
+- Artifact Store、父子 BuildRun、provenance、决定回执与进程门控负责持久化和恢复；关系 validator 校验观测、相机和空间输入之间的关系。
+- React Flow 可编辑草稿、编译、执行单图、展示固定运行图、基础参数表单及嵌入 mask 审查。
+- 本地 profile 可按节点选择，名称及身份进入绑定和 provenance；多实例共享选区的独立发布已做 CPU 验证，尚未验收同图两种真实模型。
 
-- `compile_pipeline()` 能从端口引用推导依赖，检测环，并校验 kind、carrier、schema 和 cardinality。
-- YAML Pipeline 已能表达扇出和汇合，例如同一输出供多个下游使用。
-- `OperatorSpec` 是端口契约的唯一来源。
-- `ResolvedPlan` 能绑定 Pipeline/OperatorSpec 摘要和 Shape Backend 实现。
-- Artifact Store、`BuildRun`、provenance、人工决定、耐久状态写入及独立进程门控已有实现基础。
-- 固定节点工作台能持久化 stage 状态，并在人工等待期间恢复。
-
-以下能力尚不存在：
-
-- `compile_pipeline()` 只校验，不返回可执行计划。
-- 主要 Workflow 仍在 Python 中手写调用顺序。
-- 固定工作台按 `propose`、`select`、`generate` 等 stage ID 分派实现。
-- 跨端口语义约束主要散落在 Workflow 实现中，未成为可版本化的编译契约。
-- 尚无生产 React Flow 前端、通用 HTTP Backend 适配器或 ComfyUI 集成。
-
-因此，第一阶段的主体是通用 DAG Core，不是画布接入。
+仍未接入：画布多视图运行、浏览器图像上传、通用 HTTP Backend 和 ComfyUI；复杂嵌套参数仍使用 JSON。运行创建的响应丢失目前依靠列表核实，不具备创建幂等键。完整 B2 和远程 Milestone C 仍需后续验收。
 
 ## 3. 范围与非目标
 
