@@ -1108,3 +1108,45 @@ test("published GLB preview loads geometry and closes without mutation", async (
   ).toBeVisible();
   expect(mutations).toBe(0);
 });
+
+
+test("RGBA canvas upload uses the explicit endpoint and preserves returned reference", async ({ page }) => {
+  const imageRef = { artifact_id: "prepared_rgba_exact" };
+  const starts: any[] = [];
+  const uploads: string[] = [];
+  const pipeline = { pipeline: "remote_rgba", version: "1", inputs: { image: { kind: "rgba_image", carriers: ["artifact_ref"] } }, nodes: {} };
+  await page.route("**/api/**", async route => {
+    const path = new URL(route.request().url()).pathname;
+    let body: any = {};
+    if (path === "/api/catalog") body = { operators: {}, adapters: [], execution_enabled: true, templates: [{ id: "remote", label: "远程 RGBA", pipeline }, { id: "rgb", label: "普通 RGB", pipeline: { ...pipeline, inputs: { image: { kind: "rgb_image", carriers: ["artifact_ref"] } } } }] };
+    else if (path === "/api/drafts") body = { drafts: [] };
+    else if (path.startsWith("/api/inputs/")) {
+      uploads.push(path);
+      body = { image_ref: imageRef };
+    } else if (path === "/api/runs" && route.request().method() === "POST") {
+      starts.push(route.request().postDataJSON());
+      body = { run: { run_id: "dag_remote", status: "running", dag: { revision: 1, node_states: {} } }, busy: false };
+    } else if (path === "/api/runs") body = { runs: [] };
+    else body = { run: { run_id: "dag_remote", status: "running", dag: { revision: 1, node_states: {} } }, busy: false };
+    await route.fulfill({ json: body });
+  });
+  await page.goto("/");
+  page.on("dialog", dialog => dialog.accept());
+  await page.getByRole("button", { name: "远程 RGBA", exact: true }).click();
+  await page.getByRole("button", { name: "运行", exact: true }).click();
+  await expect(page.getByText(/此流程不自动抠图/)).toBeVisible();
+  await page.getByLabel("图片来源", { exact: true }).selectOption("upload");
+  await expect(page.getByLabel("上传运行图片")).toHaveAttribute("accept", "image/png");
+  await page.getByLabel("上传运行图片").setInputFiles({ name: "prepared.png", mimeType: "image/png", buffer: Buffer.from("rgba transport fixture") });
+  await expect(page.getByText("图片已上传；点击启动新运行才会执行模型。")).toBeVisible();
+  expect(uploads).toEqual(["/api/inputs/rgba"]);
+  expect(starts).toEqual([]);
+  await page.getByRole("button", { name: "启动新运行", exact: true }).click();
+  await expect.poll(() => starts.length).toBe(1);
+  expect(starts[0].image_ref).toEqual(imageRef);
+  expect(starts[0].pipeline.inputs.image.kind).toBe("rgba_image");
+  await page.getByRole("button", { name: "普通 RGB", exact: true }).click();
+  await page.getByRole("button", { name: "运行", exact: true }).click();
+  await expect(page.getByRole("button", { name: "启动新运行", exact: true })).toBeDisabled();
+  expect(starts).toHaveLength(1);
+});

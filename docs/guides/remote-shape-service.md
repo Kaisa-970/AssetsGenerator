@@ -62,3 +62,7 @@ endpoint/service_id/backend_digest 固定在参数 enum 中，草稿不能任意
 
 远程服务 POST 仍只登记作业；需由服务端显式 execute。作业完成后在画布执行恢复命令，
 继续 Core 节点；页面状态轮询不派发模型。这部分已有 CPU API 测试，尚未做浏览器真实模型全链验收。
+
+浏览器 Playwright 回归覆盖 RGBA 专用上传路由、明确点击后创建运行、提交精确 ArtifactRef，
+以及切换成 RGB 图后禁止复用旧 RGBA 上传。该测试使用模拟 API，证明界面请求行为，
+不替代真实服务端图像校验或浏览器真实模型全链验收。

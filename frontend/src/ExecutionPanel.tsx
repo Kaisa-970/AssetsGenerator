@@ -111,6 +111,7 @@ export function ExecutionPanel({
   const [imageSource, setImageSource] = useState("path");
   const [uploaded, setUploaded] = useState<{
     name: string;
+    rgba: boolean;
     ref: Record<string, unknown>;
   }>();
   const [uploading, setUploading] = useState(false);
@@ -240,7 +241,7 @@ export function ExecutionPanel({
       if (!response.ok) throw Error(value.error || `HTTP ${response.status}`);
       if (!value.image_ref || typeof value.image_ref.artifact_id !== "string")
         throw Error("服务未返回有效的图片引用");
-      setUploaded({ name: file.name, ref: value.image_ref });
+      setUploaded({ name: file.name, rgba: rgbaInput, ref: value.image_ref });
       setUploadMessage("图片已上传；点击启动新运行才会执行模型。");
     } catch (error) {
       setUploadMessage(`上传失败：${String(error)}`);
@@ -399,7 +400,7 @@ export function ExecutionPanel({
             ? !observationsId.trim()
             : imageSource === "path"
               ? !imagePath.trim()
-              : !uploaded) ||
+              : !uploaded || uploaded.rgba !== rgbaInput) ||
           !!executionReason
         }
         onClick={() =>
