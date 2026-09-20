@@ -47,6 +47,8 @@ def test_explicit_execute_and_inspect(tmp_path, monkeypatch, capsys):
     assert json.loads(capsys.readouterr().out)["state"] == "queued"
     assert cli.main(["execute", *options]) == 0
     assert json.loads(capsys.readouterr().out)["state"] == "succeeded"
+    assert cli.main(["abandon-exited", *options]) == 1
+    assert "only running" in capsys.readouterr().err
     assert cli.main(["execute", *options]) == 1
     assert "state conflict" in capsys.readouterr().err
     assert cli.main(["inspect", *options]) == 0

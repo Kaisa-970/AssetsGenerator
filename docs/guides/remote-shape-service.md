@@ -106,3 +106,16 @@ PYTHONPATH=src python -m assets_generator.remote_shape_cli drain \
 `--before <next_before>`，按登记顺序从新到旧浏览。分页游标不受新增任务影响；每页是当时
 保存的状态，不是整个列表的跨页事务快照。读取不探测进程、不恢复、不领取任务。
 当前命令仍先核验 profile，启动成本与 inspect 相同。
+
+## 显式放弃已退出作业的未发布结果
+
+若作业因服务中断一直 running，且决定放弃该次未发布结果，可使用
+`abandon-exited --job <SUBMISSION_KEY>`（其他配置参数同 execute）。该命令先核实保存的
+进程身份，只有进程组已确认 exited 才将 running → failed，错误码为
+`SERVICE_RESULT_ABANDONED`。不杀进程、不补写成功、不伪造 exit code；原 worker 和退出证据保留。
+即使进程退出码为零，也只能代表用户明确放弃结果，不能推断已发布成功。
+
+alive/unknown/缺失身份一律拒绝；已有 succeeded/其他 failed 不覆盖。重复提交相同 abandon
+返回原失败结果。与正在发布的成功结果竞争时，终态 CAS 决定结果，不覆盖已成功发布的作业。
+随后画布恢复会读取这个失败，重试需显式触发；其他排队作业可再次 drain。
+目前没有进程证据的中断（例如领取后尚未登记 worker）仍保持阻塞，不提供强制清除入口。

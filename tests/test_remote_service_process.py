@@ -96,6 +96,9 @@ def test_unverified_observation_does_not_release_slot(tmp_path, monkeypatch, res
             LinuxProcessProbe, "observe", lambda *_: ProcessObservation("now", result)
         )
         assert store.observe_worker(owner).result == result
+        with pytest.raises(ValueError, match="alive or unknown"):
+            store.abandon_exited_job(owner)
+        assert store.lookup(owner).state == "running"
         assert store.db.execute("SELECT COUNT(*) FROM process_exits").fetchone()[0] == 0
         other = RemoteRequest.create(owner.identity, "other", {})
         store.submit(other)
@@ -185,5 +188,42 @@ def test_swallowed_backend_error_cannot_publish_success(tmp_path):
             execute_service_job(store, owner, handler)
         assert store.lookup(owner).state == "running"
         assert json.loads(store.worker_record(owner))["exit_code"] == 5
+    finally:
+        store.close()
+
+
+def test_abandon_exited_result_unblocks_queue_without_replaying(tmp_path):
+    owner = request()
+    store = RemoteServiceStore(tmp_path / "db", owner.identity)
+    try:
+        store.submit(owner)
+        store.transition(owner, expected="queued", state="running")
+        ServiceProcessWorker(store, owner).run(
+            ProcessJobRequest([sys.executable, "-c", "pass"], tmp_path, 10, "done")
+        )
+        later = RemoteRequest.create(owner.identity, "later", {})
+        store.submit(later)
+        with pytest.raises(ValueError, match="unresolved running"):
+            store.claim_next_queued()
+        before = store.worker_record(owner)
+        job = store.abandon_exited_job(owner)
+        assert job.state == "failed"
+        assert json.loads(job.error_json)["code"] == "SERVICE_RESULT_ABANDONED"
+        assert store.abandon_exited_job(owner) == job
+        assert store.worker_record(owner) == before
+        assert store.claim_next_queued() == later
+    finally:
+        store.close()
+
+
+def test_abandon_without_process_evidence_is_refused(tmp_path):
+    owner = request()
+    store = RemoteServiceStore(tmp_path / "db", owner.identity)
+    try:
+        store.submit(owner)
+        store.transition(owner, expected="queued", state="running")
+        with pytest.raises(ValueError, match="identity missing"):
+            store.abandon_exited_job(owner)
+        assert store.lookup(owner).state == "running"
     finally:
         store.close()

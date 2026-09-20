@@ -19,7 +19,8 @@ from .workbench_profiles import load_shape_profiles
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description=__doc__)
     result.add_argument(
-        "action", choices=("serve", "execute", "observe", "inspect", "drain", "list")
+        "action",
+        choices=("serve", "execute", "observe", "inspect", "drain", "list", "abandon-exited"),
     )
     result.add_argument("--config", type=Path, required=True)
     result.add_argument("--profile", required=True)
@@ -38,7 +39,7 @@ def main(argv: list[str] | None = None) -> int:
     cli = parser()
     args = cli.parse_args(argv)
     if args.action not in {"serve", "drain", "list"} and not args.job:
-        cli.error("--job is required for execute, observe and inspect")
+        cli.error("--job is required for execute, observe, inspect and abandon-exited")
     if args.max_jobs < 1 or args.max_jobs > 1000:
         cli.error("--max-jobs must be in 1..1000")
     if not 1 <= args.limit <= 1000 or (args.before is not None and args.before < 1):
@@ -90,6 +91,18 @@ def main(argv: list[str] | None = None) -> int:
             request = store.request_for(args.job)
             if request is None:
                 raise ValueError("job not found")
+            if args.action == "abandon-exited":
+                job = store.abandon_exited_job(request)
+                print(
+                    json.dumps(
+                        {
+                            "job_id": job.job_id,
+                            "state": job.state,
+                            "error": json.loads(job.error_json or b"{}"),
+                        }
+                    )
+                )
+                return 0
             if args.action == "execute":
                 job = execute_service_job(store, request, handler)
                 print(

@@ -394,6 +394,38 @@ class RemoteServiceStore:
                 self.db.execute("ROLLBACK")
                 raise
 
+    def abandon_exited_job(self, request: RemoteRequest) -> RemoteJob:
+        """Explicitly discard an unfinished result after verified process-group exit.
+
+        Never kill, rerun, reconstruct outputs or invent an exit code. A terminal
+        result wins any race with this command and cannot be overwritten.
+        """
+        job = self.lookup(request)
+        if job is None:
+            raise ValueError("service job missing")
+        if (
+            job.state == "failed"
+            and json.loads(job.error_json or b"{}").get("code") == "SERVICE_RESULT_ABANDONED"
+        ):
+            return job
+        if job.state != "running":
+            raise ValueError("only running jobs can abandon an unfinished result")
+        observation = self.observe_worker(request)
+        if observation.result != "exited":
+            raise ValueError("cannot abandon result while process is alive or unknown")
+        return self.transition(
+            request,
+            expected="running",
+            state="failed",
+            error={
+                "code": "SERVICE_RESULT_ABANDONED",
+                "detail": (
+                    "Operator explicitly abandoned unpublished result "
+                    "after confirmed process exit"
+                ),
+            },
+        )
+
     def _validate_worker_terminal(self, request: RemoteRequest, state: str) -> None:
         from .workbench_models import WorkerExecution, _decode
 
