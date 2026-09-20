@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const { chromium, expect } = require("@playwright/test");
 (async () => {
   const config = JSON.parse(fs.readFileSync(process.argv[2]));
+  require("./claim-run.cjs").claimRun(config.root);
   const b = await chromium.launch({ headless: true });
   const p = await b.newPage({ viewport: { width: 1600, height: 1000 } });
   p.setDefaultTimeout(120000);

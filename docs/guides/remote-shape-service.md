@@ -221,3 +221,8 @@ node frontend/smoke/embedded-review.cjs <EMPTY_CPU_ROOT>/browser-config.json --r
 保留精确父运行和作业标识及截图。脚本不会调用服务 execute，不宣称生成或发布成功。
 本轮 CPU 路径已实际通过，证据位于 `<DATASET_ROOT>/browser-remote-submit-cpu-v1/`；
 未加 upload-retry，未执行 GPU。真实推理及发布恢复需后续单独验证。
+
+浏览器脚本在启动浏览器之前独占并耐久写入 `browser-smoke-started.json`。
+已有提交结果、完成结果或启动标记时拒绝重跑，即使前次失败也不自动删除标记。
+先检查原运行和服务作业；另一次独立验收应使用新的目录。单元验证命令为
+`node --test frontend/smoke/claim-run.test.cjs`。
