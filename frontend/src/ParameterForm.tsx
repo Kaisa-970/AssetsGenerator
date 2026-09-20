@@ -37,6 +37,13 @@ export function ParameterForm({
       ),
     );
   }, [adapter, parameters]);
+  const clearDraft = (name: string) => {
+    setDraft((pending) => {
+      const next = { ...pending };
+      delete next[name];
+      return next;
+    });
+  };
   const properties = (adapter?.parameter_schema?.properties || {}) as Record<
     string,
     Field
@@ -116,6 +123,7 @@ export function ParameterForm({
                       )
                         throw Error(`需要 ${field.type}`);
                       setError("");
+                      clearDraft(name);
                       onChange({ ...parameters, [name]: parsed });
                     } catch {
                       setError(
@@ -169,6 +177,7 @@ export function ParameterForm({
                     return;
                   }
                   setError("");
+                  clearDraft(name);
                   onChange({ ...parameters, [name]: parsed });
                 }}
               />

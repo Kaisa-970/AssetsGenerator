@@ -535,6 +535,20 @@ test("parameter form sends typed values and preserves other instances", async ({
   await expect(
     page.getByLabel("参数 options JSON", { exact: true }),
   ).toHaveValue('{"label":"pending"}');
+  // Applying an equivalent value must settle this field without dropping others.
+  await page.getByLabel("参数 matrix JSON", { exact: true }).fill("[1,0,0,1]");
+  await page
+    .getByRole("button", { name: "应用字段 · matrix", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "应用字段 · matrix", exact: true }),
+  ).toBeDisabled();
+  await expect(
+    page.getByLabel("参数 options JSON", { exact: true }),
+  ).toHaveValue('{"label":"pending"}');
+  await page.getByLabel("参数 seed", { exact: true }).fill("099");
+  await page.getByLabel("参数 seed", { exact: true }).press("Tab");
+  await expect(page.getByLabel("参数 seed", { exact: true })).toHaveValue("99");
   await page.getByLabel("参数 options JSON", { exact: true }).fill("null");
   await page
     .getByRole("button", { name: "应用字段 · options", exact: true })
