@@ -16,3 +16,19 @@
 
 仓库外证据：`<DATASET_ROOT>/sam-only-editor-startup/verify.py` 和 `validation.json`。
 后续需用真实服务身份执行 SAM-only 配置下的完整浏览器流程。
+
+## 真实双配置 CLI 与浏览器编译
+
+随后使用 `remote_shape_cli serve` 核验并启动真实 TRELLIS.2 服务，再通过
+`node-editor --proposal-config ... --profile sam-local --remote-config ...` 启动编辑器。
+远程配置采用本次服务实际输出的 service_id/backend_digest，不再使用占位身份。
+浏览器成功加载选区模板并点击编译，返回 execution_ready=true，运行列表为空。
+保存截图和编译结果后关闭本次两个服务，未影响已有编辑器。
+
+TRELLIS 权重核验 21.6 秒、环境 12.8 秒、一致性检查 1.3 秒；SAM checkpoint 4.0 秒、
+环境 12.1 秒、一致性检查 1.0 秒。仅报告单次观察。
+GPU 显示约 29% 活动且未列出所属进程，因此没有创建运行或执行推理。
+这证明真实 CLI 配置、目录加载和浏览器编译，不证明 mask 审查、远程生成或发布完成。
+
+外部证据：`<DATASET_ROOT>/sam-only-real-browser-v1/` 下 service.log、editor.log、
+endpoint.json、browser-compile.json 和 compiled.png。完整浏览器执行仍待验收。
