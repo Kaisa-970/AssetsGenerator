@@ -6,6 +6,7 @@ sending is committed, callers may only observe the original prompt, never repost
 
 from __future__ import annotations
 
+import fcntl
 import json
 import sqlite3
 import uuid
@@ -22,10 +23,62 @@ class ComfySubmissionUnknown(ValueError):
 
 class ComfySubmissionJournal:
     def __init__(self, path: Path):
-        path.parent.mkdir(parents=True, exist_ok=True)
-        self.db = sqlite3.connect(path, isolation_level=None)
-        self.db.execute("PRAGMA journal_mode=WAL")
-        self.db.execute("PRAGMA synchronous=FULL")
+        from .workbench_persistence import DurableIO
+
+        path = path.expanduser().absolute()
+        io = DurableIO()
+        io.mkdir(path.parent)
+        marker = path.with_name(path.name + ".identity.json")
+        with path.with_name(path.name + ".init.lock").open("a+b") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            fresh = not marker.exists() and not path.exists()
+            if fresh:
+                identity = {"schema": "comfy-journal@1", "journal_id": str(uuid.uuid4())}
+                io.write(marker, canonical_json_bytes(identity), exclusive=True)
+            else:
+                if not marker.is_file() or not path.is_file():
+                    raise ValueError("ComfyUI journal or identity missing; refusing to recreate")
+                identity = json.loads(marker.read_bytes())
+                if (
+                    not isinstance(identity, dict)
+                    or set(identity) != {"schema", "journal_id"}
+                    or identity["schema"] != "comfy-journal@1"
+                    or str(uuid.UUID(identity["journal_id"])) != identity["journal_id"]
+                ):
+                    raise ValueError("invalid ComfyUI journal identity")
+            self.db = sqlite3.connect(
+                path.as_uri() + ("?mode=rwc" if fresh else "?mode=rw"),
+                uri=True,
+                isolation_level=None,
+            )
+            try:
+                if fresh:
+                    self.db.execute("PRAGMA journal_mode=WAL")
+                    self.db.execute("PRAGMA synchronous=FULL")
+                    self._initialize()
+                    self.db.execute("CREATE TABLE journal_identity (body BLOB NOT NULL)")
+                    self.db.execute(
+                        "INSERT INTO journal_identity VALUES (?)", (canonical_json_bytes(identity),)
+                    )
+                    io.sync_directory(path.parent)
+                else:
+                    rows = self.db.execute("SELECT body FROM journal_identity").fetchall()
+                    if rows != [(canonical_json_bytes(identity),)]:
+                        raise ValueError("ComfyUI journal identity mismatch")
+                    tables = {
+                        row[0]
+                        for row in self.db.execute(
+                            "SELECT name FROM sqlite_master WHERE type='table'"
+                        )
+                    }
+                    if not {"prompts", "observations", "image_imports"} <= tables:
+                        raise ValueError("ComfyUI journal tables missing; refusing to recreate")
+                    self.db.execute("PRAGMA synchronous=FULL")
+            except BaseException:
+                self.db.close()
+                raise
+
+    def _initialize(self) -> None:
         self.db.execute(
             "CREATE TABLE IF NOT EXISTS prompts ("
             "submission_key TEXT PRIMARY KEY, request BLOB NOT NULL, "

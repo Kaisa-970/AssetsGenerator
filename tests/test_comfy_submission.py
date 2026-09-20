@@ -135,3 +135,27 @@ def test_observation_and_phase_commit_atomically(tmp_path):
         assert journal.record_history("one", history)["state"] == "failed"
     finally:
         journal.close()
+
+
+@pytest.mark.parametrize("damage", ["database", "marker", "replacement", "table"])
+def test_journal_loss_or_replacement_blocks_recreation(tmp_path, damage):
+    import shutil
+
+    path = tmp_path / "journal.sqlite"
+    journal = ComfySubmissionJournal(path)
+    journal.prepare("one", deployment=DEPLOYMENT, prompt=PROMPT)
+    if damage == "table":
+        journal.db.execute("DROP TABLE prompts")
+    journal.close()
+    if damage == "database":
+        path.unlink()
+    elif damage == "marker":
+        path.with_name(path.name + ".identity.json").unlink()
+    elif damage == "replacement":
+        replacement = tmp_path / "other.sqlite"
+        ComfySubmissionJournal(replacement).close()
+        shutil.copyfile(replacement, path)
+    with pytest.raises(ValueError, match="missing|mismatch"):
+        ComfySubmissionJournal(path)
+    if damage == "database":
+        assert not path.exists()
