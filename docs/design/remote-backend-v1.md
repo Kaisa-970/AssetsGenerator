@@ -275,3 +275,9 @@ import_shape_rgba 按现有 prepare_observation 的 rgba_image/png@1.0 契约读
 ### GLB 自包含边界
 
 远程 shape 导入在调用 trimesh 前检查 GLB 2.0 header、精确总长度、对齐 chunk 和唯一 JSON/可选 BIN 顺序，严格解析 JSON，拒绝任意层级 URI（含相对路径、HTTP 和 data URI）以及 required extensions。首版仅接受已嵌入 BIN 的资源，避免解析器隐式读取外部文件；扩展支持须单独增加验收。输入/输出合跑 12 项通过，含资源 URI 与截断/长度不符回归；Ruff/mypy 通过。仍未接真实模型 handler。
+
+## Shape 服务 handler 组合接口
+
+ShapeServiceHandler 接受受信 Backend factory 和部署身份 verifier，客户端只可传 shape_generation@1、唯一 rgba 输入、固定摘要以及 seed/pipeline_type；拒绝模型路径等额外字段。导入后给 factory 注入 ServiceProcessWorker，调用现有 ShapeBackend.generate，推理前后重新核对部署身份，要求已登记且零退出的进程证据，再导出 mesh 与 shape_metadata。临时服务侧 ArtifactStore 不进入发布包。
+
+本轮组合测试使用 CPU 测试 Backend（执行独立 Python 命令并返回小型 GLB），验证进程登记、两次身份检查、结果下载、临时目录清理和额外模型路径拒绝。shape handler/input/output 合跑 13 项通过，Ruff/mypy（101 文件）通过。尚未提供真实 profile factory、DAG shape Adapter 或启动 CLI；测试不证明任何真实模型可用。
