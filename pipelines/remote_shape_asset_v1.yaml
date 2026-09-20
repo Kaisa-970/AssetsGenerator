@@ -1,0 +1,35 @@
+pipeline: remote_shape_asset_v1
+version: 1
+inputs:
+  image: {kind: rgba_image, carriers: [artifact_ref]}
+nodes:
+  shape:
+    operator: shape_generation@1
+    adapter: remote_shape@1
+    inputs:
+      image: pipeline.inputs.image
+  canonical:
+    operator: canonicalize@1
+    adapter: canonicalize_shape@1
+    inputs:
+      mesh: shape.outputs.mesh
+      native_frame: shape.outputs.native_frame
+  quality:
+    operator: geometry_validation@1
+    adapter: geometry_validation@1
+    inputs:
+      mesh: canonical.outputs.mesh
+      source_mesh: shape.outputs.mesh
+  assemble:
+    operator: shape_asset_assembly@1
+    adapter: shape_asset_assembly@1
+    inputs:
+      mesh: canonical.outputs.mesh
+      image: pipeline.inputs.image
+      spatial: canonical.outputs.spatial_info
+      quality: quality.outputs.report
+  publish:
+    operator: asset_export@1
+    adapter: asset_export@1
+    inputs:
+      asset: assemble.outputs.asset

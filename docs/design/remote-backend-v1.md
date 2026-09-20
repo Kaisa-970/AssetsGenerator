@@ -348,3 +348,21 @@ mandatory passing checks，以及 QA provenance 指向同一 mesh；fail 不发�
 `appearance_mode=preserve_mesh` 固定进入计划和 provenance，保留网格内嵌外观。
 独立纹理引用、附加几何及 physics 暂不支持，避免导出时静默丢弃。
 这一步提供 Store 内 Release，不自动物化目录，不包含资产组装节点或完整远程发布验收。
+
+### 模块化远程资产 YAML
+
+`pipelines/remote_shape_asset_v1.yaml` 串接五个独立节点：remote shape、canonicalization、
+geometry QA、shape asset assembly、asset export。通过可信 AdapterRegistry 注册
+RemoteShapeAdapter（固定 endpoint/service/backend 身份）和四个 Core Adapter 后编译执行。
+服务端作业仍需显式执行；本 YAML 不增加后台队列或浏览器服务配置入口。
+
+`shape_asset_assembly@1` 的 `shape_asset_inputs@1` 关系校验明确关联 image、mesh、
+quality 和 spatial：检查同运行生成→规范化→QA provenance 链，核对 frame/unit/方向和
+实际顶点包围盒。Adapter 执行进一步限定为当前 BuildRun。材质摘要从 mesh 读取，
+后续 export 保留 mesh 原有外观；不将单独材质覆盖到 mesh。资产 ID 绑定运行、节点和 attempt。
+本入口接收 prepared RGBA，无 ObservationBundle，因此 source_observation_ids 留空，
+不伪造观测 ID；输入 RGBA Artifact 在组装 provenance 的 derived_from 中可追查。
+
+CPU 测试使用真实本地 HTTP/SQLite 服务与独立 Python 测试 Backend，验证五节点各一次
+attempt、GLB 可回读、Release 证据闭包以及服务关闭后的恢复；拒绝另一图片、另一运行或
+错误 bounds。该证据不替代真实模型全链验收。此前真实 smoke 只覆盖 remote shape 边界。

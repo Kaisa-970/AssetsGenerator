@@ -206,6 +206,7 @@ def default_relation_registry() -> RelationValidatorRegistry:
     registry.register(IndependentInputsValidator())
     registry.register(NativeMeshFrameValidator())
     registry.register(CanonicalMeshSourceValidator())
+    registry.register(ShapeAssetInputsValidator())
     return registry
 
 
@@ -260,3 +261,32 @@ class CanonicalMeshSourceValidator:
             ):
                 return
         raise ContractError("canonical mesh does not derive from the supplied source mesh")
+
+
+class ShapeAssetInputsValidator:
+    @property
+    def spec(self) -> RelationValidatorSpec:
+        return RelationValidatorSpec(
+            "shape_asset_inputs",
+            "1",
+            sha256_bytes(
+                Path(__file__).read_bytes()
+                + Path(__file__).with_name("dag_asset_assembly.py").read_bytes()
+            ),
+        )
+
+    def validate_static(self, context: StaticRelationContext) -> None:
+        if set(context.inputs) != {"mesh", "image", "quality", "spatial"}:
+            raise ContractError("shape asset relation requires mesh, image, quality and spatial")
+
+    def validate_runtime(self, context: RuntimeRelationContext) -> None:
+        from .dag_asset_assembly import validate_shape_asset_inputs
+        from .models import ArtifactRef, StructuredValue
+
+        values = {}
+        for key in context.inputs:
+            value = context.values.get(key)
+            if not isinstance(value, (ArtifactRef, StructuredValue)):
+                raise ContractError("shape asset relation requires scalar inputs")
+            values[key] = value
+        validate_shape_asset_inputs(context.store, values)
