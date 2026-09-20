@@ -257,3 +257,9 @@ execute_service_job 对 PipelineError 保留原 code（如 backend_failed/backen
 补强进程终态约束：登记过模型进程的作业发布 succeeded 必须具有原 worker 的 exit_observed、exited 观察及 exit_code=0。仅重新探测确认进程组消失可以释放占用并允许明确失败处置，但不足以证明推理成功。handler 即使吞掉非零退出异常并返回输出，也不能绕过数据库成功门控。
 
 服务进程/worker/存储合跑 19 项通过，随后补充“重新探测退出但无退出码也拒绝成功”的断言；Ruff/mypy 通过。尚无真实模型/GPU 验证。
+
+## Shape 服务输入导入基础
+
+import_shape_rgba 按现有 prepare_observation 的 rgba_image/png@1.0 契约读取唯一 rgba 上传描述：核对完整 Artifact 身份摘要、Blob 摘要、RGBA 元数据，再实际解码有界 PNG 并拒绝空前景。导入服务侧 LocalArtifactStore 后必须保持原 Artifact ID，不接受请求中的本地路径。该函数尚未注册为生产 handler，不启动模型。
+
+三项图像回归覆盖合法 RGBA 精确身份往返、全透明输入拒绝、以 RGBA 元数据伪装 RGB 编码拒绝；Ruff/mypy（99 文件）通过。下一步接固定模型配置与 shape 输出封装，未做 GPU 验证。
