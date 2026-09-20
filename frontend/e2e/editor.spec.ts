@@ -1535,6 +1535,17 @@ test("image outputs preview on demand and report errors without dispatch", async
   await open.click();
   await expect(page.getByRole("alert")).toContainText("图片读取失败");
   await expect(image).toBeHidden();
+  const failedReads = reads;
+  fail = false;
+  await page
+    .getByRole("button", {
+      name: "重新读取图片 · transform · image",
+      exact: true,
+    })
+    .click();
+  await expect(image).toBeVisible();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  expect(reads).toBe(failedReads + 1);
   expect(mutations).toBe(0);
 });
 

@@ -13,6 +13,7 @@ export function ImageOutput({
   url: string;
 }) {
   const [open, setOpen] = useState(false);
+  const [readAttempt, setReadAttempt] = useState(0);
   const [status, setStatus] = useState<"loading" | "loaded" | "failed">(
     "loading",
   );
@@ -42,7 +43,7 @@ export function ImageOutput({
       controller.abort();
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [open, url]);
+  }, [open, url, readAttempt]);
   return (
     <section
       className="image-output"
@@ -64,7 +65,12 @@ export function ImageOutput({
           </p>
           {status === "loading" && <p role="status">正在读取图片…</p>}
           {status === "failed" && (
-            <p role="alert">图片读取失败，请检查输出证据或收起后重新打开。</p>
+            <>
+              <p role="alert">图片读取失败，请检查输出证据。</p>
+              <button onClick={() => setReadAttempt((attempt) => attempt + 1)}>
+                重新读取图片 · {nodeId} · {port}
+              </button>
+            </>
           )}
           {source && (
             <img
