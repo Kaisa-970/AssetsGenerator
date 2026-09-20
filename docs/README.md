@@ -130,3 +130,4 @@
 
 - [真实父 DAG 故障重试与发布](reports/parent-dag-retry-real.md)
 - [多图浏览器上传、真实重建与重启恢复](reports/multiview-browser-upload-real.md)
+- [同一 RGBA 的双真实 Shape Backend 验收](reports/dual-shape-real.md)

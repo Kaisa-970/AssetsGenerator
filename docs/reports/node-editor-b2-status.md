@@ -10,7 +10,7 @@
 | 结果预览 | 固定运行图；经过证据验证的 asset/release/qa/GLB 输出链接 | 画布内 GLB 预览已实现并通过真实顶点颜色模型 smoke；内嵌 PNG 纹理像素检查、WebGL 不可用及关闭/切换回归已补齐；复杂材质/压缩扩展尚未覆盖 |
 | 输入体验 | 浏览器单图上传、多图组包；精确引用绑定；创建请求幂等重试 | 双图上传 → DA3/Open3D → 发布及完成后服务重启已独立验收；更多输入组合待验收 |
 | 保留既有入口 | 固定 workbench、单图 CLI、多视图 demo 均保留 | 未授权替换或删除旧入口 |
-| 模型可配置 | 逐节点本地/远程可信 profile；SAM-only 配置；双 HTTP 服务独立发布 CPU 回归；真实远程 TRELLIS.2 脚本 smoke | 同图两个真实模型及真实 ComfyUI 尚未验收；SAM-only 浏览器全链已有独立报告 |
+| 模型可配置 | 逐节点本地/远程可信 profile；SAM-only 配置；双 HTTP 服务独立发布 CPU 回归；真实远程 TRELLIS.2 脚本 smoke | 同图 TRELLIS.2/TripoSR 独立发布已通过 API 脚本验收；真实 ComfyUI 尚未验收 |
 
 相关证据见 [B2 实现记录](node-editor-b2.md)、[真实单图画布验收](node-editor-b2-real-smoke.md)、[多视图迁移](generic-dag-multi-view.md)。真实运行数据位于各报告声明的仓库外目录，不提交模型、Store 或生成资产。
 
@@ -33,10 +33,13 @@ SAM-only 配置的[真实浏览器完整链](sam-only-browser-real-complete.md)�
 
 多图上传、真实重建与完成后服务重启恢复已通过[独立验收](multiview-browser-upload-real.md)。
 
+同一 RGBA 的 TRELLIS.2/TripoSR 双分支独立发布已通过[真实 API 验收](dual-shape-real.md)。
+
 接下来的真实验收按以下顺序推进，沿用隔离目录与串行 GPU：
 
-1. 同一选区绑定两个真实 Shape Backend 的比较管线；检查来源、参数和发布互相独立。
-2. 具备真实 ComfyUI 部署后，验证 profile 预检、提交与图片输出；仍明确内部身份边界。
+1. 双模型 API 验收之外的浏览器配置与操作验收。
+2. HTTP 服务异常退出及多视图推理中断的独立验收。
+3. 具备真实 ComfyUI 部署后，验证 profile 预检、提交与图片输出；仍明确内部身份边界。
 
 上述是待执行验收，不是已完成事实。不能通过降低身份校验或修改旧运行来复用不匹配的证据。
 
