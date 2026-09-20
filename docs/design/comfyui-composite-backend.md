@@ -221,3 +221,15 @@ recover_owned_prompt 入口核对 journal/提交身份，再查询或读取固�
 查询恢复、响应丢失、缺失日志、状态回滚、并发只授权一次及旧 job schema 升级。
 测试使用注入传输，不是真实 ComfyUI。入口返回提交回执或终态观察，尚不负责输入
 上传、输出导入、复合 provenance 或发布；尚未成为可配置的 service handler/DAG 节点。
+
+### 图片端口与普通参数分离
+
+ComfyWorkflow 新增独立 image_targets。普通参数 schema 不再需要暴露图片路径；
+图片绑定要求完整上传回执，核对固定服务、内容命名、位置、验证方式及 Artifact/
+Blob 摘要格式。图片槽位不能覆盖普通参数或内部连线，缺少或多出图片均拒绝。
+绑定结果保留输入回执副本，mapping digest 升至 comfy-input-map@2 并覆盖图片映射。
+
+77 项 ComfyUI 测试、Ruff/mypy 通过。HTTP 串联 fixture 已使用 upload_image 产生
+的真实回执绑定图片，同时保留普通 seed 参数。回执字段校验不等于认证：生产调用者
+必须由受信上传路径获得回执，不能将用户提交的 JSON 当作已验证上传证据。本步仍
+未开放 DAG/画布节点，也没有完成生产复合 handler 或真实 ComfyUI 验收。

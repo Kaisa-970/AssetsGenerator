@@ -53,3 +53,69 @@ def test_invalid_links_and_cycles_rejected(link):
 def test_missing_or_link_mapping_rejected(targets):
     with pytest.raises(ValueError):
         ComfyWorkflow(PROMPT, spec(), targets)
+
+
+def image_workflow():
+    return ComfyWorkflow(
+        {**deepcopy(PROMPT), "3": {"class_type": "LoadImage", "inputs": {"image": "unused"}}},
+        spec(),
+        {"seed": ("1", "seed")},
+        image_targets={"source": ("3", "image")},
+    )
+
+
+def receipt():
+    filename = "asset-" + "b" * 64 + ".png"
+    return {
+        "artifact_id": "sha256:" + "a" * 64,
+        "blob_digest": "sha256:" + "b" * 64,
+        "endpoint": "http://127.0.0.1:8188",
+        "filename": filename,
+        "subfolder": "assets-generator",
+        "type": "input",
+        "workflow_value": "assets-generator/" + filename,
+        "verification": "exact-byte-readback@1",
+    }
+
+
+def test_images_are_separate_from_user_parameters_and_bound_to_receipts():
+    workflow = image_workflow()
+    upload = receipt()
+    bound = workflow.bind({}, images={"source": upload}, endpoint=upload["endpoint"])
+    assert bound["prompt"]["3"]["inputs"]["image"] == upload["workflow_value"]
+    assert bound["parameters"] == {"seed": 42}
+    assert bound["images"]["source"] == upload
+    upload["artifact_id"] = "changed"
+    assert bound["images"]["source"]["artifact_id"] != "changed"
+    with pytest.raises(ValueError):
+        workflow.bind({"source": "/arbitrary/path"})
+    with pytest.raises(ValueError, match="exactly"):
+        workflow.bind({})
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("endpoint", "http://other.invalid"),
+        ("workflow_value", "../other.png"),
+        ("filename", "renamed.png"),
+        ("blob_digest", "invalid"),
+        ("artifact_id", "invalid"),
+        ("verification", "unverified"),
+        ("type", "output"),
+    ],
+)
+def test_invalid_image_receipts_rejected(field, value):
+    upload = receipt()
+    endpoint = upload["endpoint"]
+    upload[field] = value
+    with pytest.raises(ValueError):
+        image_workflow().bind({}, images={"source": upload}, endpoint=endpoint)
+
+
+def test_image_parameter_target_overlap_is_rejected():
+    prompt = {"1": {"class_type": "Example", "inputs": {"seed": "placeholder"}}}
+    with pytest.raises(ValueError, match="overlapping"):
+        ComfyWorkflow(
+            prompt, spec(), {"seed": ("1", "seed")}, image_targets={"source": ("1", "seed")}
+        )

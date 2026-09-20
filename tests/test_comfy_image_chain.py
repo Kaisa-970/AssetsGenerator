@@ -124,13 +124,14 @@ def test_image_chain_recovers_without_reupload_resubmit_or_redownload(tmp_path, 
                 ("fixture@1",),
                 {
                     "type": "object",
-                    "properties": {"image": {"type": "string"}, "seed": {"type": "integer"}},
-                    "required": ["image", "seed"],
+                    "properties": {"seed": {"type": "integer"}},
+                    "required": ["seed"],
                 },
             ),
-            {"image": ("1", "image"), "seed": ("2", "seed")},
+            {"seed": ("2", "seed")},
+            image_targets={"image": ("1", "image")},
         )
-        bound = workflow.bind({"image": upload["workflow_value"], "seed": 7})
+        bound = workflow.bind({"seed": 7}, images={"image": upload}, endpoint=client.endpoint)
         journal.prepare(
             "one",
             deployment={
