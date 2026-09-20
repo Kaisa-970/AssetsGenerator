@@ -14,7 +14,7 @@
 
 相关证据见 [B2 实现记录](node-editor-b2.md)、[真实单图画布验收](node-editor-b2-real-smoke.md)、[多视图迁移](generic-dag-multi-view.md)。真实运行数据位于各报告声明的仓库外目录，不提交模型、Store 或生成资产。
 
-实际结果预览及其交互回归已经补齐。当前进入远程 Backend 协议与持久化基础实施：幂等 submission、job lookup、响应丢失、超时、输入上传及固定结果下载已有本机 HTTP 测试；DAG remote 调度、输出语义导入及真实模型服务仍未开放。下一切片为远程 CPU 菱形 DAG，状态与验收规则见[远程 Backend 设计](../design/remote-backend-v1.md)。不能把现有本地进程退出规则直接套到远程作业，也不能用一次 HTTP 200 代替模型身份及输出证据验收。
+实际结果预览及其交互回归已经补齐。当前进入远程 Backend 协议与持久化基础实施：幂等 submission、job lookup、响应丢失、超时、输入上传及固定结果下载已有本机 HTTP 测试；受信 remote DAG、显式输入上传及 CPU 图像导入已接实验路径；耐久本机 HTTP 服务和显式 worker 已与菱形 DAG 联调，覆盖服务重开和完成后离线核验。真实模型进程服务、生产目录和 UI 仍未开放。下一切片为独立环境模型进程门控，状态与验收规则见[远程 Backend 设计](../design/remote-backend-v1.md)。不能把现有本地进程退出规则直接套到远程作业，也不能用一次 HTTP 200 代替模型身份及输出证据验收。
 
 ## 本次回归
 
@@ -23,3 +23,7 @@
 ## 远程协议基础加入后的全量回归
 
 在 `9e0d018`（严格远程 HTTP JSON 解析）上执行单次完整 Python 测试：**1026 passed in 235.85s**。测试期间只修改设计与状态文档，未修改 Python 实现。仓库级 Ruff format（184 文件）、Ruff lint、mypy（92 源文件）、sdist/wheel 构建及 git diff --check 通过。此次没有重跑前端浏览器测试或真实 GPU 推理；远程调度与真实服务仍未验收。
+
+## 耐久远程服务联调后的全量回归
+
+在 `f2a19fd` 上运行单次完整 Python 回归：**1051 passed in 256.14s**。运行期间仅编辑文档，没有修改 Python 实现或测试。Ruff lint/format（194 文件）、mypy（97 源文件）、sdist/wheel 构建与 git diff --check 通过。未重跑浏览器测试或真实 GPU 推理。远程 CPU 菱形、服务重开和 worker SIGKILL 不重放已有测试，真实模型进程门控与自动恢复仍待实现。

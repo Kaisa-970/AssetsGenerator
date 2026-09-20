@@ -5,10 +5,11 @@
 | 能力 | 当前状态 |
 | --- | --- |
 | 请求与服务身份、严格 JSON、有限 HTTP 传输 | 已实现，本机 HTTP 回归覆盖 |
-| 输入 Blob 上传、固定成功结果下载 | 已实现传输层；尚无 Operator 语义导入 |
+| 输入 Blob 上传、固定成功结果下载 | 已实现；CPU 图像测试有实际解码导入，真实模型输出导入待接 |
 | 耐久提交日志、父 DAG attempt 归属 | 已实现内部桥接；不能直接作为公开执行入口 |
 | remote Adapter、非终态调度、恢复与重试门控 | 实验路径已实现并经 CPU HTTP 回归；尚未接生产目录或 UI |
-| 服务端跨重启耐久作业、真实模型、服务目录与 UI | 尚未实现 |
+| 服务端耐久作业、HTTP、显式 worker | 已实现 SQLite 基础、本机 HTTP 重开与 CPU worker SIGKILL 不重放测试 |
+| 真实模型、服务目录与 UI | 尚未实现 |
 
 首批使用模拟 HTTP 服务验证，再接真实独立模型服务，ComfyUI 另行封装。
 
@@ -220,3 +221,13 @@ execute_service_job 在调用受信 handler 前事务式认领 queued→running�
 先关闭重开 HTTP 服务、数据库与 Core Repository，再执行原 queued job；成功已提交但 Core 尚未观察时再次重开服务。完成后所有节点各一次 attempt，handler 调用一次，固定 remote_result 闭包有效；最终关闭 HTTP 监听器，Core 离线 recover 的 node_states 与完成时一致。这里服务重开仍在同一测试进程，worker SIGKILL 由独立测试覆盖，两者不是一次完整多进程端到端 SIGKILL 验收。
 
 DAG/服务 worker/HTTP/存储合跑 13 项通过，Ruff lint/format（194 文件）、mypy（97 源文件）通过。本轮没有新增生产模型 Adapter 或 CLI，不宣称真实模型可用。
+
+## 真实模型服务接入边界（下一步）
+
+现有同步 ServiceHandler 只完成 CPU 调用和输出持久化，不足以直接承载独立模型进程。优先复用 gated_worker.run_gated_process 的 prepared/identified/authorized/exited 回调，将对应 WorkerExecution 耐久绑定到服务 job；不能仅调用 LocalProcessWorker 后将返回码当完整进程退出证据。
+
+服务端模型启动必须依次：验证固定模型配置及请求→事务认领 job→保存启动摘要→记录 host/boot/PID/PGID/starttime→保存 release 授权→释放 launcher。任何保存失败都禁止继续启动。服务重开只重新探测原身份，不重新启动原 running 作业；进程组仍活跃或身份不明时，禁止另一作业进入同一 GPU 配置。不能仅凭 HTTP worker 被终止就认为模型进程已退出。
+
+首次模型服务选择现有已验证独立环境，不下载模型或 PyTorch。模型代码/权重/环境身份由已有 profile 身份工具计算并固定，上传输入按明确格式/尺寸/schema 验证。GLB 输出还须携带并核验 BackendNativeFrame、frame/unit、材质和关系，CPU PNG 反色验收不替代这些规则。服务 handler 捕获 PipelineError 时应保留其 error code；无法确认进程退出的超时不能直接变成可重试的终态失败。
+
+验收至少覆盖启动授权前崩溃不执行、授权后服务退出不重复启动、孤儿进程阻止新 GPU 作业、原组退出后显式处理、同一次远程 shape 输出导入与 provenance，以及完整单图发布。自动排队、服务目录 UI、公网认证和 ComfyUI 后续另行实现。
