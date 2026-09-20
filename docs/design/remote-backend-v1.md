@@ -212,3 +212,11 @@ execute_service_job 在调用受信 handler 前事务式认领 queued→running�
 实际耐久 HTTP 服务验收已覆盖上传 PNG→显式 CPU 反色 handler→发布→关闭重开服务→下载并核对像素；重复执行同作业拒绝。该 worker 是同步受信调用基础，没有 GPU 环境启动、进程组监督或自动队列调度。真实模型仍必须走独立环境，不能把模型代码装入 Pipeline Core。
 
 服务 worker/HTTP/存储合跑 12 项通过；含 spawn 子进程认领后经 Pipe 明确通知父测试，再由测试对该自建进程发送 SIGKILL，确认负退出码，重开数据库后仍为 running 且不能重认领。该测试证明保守不重放，不证明能自动判断或恢复任意真实模型的孤儿进程。Ruff、mypy（97 源文件）通过，无 GPU 验证。
+
+## DAG 与耐久服务联调
+
+新增 test_dag_remote_service：既有菱形 DAG 的 B 连接真实 RemoteServiceStore/create_remote_server/execute_service_job，上传红色 PNG，worker 从服务数据库取输入并反色，Core 实际导入青色图像。A/C/D 为本地测试算子，B queued 时 C 完成而 D 等待。
+
+先关闭重开 HTTP 服务、数据库与 Core Repository，再执行原 queued job；成功已提交但 Core 尚未观察时再次重开服务。完成后所有节点各一次 attempt，handler 调用一次，固定 remote_result 闭包有效；最终关闭 HTTP 监听器，Core 离线 recover 的 node_states 与完成时一致。这里服务重开仍在同一测试进程，worker SIGKILL 由独立测试覆盖，两者不是一次完整多进程端到端 SIGKILL 验收。
+
+DAG/服务 worker/HTTP/存储合跑 13 项通过，Ruff lint/format（194 文件）、mypy（97 源文件）通过。本轮没有新增生产模型 Adapter 或 CLI，不宣称真实模型可用。

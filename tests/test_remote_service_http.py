@@ -11,8 +11,8 @@ from assets_generator.serialization import sha256_bytes
 
 
 @contextmanager
-def serve(path, port=0):
-    store = RemoteServiceStore(path, request().identity)
+def serve(path, port=0, identity=None):
+    store = RemoteServiceStore(path, identity or request().identity)
     server = create_remote_server(store, port=port)
     thread = threading.Thread(target=server.serve_forever)
     thread.start()
