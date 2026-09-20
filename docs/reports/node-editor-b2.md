@@ -54,3 +54,7 @@
 入口一致性修复：编辑器原先注册全部显式 profile，而 dag-image CLI 仅注册默认实现，导致画布导出的 backend YAML 在 CLI 编译失败。现共用 `image_adapter_registry()`；默认与显式绑定两种 YAML 的 CLI start/resume/decide 路径均通过。7 项 CLI/编辑器定向测试通过，mypy 86 源码文件通过；未新增 GPU 推理。
 
 启动可观测性：`load_profiles(..., progress=...)` 增加阶段性耗时回调，CLI 服务将信息写到 stderr；身份内容和校验顺序不变，失败会标明阶段并清理上下文。新增 profile 测试验证回调不影响身份、失败回调及后续调用隔离；27 项 profile/editor 定向测试、Ruff、mypy 通过。
+
+浏览器输入补齐：运行面板支持 PNG/JPEG/WebP 上传（20 MiB、25MP、单帧），保留服务器路径并显式选择来源。上传只持久化原始字节及图片身份，不创建运行；启动时提交精确 ArtifactRef，经端口及摘要验证后固定输入。失败替换会清除旧上传引用。独立审查发现超大声明尺寸触发 Pillow DecompressionBombError 时未转换 HTTP 错误，已修正并添加微型 PNG 回归。
+
+验证：11 项 editor/execution Python 测试、9 项 Vitest、9 项 Playwright、TypeScript/Vite 构建通过；Ruff、mypy 通过。覆盖上传不派发、相同字节身份稳定、精确运行输入、缺失 Blob 拒绝、非法/截断/超大声明尺寸图片、HTTP Origin 与两种启动请求、前端上传失败替换。浏览器测试模拟上传响应，实际图片解码由 Python 测试覆盖；本轮未新增真实 GPU 推理或浏览器上传到真实模型的端到端验收。创建幂等键及画布多视图仍未完成。

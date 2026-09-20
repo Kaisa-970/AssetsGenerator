@@ -6,12 +6,15 @@ GET projections never run recovery or wait for the engine's command lock.
 
 from __future__ import annotations
 
+import io
 import re
 import threading
 from collections.abc import Callable
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
+
+from PIL import Image
 
 from .compiled_plan import CompiledPlan, thaw
 from .contracts import ContractError, OperatorSpec, validate_port_value
@@ -184,7 +187,45 @@ class NodeEditorExecution:
         self._worker = threading.Thread(target=execute, daemon=True)
         self._worker.start()
 
-    def start(self, raw: dict[str, Any], image_path: str) -> dict[str, Any]:
+    def upload_image(self, data: bytes) -> dict[str, Any]:
+        """Import a decoded image without creating a run or dispatching inference."""
+        if not 0 < len(data) <= 20 * 1024 * 1024:
+            raise ContractError("image upload must be at most 20 MiB")
+        try:
+            decoded = Image.open(io.BytesIO(data))
+        except Image.DecompressionBombError as error:
+            raise ContractError("upload must be at most 25 megapixels") from error
+        with decoded as image:
+            if image.format not in {"PNG", "JPEG", "WEBP"}:
+                raise ContractError("upload must be PNG, JPEG or WebP")
+            if image.width * image.height > 25_000_000 or getattr(image, "n_frames", 1) != 1:
+                raise ContractError("upload must be a single image of at most 25 megapixels")
+            image.load()
+            metadata = {
+                "media_type": Image.MIME[image.format],
+                "width": image.width,
+                "height": image.height,
+                "channel_layout": image.mode,
+            }
+        with self._lock:
+            if self._closed:
+                raise ContractError("editor execution service is closing")
+            ref = self.engine.store.persist_bytes(
+                data,
+                kind="rgb_image",
+                schema_name="raster_image",
+                schema_version="1.0",
+                identity_metadata=metadata,
+            )
+        return {"image_ref": to_primitive(ref)}
+
+    def start(
+        self,
+        raw: dict[str, Any],
+        image_path: str | None = None,
+        *,
+        image_ref: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         with self._lock:
             self._idle()
             if not isinstance(raw, dict) or set(raw) - {"pipeline", "version", "inputs", "nodes"}:
@@ -200,9 +241,16 @@ class NodeEditorExecution:
             )
             validate_editor_inputs(plan.static_plan)
             contract = plan.static_plan.inputs["image"].contract
-            if not isinstance(image_path, str) or not image_path.strip():
-                raise ContractError("image path is required")
-            image = _import_image(self.engine.store, Path(image_path).expanduser(), "rgb_image")
+            if (image_path is None) == (image_ref is None):
+                raise ContractError("provide exactly one of image_path or image_ref")
+            if image_ref is not None:
+                if not isinstance(image_ref, dict) or set(image_ref) != {"artifact_id"}:
+                    raise ContractError("image_ref must be an ArtifactRef")
+                image = ArtifactRef(**image_ref)
+            else:
+                if not isinstance(image_path, str) or not image_path.strip():
+                    raise ContractError("image path is required")
+                image = _import_image(self.engine.store, Path(image_path).expanduser(), "rgb_image")
             validate_port_value(
                 operator=plan.static_plan.pipeline_name,
                 port_name="image",

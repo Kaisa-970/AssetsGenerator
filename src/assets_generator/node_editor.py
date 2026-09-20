@@ -228,6 +228,19 @@ def create_editor_server(editor: DraftEditor, port: int = 8767) -> ThreadingHTTP
                 self.respond(403, {"error": "invalid origin"})
                 return
             try:
+                path = urlsplit(self.path).path
+                if self.command == "POST" and path == "/api/inputs/image" and editor.execution:
+                    if self.headers.get("Content-Type") != "application/octet-stream":
+                        raise ValueError("application/octet-stream required")
+                    length = int(self.headers.get("Content-Length", "0"))
+                    if not 0 < length <= 20 * 1024 * 1024:
+                        raise ValueError("image upload must be at most 20 MiB")
+                    self.connection.settimeout(10)
+                    data = self.rfile.read(length)
+                    if len(data) != length:
+                        raise ValueError("incomplete image upload")
+                    self.respond(201, editor.execution.upload_image(data))
+                    return
                 if self.headers.get("Content-Type", "").split(";")[0] != "application/json":
                     raise ValueError("application/json required")
                 length = int(self.headers.get("Content-Length", "0"))
@@ -239,9 +252,18 @@ def create_editor_server(editor: DraftEditor, port: int = 8767) -> ThreadingHTTP
                 if self.command == "POST" and path == "/api/compile":
                     self.respond(200, editor.compile(body.get("pipeline")))
                 elif self.command == "POST" and path == "/api/runs" and editor.execution:
-                    if not isinstance(body, dict) or set(body) != {"pipeline", "image_path"}:
-                        raise ValueError("run requires pipeline and image_path")
-                    self.respond(202, editor.execution.start(body["pipeline"], body["image_path"]))
+                    if not isinstance(body, dict) or set(body) not in (
+                        {"pipeline", "image_path"},
+                        {"pipeline", "image_ref"},
+                    ):
+                        raise ValueError("run requires pipeline and exactly one image source")
+                    if "image_ref" in body:
+                        value = editor.execution.start(
+                            body["pipeline"], image_ref=body["image_ref"]
+                        )
+                    else:
+                        value = editor.execution.start(body["pipeline"], body["image_path"])
+                    self.respond(202, value)
                 elif self.command == "POST" and path.startswith("/api/runs/") and editor.execution:
                     parts = path.removeprefix("/api/runs/").split("/")
                     if len(parts) != 2 or not isinstance(body, dict):

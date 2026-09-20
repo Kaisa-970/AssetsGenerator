@@ -51,6 +51,14 @@ export function ExecutionPanel({
   const [showReview, setShowReview] = useState(false);
   const [showGraph, setShowGraph] = useState(false);
   const [imagePath, setImagePath] = useState("");
+  const [imageSource, setImageSource] = useState("path");
+  const [uploaded, setUploaded] = useState<{
+    name: string;
+    ref: Record<string, unknown>;
+  }>();
+  const [uploading, setUploading] = useState(false);
+  const uploadPending = useRef(false);
+  const [uploadMessage, setUploadMessage] = useState("");
   const [runs, setRuns] = useState<{ run_id: string; status: string }[]>([]);
   const [selected, setSelected] = useState("");
   const selectedRef = useRef("");
@@ -132,32 +140,108 @@ export function ExecutionPanel({
   };
   const run = envelope?.run;
   const executing = pending || !!envelope?.busy;
+  const upload = async (file?: File) => {
+    if (uploadPending.current) return;
+    setUploaded(undefined);
+    setUploadMessage("");
+    if (!file) return;
+    if (!file.size || file.size > 20 * 1024 * 1024) {
+      setUploadMessage("请选择非空且不超过 20 MiB 的图片。");
+      return;
+    }
+    uploadPending.current = true;
+    setUploading(true);
+    try {
+      const response = await fetch("/api/inputs/image", {
+        method: "POST",
+        headers: { "Content-Type": "application/octet-stream" },
+        body: file,
+      });
+      const value = await response.json();
+      if (!response.ok) throw Error(value.error || `HTTP ${response.status}`);
+      if (!value.image_ref || typeof value.image_ref.artifact_id !== "string")
+        throw Error("服务未返回有效的图片引用");
+      setUploaded({ name: file.name, ref: value.image_ref });
+      setUploadMessage("图片已上传；点击启动新运行才会执行模型。");
+    } catch (error) {
+      setUploadMessage(`上传失败：${String(error)}`);
+    } finally {
+      uploadPending.current = false;
+      setUploading(false);
+    }
+  };
   return (
     <section className="execution-panel">
       <div className="section-label">创建新运行</div>
       <p>已配置模型：{profile || "本地服务配置"}</p>
       <label>
-        服务所在电脑的图片绝对路径
-        <input
-          aria-label="运行图片路径"
-          placeholder="/path/to/image.png"
-          value={imagePath}
-          onChange={(e) => setImagePath(e.target.value)}
-        />
+        图片来源
+        <select
+          aria-label="图片来源"
+          value={imageSource}
+          disabled={pending || uploading}
+          onChange={(e) => setImageSource(e.target.value)}
+        >
+          <option value="path">服务器本地路径</option>
+          <option value="upload">从浏览器上传</option>
+        </select>
       </label>
+      {imageSource === "path" ? (
+        <label>
+          服务所在电脑的图片绝对路径
+          <input
+            aria-label="运行图片路径"
+            placeholder="/path/to/image.png"
+            value={imagePath}
+            disabled={pending}
+            onChange={(e) => setImagePath(e.target.value)}
+          />
+        </label>
+      ) : (
+        <div>
+          <label>
+            上传图片（最多 20 MiB）
+            <input
+              type="file"
+              aria-label="上传运行图片"
+              accept="image/*"
+              disabled={pending || uploading}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = "";
+                void upload(file);
+              }}
+            />
+          </label>
+          {uploading && <p>正在上传并验证图片…</p>}
+          {uploaded && (
+            <p className="run-identity">
+              {uploaded.name} · {String(uploaded.ref.artifact_id)}
+            </p>
+          )}
+          {uploadMessage && <p role="status">{uploadMessage}</p>}
+        </div>
+      )}
       <p>启动时后端重新编译当前草稿并固定计划。修改画布只影响下一次新运行。</p>
       {executionReason && (
         <p role="alert">当前入口不可运行：{executionReason}</p>
       )}
       <button
         className="primary"
-        disabled={pending || !imagePath.trim() || !!executionReason}
+        disabled={
+          pending ||
+          uploading ||
+          (imageSource === "path" ? !imagePath.trim() : !uploaded) ||
+          !!executionReason
+        }
         onClick={() =>
           void mutate(async () => {
             const submitted = structuredClone(pipeline);
             const value: Envelope = await request("/api/runs", {
               pipeline: submitted,
-              image_path: imagePath.trim(),
+              ...(imageSource === "path"
+                ? { image_path: imagePath.trim() }
+                : { image_ref: uploaded!.ref }),
             });
             choose(value.run.run_id);
             accept(value);

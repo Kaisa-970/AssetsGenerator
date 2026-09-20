@@ -203,3 +203,67 @@ def test_renamed_input_compiles_but_cannot_start(tmp_path):
             assert service.list_runs() == []
         finally:
             service.close()
+
+
+def test_uploaded_image_is_exact_run_input_without_upload_dispatch(tmp_path, monkeypatch):
+    from assets_generator.models import ArtifactRef
+
+    store, _, profile = fixture_engine(tmp_path)
+    registry, _ = image_plan(profile)
+    with DagRepository(store, tmp_path / "dag") as repo:
+        engine = DagEngine(repo, registry)
+        service = NodeEditorExecution(engine)
+        dispatched = []
+        monkeypatch.setattr(engine, "drain", lambda run_id: dispatched.append(run_id))
+        try:
+            data = (tmp_path / "fixture/scene.png").read_bytes()
+            uploaded = service.upload_image(data)
+            assert service.upload_image(data) == uploaded
+            assert service.list_runs() == []
+            assert dispatched == []
+            ref = ArtifactRef(**uploaded["image_ref"])
+            assert store.blob_path(ref).read_bytes() == data
+            with pytest.raises(ContractError, match="exactly one"):
+                service.start(raw(), "/tmp/ignored", image_ref=uploaded["image_ref"])
+            result = service.start(raw(), image_ref=uploaded["image_ref"])
+            run_id = result["run"]["run_id"]
+            wait(service, run_id)
+            assert repo.load(run_id).dag.named_actual_inputs["image"] == ref
+            assert dispatched == [run_id]
+            store.blob_path(ref).unlink()
+            with pytest.raises((ValueError, OSError)):
+                service.start(raw(), image_ref=uploaded["image_ref"])
+            assert len(service.list_runs()) == 1
+        finally:
+            service.close()
+
+
+def test_upload_rejects_invalid_images_without_artifacts(tmp_path):
+    from PIL import UnidentifiedImageError
+
+    store, _, profile = fixture_engine(tmp_path)
+    registry, _ = image_plan(profile)
+    with DagRepository(store, tmp_path / "dag") as repo:
+        service = NodeEditorExecution(DagEngine(repo, registry))
+        before = store.find_artifacts("rgb_image")
+        try:
+            for data in (b"", b"x" * (20 * 1024 * 1024 + 1)):
+                with pytest.raises(ContractError, match="20 MiB"):
+                    service.upload_image(data)
+            with pytest.raises(UnidentifiedImageError):
+                service.upload_image(b"not an image")
+            data = (tmp_path / "fixture/scene.png").read_bytes()
+            import struct
+            import zlib
+
+            oversized = bytearray(data)
+            oversized[16:24] = struct.pack(">II", 20000, 20000)
+            oversized[29:33] = struct.pack(">I", zlib.crc32(oversized[12:29]))
+            with pytest.raises(ContractError, match="25 megapixels"):
+                service.upload_image(bytes(oversized))
+            with pytest.raises(OSError):
+                service.upload_image(data[: len(data) // 2])
+            assert store.find_artifacts("rgb_image") == before
+            assert service.list_runs() == []
+        finally:
+            service.close()

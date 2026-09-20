@@ -124,9 +124,17 @@ def test_diagnostic_locates_bad_input_port(tmp_path):
 
 def test_http_execution_routes_and_strict_requests(tmp_path):
     class Execution:
-        def start(self, pipeline, image_path):
+        def upload_image(self, data):
+            assert data == b"image bytes"
+            return {"image_ref": {"artifact_id": "sha256:" + "a" * 64}}
+
+        def start(self, pipeline, image_path=None, *, image_ref=None):
             assert pipeline == {"pipeline": "draft"}
-            assert image_path == "/tmp/input.png"
+            if image_ref is None:
+                assert image_path == "/tmp/input.png"
+            else:
+                assert image_path is None
+                assert image_ref == {"artifact_id": "sha256:" + "a" * 64}
             return {"run": {"run_id": "dag_example"}, "busy": True, "error": None}
 
         def snapshot(self, run_id):
@@ -160,11 +168,42 @@ def test_http_execution_routes_and_strict_requests(tmp_path):
         return urlopen(Request(base + path, json.dumps(body).encode(), headers, method="POST"))
 
     try:
+        with urlopen(
+            Request(
+                base + "/api/inputs/image",
+                b"image bytes",
+                {"Content-Type": "application/octet-stream"},
+                method="POST",
+            )
+        ) as response:
+            assert response.status == 201
+            assert json.load(response)["image_ref"]["artifact_id"] == "sha256:" + "a" * 64
+        with pytest.raises(HTTPError) as caught:
+            urlopen(
+                Request(
+                    base + "/api/inputs/image",
+                    b"image bytes",
+                    {"Content-Type": "application/octet-stream", "Origin": "http://evil.test"},
+                    method="POST",
+                )
+            )
+        assert caught.value.code == 403
+        with pytest.raises(HTTPError) as caught:
+            post("/api/inputs/image", {})
+        assert caught.value.code == 400
         with post(
             "/api/runs", {"pipeline": {"pipeline": "draft"}, "image_path": "/tmp/input.png"}
         ) as response:
             assert response.status == 202
             assert json.load(response)["run"]["run_id"] == "dag_example"
+        with post(
+            "/api/runs",
+            {
+                "pipeline": {"pipeline": "draft"},
+                "image_ref": {"artifact_id": "sha256:" + "a" * 64},
+            },
+        ) as response:
+            assert response.status == 202
         with urlopen(base + "/api/runs") as response:
             assert len(json.load(response)["runs"]) == 1
         with urlopen(base + "/api/runs/dag_example") as response:

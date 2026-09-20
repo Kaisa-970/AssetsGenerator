@@ -1,6 +1,92 @@
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { test, expect } from "@playwright/test";
+test("uploaded images bind exact references only after explicit run creation", async ({
+  page,
+}) => {
+  const imageRef = { artifact_id: "artifact_uploaded_exact" };
+  const starts: any[] = [];
+  let uploads = 0;
+  let rejectUpload = false;
+  const bytes = Buffer.from("encoded image fixture");
+  await page.route("**/api/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    let body: unknown = {};
+    if (path === "/api/catalog")
+      body = {
+        operators: {},
+        adapters: [],
+        templates: [],
+        execution_enabled: true,
+      };
+    else if (path === "/api/drafts") body = { drafts: [] };
+    else if (path === "/api/inputs/image") {
+      uploads++;
+      expect(route.request().headers()["content-type"]).toBe(
+        "application/octet-stream",
+      );
+      expect(route.request().postDataBuffer()).toEqual(bytes);
+      if (rejectUpload) {
+        await route.fulfill({
+          status: 400,
+          json: { error: "invalid image encoding" },
+        });
+        return;
+      }
+      body = { image_ref: imageRef };
+    } else if (path === "/api/runs" && route.request().method() === "POST") {
+      starts.push(route.request().postDataJSON());
+      body = {
+        run: {
+          run_id: "dag_uploaded",
+          status: "succeeded",
+          dag: { revision: 1, node_states: {} },
+        },
+      };
+    } else if (path === "/api/runs") body = { runs: [] };
+    else
+      body = {
+        run: {
+          run_id: "dag_uploaded",
+          status: "succeeded",
+          dag: { revision: 1, node_states: {} },
+        },
+      };
+    await route.fulfill({ json: body });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "运行", exact: true }).click();
+  await page.getByLabel("运行图片路径").fill("/data/previous.png");
+  await page.getByLabel("图片来源", { exact: true }).selectOption("upload");
+  const start = page.getByRole("button", { name: "启动新运行", exact: true });
+  await expect(start).toBeDisabled();
+  const file = { name: "robot.png", mimeType: "image/png", buffer: bytes };
+  await page.getByLabel("上传运行图片").setInputFiles(file);
+  await expect(
+    page.getByText("图片已上传；点击启动新运行才会执行模型。"),
+  ).toBeVisible();
+  expect(uploads).toBe(1);
+  expect(starts).toEqual([]);
+  await start.click();
+  await expect(
+    page.getByText("运行已创建；请在下方查看真实节点状态。"),
+  ).toBeVisible();
+  expect(starts[0].image_ref).toEqual(imageRef);
+  expect(starts[0]).not.toHaveProperty("image_path");
+  rejectUpload = true;
+  await page.getByLabel("上传运行图片").setInputFiles(file);
+  await expect(
+    page.getByText(/上传失败：.*invalid image encoding/),
+  ).toBeVisible();
+  await expect(start).toBeDisabled();
+  expect(starts).toHaveLength(1);
+  await page.getByLabel("图片来源", { exact: true }).selectOption("path");
+  await start.click();
+  await expect.poll(() => starts.length).toBe(2);
+  expect(starts[1].image_path).toBe("/data/previous.png");
+  expect(starts[1]).not.toHaveProperty("image_ref");
+});
+
 test("edits a template, saves layout, compiles and reloads a draft", async ({
   page,
 }) => {
