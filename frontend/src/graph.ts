@@ -98,15 +98,16 @@ export function compatible(source: Port, target: Port): string | null {
   const a = ranges[source.cardinality || "one"],
     b = ranges[target.cardinality || "one"];
   if (!a || !b || a[2] !== b[2] || a[0] < b[0] || a[1] > b[1])
-    return "基数不匹配；集合与单值需要显式转换";
+    return `基数不匹配：${source.cardinality || "one"} → ${target.cardinality || "one"}；数量范围或集合/单值不兼容，需要显式转换`;
   if (
     source.carriers &&
     target.carriers &&
     source.carriers.some((c) => !target.carriers!.includes(c))
   )
-    return "载体不兼容";
+    return `载体不兼容：${source.carriers.join("|")} → ${target.carriers.join("|")}`;
   for (const key of ["schema_name", "schema_version"] as const)
-    if (target[key] && target[key] !== source[key]) return `${key} 不匹配`;
+    if (target[key] && target[key] !== source[key])
+      return `${key} 不匹配：${source[key] || "未声明"} → ${target[key]}`;
   return null;
 }
 export function connectionError(
@@ -124,7 +125,7 @@ export function connectionError(
   const dst = c.operators[p.nodes[target]?.operator]?.inputs[port];
   if (!src || !dst) return "找不到端口契约";
   const err = compatible(src, dst);
-  if (err) return err;
+  if (err) return `${source}.${handle} → ${target}.${port}：${err}`;
   const edges = graphEdges(p).filter(
     (e) => !(e.target === target && e.targetHandle === port),
   );

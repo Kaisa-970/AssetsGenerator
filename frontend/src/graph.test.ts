@@ -323,3 +323,25 @@ it.each([
   expect(() => validateDocument({ ...p, ...invalid })).toThrow();
   expect(p.nodes.a.parameters).toEqual({ seed: 42 });
 });
+
+it("connection diagnostics identify endpoints and declared schema values", () => {
+  const catalog: Catalog = structuredClone(c);
+  catalog.operators["copy@1"].inputs.image.schema_name = "png";
+  const original = JSON.stringify(p);
+  expect(
+    connectionError(p, catalog, "input:image", "value", "a", "image"),
+  ).toBe("input:image.value → a.image：schema_name 不匹配：未声明 → png");
+  expect(
+    compatible(
+      { kind: "rgb_image", schema_name: "raster_image" },
+      { kind: "rgb_image", schema_name: "png" },
+    ),
+  ).toContain("raster_image → png");
+  expect(
+    compatible(
+      { kind: "rgb_image", cardinality: "zero_or_one" },
+      { kind: "rgb_image" },
+    ),
+  ).toContain("zero_or_one → one");
+  expect(JSON.stringify(p)).toBe(original);
+});
