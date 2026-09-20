@@ -65,6 +65,9 @@ def test_authorization_failure_never_executes_and_blocks_new_job(tmp_path, monke
         old = json.loads(store.worker_record(owner))
         assert old["exit_code"] is None
         assert old["launch_phase"] == "identity_recorded"
+        with pytest.raises(ValueError, match="zero exit"):
+            store.transition(owner, expected="running", state="succeeded", result={"outputs": []})
+        assert store.lookup(owner).state == "running"
         assert ServiceProcessWorker(store, other).run(command).status == "succeeded"
         assert marker.exists()
     finally:
@@ -154,5 +157,33 @@ def test_unobserved_process_cannot_become_terminal(tmp_path, terminal):
                 else None,
             )
         assert store.lookup(owner).state == "running"
+    finally:
+        store.close()
+
+
+def test_swallowed_backend_error_cannot_publish_success(tmp_path):
+    from assets_generator.errors import PipelineError
+    from assets_generator.remote_service_worker import execute_service_job
+
+    owner = request()
+    store = RemoteServiceStore(tmp_path / "service.sqlite", owner.identity)
+    try:
+        store.submit(owner)
+
+        def handler(req, service):
+            try:
+                ServiceProcessWorker(service, req).run(
+                    ProcessJobRequest(
+                        [sys.executable, "-c", "raise SystemExit(5)"], tmp_path, 10, "fail"
+                    )
+                )
+            except PipelineError:
+                pass
+            return {}
+
+        with pytest.raises(ValueError, match="zero exit"):
+            execute_service_job(store, owner, handler)
+        assert store.lookup(owner).state == "running"
+        assert json.loads(store.worker_record(owner))["exit_code"] == 5
     finally:
         store.close()

@@ -251,3 +251,9 @@ RemoteServiceStore.observe_worker 使用 LinuxProcessProbe 重新观察已保存
 服务数据库在 running→succeeded/failed 事务中检查已登记 WorkerExecution：需要 exit_observed 且观察结果为 exited，或绑定原记录的独立 process_exits 证据。缺失退出确认时拒绝终态并回滚为 running，不允许通过普通 handler 异常把不确定模型进程变成可重试失败。没有登记进程的 CPU handler 保持原行为；受信模型 handler 必须使用 ServiceProcessWorker，不能私自启动未登记进程。
 
 execute_service_job 对 PipelineError 保留原 code（如 backend_failed/backend_timeout），其他 handler 异常仍为 SERVICE_HANDLER_FAILED。实际独立 Python 非零退出验证错误码和退出码；额外覆盖成功/失败两种未确认进程终态均被拒绝。服务进程/worker/存储/DAG 耐久服务合跑 19 项通过，Ruff/mypy（98 文件）通过。仍未接真实模型或用户恢复命令。
+
+### 服务成功必须具有零退出码
+
+补强进程终态约束：登记过模型进程的作业发布 succeeded 必须具有原 worker 的 exit_observed、exited 观察及 exit_code=0。仅重新探测确认进程组消失可以释放占用并允许明确失败处置，但不足以证明推理成功。handler 即使吞掉非零退出异常并返回输出，也不能绕过数据库成功门控。
+
+服务进程/worker/存储合跑 19 项通过，随后补充“重新探测退出但无退出码也拒绝成功”的断言；Ruff/mypy 通过。尚无真实模型/GPU 验证。
