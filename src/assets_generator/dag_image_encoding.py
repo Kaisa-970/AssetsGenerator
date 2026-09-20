@@ -17,12 +17,15 @@ class EncodePngAdapter:
         if not isinstance(source, ArtifactRef) or not context.store.verify_digest(source):
             raise ContractError("PNG encoding requires intact image evidence")
         identity = context.store.get_manifest(source.artifact_id).identity
-        if (identity.kind, identity.schema_name, identity.schema_version) != (
-            "rgb_image",
-            "raster_image",
-            "1.0",
-        ):
-            raise ContractError("PNG encoding requires RGB raster_image@1.0")
+        if (
+            identity.kind,
+            identity.schema_name,
+            identity.schema_version,
+        ) not in {
+            ("rgb_image", "raster_image", "1.0"),
+            ("rgb_image", "png", "1.0"),
+        }:
+            raise ContractError("PNG encoding requires RGB raster_image@1.0 or png@1.0")
         with Image.open(context.store.blob_path(source)) as image:
             image.load()
             if (
