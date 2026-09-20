@@ -2,11 +2,13 @@
 
 import io
 import json
+import sys
 import threading
 import time
 from pathlib import Path
 from urllib.request import Request, urlopen
 
+import pytest
 import trimesh
 import yaml
 from PIL import Image
@@ -21,11 +23,14 @@ from assets_generator.dag_persistence import DagRepository
 from assets_generator.dag_remote_profiles import register_remote_shape_profiles
 from assets_generator.node_editor import DraftEditor, create_editor_server
 from assets_generator.node_editor_execution import NodeEditorExecution
+from assets_generator.remote_service_process import ServiceProcessWorker
 from assets_generator.remote_service_worker import execute_service_job
 from assets_generator.remote_shape_service import ShapeServiceHandler
+from assets_generator.worker import ProcessJobRequest
 
 
-def test_remote_asset_chain_through_editor_http(tmp_path):
+@pytest.mark.parametrize("abandon_first", [False, True])
+def test_remote_asset_chain_through_editor_http(tmp_path, abandon_first):
     with serve(tmp_path / "service.sqlite") as (remote, client, _):
         identity = request().identity
         registry = AdapterRegistry()
@@ -103,6 +108,43 @@ def test_remote_asset_chain_through_editor_http(tmp_path):
                 handler = ShapeServiceHandler(
                     identity, tmp_path / "work", Backend, lambda: identity
                 )
+                if abandon_first:
+                    original_key = req.submission_key
+                    remote.transition(req, expected="queued", state="running")
+                    ServiceProcessWorker(remote, req).run(
+                        ProcessJobRequest(
+                            [sys.executable, "-c", "pass"],
+                            tmp_path,
+                            10,
+                            "interrupted-result",
+                        )
+                    )
+                    # Process exit was saved, but no terminal result was published.
+                    assert remote.abandon_exited_job(req).state == "failed"
+                    post(
+                        f"/api/runs/{run_id}/resume",
+                        {
+                            "expected_revision": waiting["run"]["dag"]["revision"],
+                        },
+                    )
+                    failed = settled(run_id)
+                    assert failed["run"]["status"] == "failed"
+                    old = repo.load(run_id).dag.node_states["shape"].current()
+                    assert old.error_code == "SERVICE_RESULT_ABANDONED"
+                    assert old.remote_result is not None
+                    repo.verify_reference_closure(old.remote_result)
+                    post(
+                        f"/api/runs/{run_id}/retry",
+                        {
+                            "node_id": "shape",
+                            "expected_revision": failed["run"]["dag"]["revision"],
+                        },
+                    )
+                    waiting = settled(run_id)
+                    current = repo.load(run_id).dag.node_states["shape"].current()
+                    assert current.remote_binding.submission_key != original_key
+                    req = remote.request_for(current.remote_binding.submission_key)
+                    assert remote.lookup(req).state == "queued"
                 assert execute_service_job(remote, req, handler).state == "succeeded"
                 # Polling alone cannot consume the remote result or execute downstream nodes.
                 unchanged = get(f"/api/runs/{run_id}")
@@ -114,7 +156,8 @@ def test_remote_asset_chain_through_editor_http(tmp_path):
                 completed = settled(run_id)
                 assert completed["run"]["status"] == "succeeded"
                 assert all(
-                    len(s["attempts"]) == 1 for s in completed["run"]["dag"]["node_states"].values()
+                    len(s["attempts"]) == (2 if abandon_first and key == "shape" else 1)
+                    for key, s in completed["run"]["dag"]["node_states"].items()
                 )
                 with urlopen(
                     base + f"/api/runs/{run_id}/outputs/publish/glb", timeout=10
@@ -130,6 +173,24 @@ def test_remote_asset_chain_through_editor_http(tmp_path):
                 assert report["profile"] == "geometry-v1"
                 assert report["overall_status"] in {"pass", "warn"}
                 assert not any(output["node_id"] == "shape" for output in completed["outputs"])
+                if abandon_first:
+                    history = repo.load(run_id).dag.node_states["shape"].attempts
+                    assert history[0] == old
+                    assert remote.lookup(remote.request_for(original_key)).state == "failed"
+                    assert remote.list_jobs()["jobs"] == [
+                        {"job_id": req.submission_key, "state": "succeeded", "error": None},
+                        {
+                            "job_id": original_key,
+                            "state": "failed",
+                            "error": {
+                                "code": "SERVICE_RESULT_ABANDONED",
+                                "detail": (
+                                    "Operator explicitly abandoned unpublished result "
+                                    "after confirmed process exit"
+                                ),
+                            },
+                        },
+                    ]
                 release = get(f"/api/runs/{run_id}/outputs/publish/release")
                 assert release["export_profile"] == "gltf2-v1"
                 assert post("/api/runs", creation)["run"]["dag"] == completed["run"]["dag"]

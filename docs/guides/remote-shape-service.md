@@ -119,3 +119,8 @@ alive/unknown/缺失身份一律拒绝；已有 succeeded/其他 failed 不覆�
 返回原失败结果。与正在发布的成功结果竞争时，终态 CAS 决定结果，不覆盖已成功发布的作业。
 随后画布恢复会读取这个失败，重试需显式触发；其他排队作业可再次 drain。
 目前没有进程证据的中断（例如领取后尚未登记 worker）仍保持阻塞，不提供强制清除入口。
+
+真实 HTTP CPU 集成测试也覆盖 abandon → Core resume 固定失败结果 → 显式 retry 新建 submission key
+→ 成功发布。原失败 attempt 与 remote_result 完整保留，shape 两次 attempt，下游各一次；
+原服务作业保持 failed，新作业 succeeded。此测试模拟进程退出后终态未发布的窗口，
+不宣称已验收真实 GPU 进程中途被杀的场景。
