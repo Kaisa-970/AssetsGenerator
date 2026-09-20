@@ -193,6 +193,8 @@ def test_foreign_directory_cannot_read_mutate_or_export(tmp_path):
                 try:
                     assert service.list_runs() == []
                     with pytest.raises(ContractError, match="another editor"):
+                        service.draft_from_run(run_id)
+                    with pytest.raises(ContractError, match="another editor"):
                         service.plan(run_id)
                     with pytest.raises(ContractError, match="another editor"):
                         service.snapshot(run_id)
@@ -488,6 +490,11 @@ def test_multi_view_editor_start_replay_and_resume(tmp_path, monkeypatch):
             run_id = started["run"]["run_id"]
             result = wait(service, run_id)
             assert result["run"]["status"] == "succeeded", result
+            assert calls == {"geometry": 1, "reconstruction": 1}
+            draft = service.draft_from_run(run_id)
+            assert draft["pipeline"]["inputs"]["observations"]["kind"] == "observation_bundle"
+            assert editor.compile(draft["pipeline"])["execution_ready"]
+            assert service.snapshot(run_id)["run"]["dag"] == result["run"]["dag"]
             assert calls == {"geometry": 1, "reconstruction": 1}
             assert service.start(graph, **options)["run"]["run_id"] == run_id
             service.resume(run_id, result["run"]["dag"]["revision"])

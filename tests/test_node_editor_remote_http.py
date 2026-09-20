@@ -87,6 +87,7 @@ def test_remote_asset_chain_through_editor_http(tmp_path, abandon_first):
 
             try:
                 graph = yaml.safe_load(Path("pipelines/remote_shape_asset_v1.yaml").read_text())
+                graph["nodes"]["shape"]["backend"] = "cpu"
                 assert post("/api/compile", {"pipeline": graph})["execution_ready"]
                 data = io.BytesIO()
                 Image.new("RGBA", (2, 2), (255, 20, 10, 120)).save(data, format="PNG")
@@ -101,6 +102,20 @@ def test_remote_asset_chain_through_editor_http(tmp_path, abandon_first):
                 run_id = started["run"]["run_id"]
                 waiting = settled(run_id)
                 assert waiting["run"]["status"] == "running"
+                exported = get(f"/api/runs/{run_id}/draft")
+                assert exported["source_run_id"] == run_id
+                assert exported["source_plan_id"] == waiting["run"]["dag"]["plan_id"]
+                original_plan = get(f"/api/runs/{run_id}/plan")
+                cloned = exported["pipeline"]
+                assert cloned["inputs"]["image"]["kind"] == "rgba_image"
+                assert cloned["nodes"]["shape"]["backend"] == "cpu"
+                assert (
+                    cloned["nodes"]["shape"]["parameters"]
+                    == original_plan["bindings"]["shape"]["parameters"]
+                )
+                assert post("/api/compile", {"pipeline": cloned})["execution_ready"]
+                assert get(f"/api/runs/{run_id}")["run"]["dag"] == waiting["run"]["dag"]
+                assert len(get("/api/runs")["runs"]) == 1
                 attempt = repo.load(run_id).dag.node_states["shape"].current()
                 req = remote.request_for(attempt.remote_binding.submission_key)
                 assert remote.lookup(req).state == "queued"
