@@ -11,11 +11,14 @@ from assets_generator.comfy_profile import ComfyImageProfile
 from assets_generator.contracts import ContractError
 from assets_generator.dag_adapters import NodeExecutionContext
 from assets_generator.dag_comfy_image import ComfyImageAdapter
+from assets_generator.remote_binding import RemoteAttemptBinding
 from assets_generator.remote_protocol import RemoteJob
 from assets_generator.serialization import canonical_json_bytes, sha256_bytes
 
 
-@pytest.mark.parametrize("damage", [None, "input", "profile", "parameters", "output", "transport"])
+@pytest.mark.parametrize(
+    "damage", [None, "input", "profile", "parameters", "output", "transport", "attempt", "binding"]
+)
 def test_import_checks_composite_boundary_before_store_writes(tmp_path, damage):
     configured = ComfyImageProfile(json.dumps(profile()).encode())
     adapter = ComfyImageAdapter("http://127.0.0.1:8771", configured)
@@ -40,6 +43,8 @@ def test_import_checks_composite_boundary_before_store_writes(tmp_path, damage):
         adapter.spec.normalize_parameters({}),
         store,
         input_digest="sha256:" + "1" * 64,
+        attempt_id="run/transform/1",
+        binding_digest="sha256:" + "2" * 64,
     )
     blob = store.get_manifest(source.artifact_id).identity.blob_digest
     filename = "asset-" + blob[7:] + ".png"
@@ -72,7 +77,7 @@ def test_import_checks_composite_boundary_before_store_writes(tmp_path, damage):
         "provenance_scope": "composite_boundary_only",
         "inputs": {"image": {"artifact_id": source.artifact_id}},
         "outputs": {"image": {"artifact_id": output_id}},
-        "submission": {"submission_key": "job"},
+        "submission": {"submission_key": RemoteAttemptBinding.key_for("run", "transform", 1)},
         "output_mapping": profile()["output"],
         "workflow": bound,
         "deployment_claims": {
@@ -81,6 +86,7 @@ def test_import_checks_composite_boundary_before_store_writes(tmp_path, damage):
             "claims": {
                 "profile_digest": configured.identity.backend_digest,
                 "dag_input_digest": context.input_digest,
+                "dag_binding_digest": context.binding_digest,
             },
         },
         "internal_verification": {
@@ -97,9 +103,11 @@ def test_import_checks_composite_boundary_before_store_writes(tmp_path, damage):
         evidence["workflow"]["parameters"]["seed"] = 2
     if damage == "output":
         evidence["outputs"]["image"]["artifact_id"] = "other"
+    if damage == "binding":
+        evidence["deployment_claims"]["claims"]["dag_binding_digest"] = "other"
     blobs = {"image": image, "evidence": canonical_json_bytes(evidence)}
     job = RemoteJob(
-        "job",
+        RemoteAttemptBinding.key_for("run", "transform", 2 if damage == "attempt" else 1),
         "succeeded",
         canonical_json_bytes(
             {

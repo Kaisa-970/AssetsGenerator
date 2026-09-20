@@ -78,6 +78,7 @@ def execute_remote(
             engine.store,
             attempt_id=f"{run.run_id}/{node.node_id}/{attempt.attempt}",
             input_digest=attempt.input_digest,
+            binding_digest=attempt.binding_digest,
         )
         client = RemoteJobClient(str(bound.parameters["remote_endpoint"]))
         bridge = DagRemoteSubmission(engine.repository, client)

@@ -180,6 +180,7 @@ class NodeExecutionContext:
     worker: ProcessWorker | None = None
     child_context: ChildRunContext | None = None
     output_path: Path | None = None
+    binding_digest: str = ""
 
 
 @dataclass(frozen=True)

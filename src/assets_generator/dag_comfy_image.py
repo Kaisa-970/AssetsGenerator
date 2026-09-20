@@ -12,6 +12,7 @@ from .contracts import ContractError
 from .dag_adapters import AdapterSpec, NodeExecutionContext, NodeExecutionResult
 from .dag_remote_adapter import RemoteNodeAdapter
 from .models import ArtifactRef
+from .remote_binding import RemoteAttemptBinding
 from .remote_http import RemoteJobClient
 from .remote_protocol import RemoteJob, RemoteOutput, decode_remote_json
 from .serialization import canonical_json_bytes, sha256_bytes
@@ -80,6 +81,17 @@ class ComfyImageAdapter(RemoteNodeAdapter):
             ):
                 raise ContractError("ComfyUI output transport mismatch")
         evidence = decode_remote_json(blobs["evidence"])
+        try:
+            prefix, attempt = context.attempt_id.rsplit("/", 1)
+            if prefix != f"{context.run_id}/{context.node_id}" or int(attempt) < 1:
+                raise ValueError("invalid attempt")
+            expected_job = RemoteAttemptBinding.key_for(
+                context.run_id, context.node_id, int(attempt)
+            )
+        except (ValueError, AttributeError) as error:
+            raise ContractError("ComfyUI requires current DAG attempt identity") from error
+        if job.job_id != expected_job or not context.binding_digest:
+            raise ContractError("ComfyUI result belongs to another DAG attempt")
         source = self.input_blobs(context)["image"]
         raw = self.profile.to_dict()
         parameters = self.prepare_payload(context)["parameters"]
@@ -92,6 +104,8 @@ class ComfyImageAdapter(RemoteNodeAdapter):
             or evidence["deployment_claims"]["claims"]["profile_digest"]
             != self.profile.identity.backend_digest
             or evidence["deployment_claims"]["claims"]["dag_input_digest"] != context.input_digest
+            or evidence["deployment_claims"]["claims"]["dag_binding_digest"]
+            != context.binding_digest
             or evidence["internal_verification"]
             != {
                 "comfy_revision": "unverified",

@@ -448,3 +448,13 @@ profile、实际 workflow/参数、输出映射和 DAG input digest，拒绝不�
 不匹配拒绝且不写 Store。本步尚未注册到默认 registry/画布，未完成真实 DAG
 服务联调；完整证据 schema 与当前 attempt 的绑定检查仍需随集成补齐，不能将
 孤立 Adapter 测试当作整个 Backend 已验收。
+
+### 当前 DAG attempt 绑定
+
+远程执行上下文新增 binding_digest，由调度器传入持久化 attempt 的绑定摘要。
+ComfyImageAdapter 依据 run/node/attempt 重新计算预期远程 job key，并核对证据中
+的 DAG binding digest；其他 attempt 或旧配置证据不得导入当前节点。
+
+9 项 ComfyUI Adapter 与既有远程 shape 回归通过，覆盖错误 attempt、错误 binding
+拒绝且不写 Store；Ruff/mypy 通过。上下文新增字段有默认值，既有 Adapter 不受
+调用参数变更影响。尚未完成完整 ComfyUI DAG 联调与 registry/画布接入。
