@@ -366,7 +366,7 @@ class NodeAttempt:
     operator: str
     backend: str | None
     status: str
-    execution_mode: str  # executed | cache_hit
+    execution_mode: str  # executed | cache_hit | reused_input
     started_at: str
     finished_at: str | None
     error_code: str | None
@@ -374,6 +374,8 @@ class NodeAttempt:
 ```
 
 `resolved_plan_contract_digest` 固定本次运行所校验的 Pipeline 与 OperatorSpec 契约，`resolved_backend_versions` 按节点记录 Registry 声明的 binding 版本。它们与 `resolved_backends` 一起构成 `ResolvedPlan` 可持久化部分的审计身份；Backend 返回的模型 revision、dirty 状态、权重 digest 和运行参数仍记录在 ProvenanceRecord 中。为兼容既有 BuildRun，缺失这些字段表示旧记录未捕获相应身份，不能据此推断当前契约或实现版本。
+
+`reused_input` 表示复用上游已经固定并校验的结果证据，没有调用 Backend；它不同于 Backend 的缓存命中。复用结果的 ArtifactRef 必须写入 BuildRun inputs 及派生 provenance，来源运行、节点与实现身份保存在结果证据中。
 
 工作台首版增加可选、有类型的 `WorkbenchState@1.0` 扩展，保存计划引用、revision 和 stage attempt。
 StageAttempt 继承 NodeAttempt 并复用 outputs，stage 不复制成功输出；此扩展仅服务固定模板。

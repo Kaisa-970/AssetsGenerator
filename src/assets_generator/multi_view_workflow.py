@@ -51,6 +51,7 @@ from .spatial import (
     validate_backend_native_frame,
     validate_mesh_native_frame,
 )
+from .workbench_context import ChildRunContext
 from .workflow import (
     BuildResult,
     _materialize_release,
@@ -369,6 +370,56 @@ def _validate_depths(store: LocalArtifactStore, depths: list[ArtifactRef], bundl
         depth_view_ids.add(view_id)
 
 
+def prepared_backend_binding(plan: ResolvedPlan, node_id: str) -> dict[str, Any]:
+    """Serializable binding claimed by the original computation, never by reuse."""
+    binding = plan.backends[node_id]
+    return {
+        "pipeline_name": plan.pipeline_name,
+        "pipeline_version": plan.pipeline_version,
+        "contract_digest": plan.contract_digest,
+        "node_id": node_id,
+        "backend": binding.name,
+        "operator": binding.operator,
+        "backend_version": binding.backend_version,
+    }
+
+
+def _validate_prepared_evidence(
+    store: LocalArtifactStore,
+    observations: ArtifactRef,
+    geometry: GeometryFrontendOutput,
+    reconstruction: ReconstructionOutput,
+    evidence: dict[str, ArtifactRef],
+    resolved_plan: ResolvedPlan,
+) -> None:
+    for key, schema, value in (
+        ("geometry", "GeometryFrontendEvidence", geometry),
+        ("reconstruction", "ReconstructionEvidence", reconstruction),
+    ):
+        reference = evidence[key]
+        if not store.verify_digest(reference):
+            raise ContractError("prepared result evidence is missing or corrupt")
+        identity = store.get_manifest(reference.artifact_id).identity
+        if (identity.kind, identity.schema_name, identity.schema_version) != (
+            "quality_evidence",
+            schema,
+            SCHEMA_VERSION,
+        ):
+            raise ContractError(f"prepared result requires {schema}@{SCHEMA_VERSION}")
+        raw = store.read_structured(reference)
+        node_id = "estimate_geometry" if key == "geometry" else "reconstruct"
+        if raw.get("backend_binding") != prepared_backend_binding(resolved_plan, node_id):
+            raise ContractError(f"prepared {key} Backend binding differs from resolved plan")
+        expected = {**to_primitive(value), "observations": to_primitive(observations)}
+        if key == "reconstruction":
+            expected["geometry_evidence"] = to_primitive(evidence["geometry"])
+        for field, expected_value in expected.items():
+            if field not in raw or canonical_json_bytes(raw[field]) != canonical_json_bytes(
+                expected_value
+            ):
+                raise ContractError(f"prepared {key} {field} differs from fixed evidence")
+
+
 def build_multi_view_asset(
     *,
     observations: ArtifactRef,
@@ -378,10 +429,34 @@ def build_multi_view_asset(
     semantics: SemanticInfo | None = None,
     asset_name: str | None = None,
     export_appearance_mode: Literal["preserve_mesh", "apply_material"] = "apply_material",
+    run_id: str | None = None,
+    child_context: ChildRunContext | None = None,
+    prepared_geometry: GeometryFrontendOutput | None = None,
+    prepared_reconstruction: ReconstructionOutput | None = None,
+    prepared_evidence: dict[str, ArtifactRef] | None = None,
 ) -> BuildResult:
+    """Publish a multi-view asset, optionally consuming verified upstream results.
+
+    Prepared result envelopes must match their fixed evidence and observation
+    lineage. Core port, spatial, material and metadata validation still runs here;
+    reused inputs retain the original backend identity.
+    """
     if export_appearance_mode not in {"preserve_mesh", "apply_material"}:
         raise ContractError(f"invalid export appearance mode: {export_appearance_mode}")
+    if (prepared_geometry is None) != (prepared_reconstruction is None):
+        raise ContractError("prepared geometry and reconstruction must be provided together")
+    if prepared_geometry is not None:
+        if prepared_evidence is None or set(prepared_evidence) != {"geometry", "reconstruction"}:
+            raise ContractError("prepared results require geometry and reconstruction evidence")
+    elif prepared_evidence is not None:
+        raise ContractError("prepared evidence requires prepared results")
     store = LocalArtifactStore(store_path)
+    if run_id is None:
+        run_id = f"run_{uuid.uuid4().hex}"
+    elif not re.fullmatch(r"run_[A-Za-z0-9_-]+", run_id):
+        raise ContractError("invalid explicit run_id")
+    if child_context is None and (store.root / "runs" / f"{run_id}.json").exists():
+        raise ContractError("explicit run_id already exists")
     pipeline = load_multi_view_pipeline()
     specs = load_default_operator_specs()
     compile_pipeline(pipeline, specs)
@@ -399,7 +474,6 @@ def build_multi_view_asset(
     geometry_backend = geometry_binding.geometry_frontend_backend()
     reconstruction_backend = reconstruction_binding.reconstruction_backend()
     runtime = Phase1Runtime(store, pipeline, specs)
-    run_id = f"run_{uuid.uuid4().hex}"
     export_profile = StructuredValue(
         "export_profile",
         "GLTF2Profile",
@@ -421,7 +495,7 @@ def build_multi_view_asset(
         pipeline.name,
         pipeline.version,
         "running",
-        run_inputs,
+        dict(run_inputs),
         runtime.attempts,
         utc_now(),
         None,
@@ -429,16 +503,39 @@ def build_multi_view_asset(
         resolved_plan.contract_digest,
         {node_id: binding.backend_version for node_id, binding in resolved_plan.backends.items()},
     )
+    if prepared_evidence is not None:
+        run.inputs.update({f"prepared_{key}": value for key, value in prepared_evidence.items()})
+    if child_context is not None:
+        child_context.begin(run)
+
+        def checkpoint() -> None:
+            child_context.persist(run)
+
+        runtime.checkpoint = checkpoint
     provenance: list[ArtifactRef] = []
     try:
-        runtime.validate_pipeline_inputs(run.inputs)
+        runtime.validate_pipeline_inputs(run_inputs)
+        if prepared_evidence is not None:
+            assert prepared_geometry is not None and prepared_reconstruction is not None
+            _validate_prepared_evidence(
+                store,
+                observations,
+                prepared_geometry,
+                prepared_reconstruction,
+                prepared_evidence,
+                resolved_plan,
+            )
         bundle = observation_bundle_from_artifact(observations, store)
 
         def execute_geometry() -> tuple[GeometryFrontendOutput, dict[str, Any]]:
             if semantics is not None:
                 validate_semantic_info(semantics)
             try:
-                value = geometry_backend.estimate(store, observations)
+                value = (
+                    prepared_geometry
+                    if prepared_geometry is not None
+                    else geometry_backend.estimate(store, observations)
+                )
             except (ContractError, PipelineError):
                 raise
             except Exception as error:
@@ -460,7 +557,13 @@ def build_multi_view_asset(
             {"observations": observations},
             execute_geometry,
             backend=geometry_binding.name,
-            execution_mode=lambda value: "cache_hit" if value.cache_hit else "executed",
+            execution_mode=lambda value: (
+                "reused_input"
+                if prepared_geometry is not None
+                else "cache_hit"
+                if value.cache_hit
+                else "executed"
+            ),
             validate_result=validate_geometry_result,
         )
         parsed_cameras = _cameras(store, geometry.cameras, bundle)
@@ -476,6 +579,14 @@ def build_multi_view_asset(
                 {"cameras": [to_primitive(camera) for camera in parsed_cameras]},
             )
         )
+        geometry_inputs = [observations]
+        geometry_parameters = _provenance_parameters(geometry.backend_metadata)
+        if prepared_evidence is not None:
+            geometry_inputs.append(prepared_evidence["geometry"])
+            geometry_parameters.update(
+                execution_mode="reused_input",
+                prepared_result=to_primitive(prepared_evidence["geometry"]),
+            )
         provenance.append(
             _persist_provenance(
                 store,
@@ -483,7 +594,7 @@ def build_multi_view_asset(
                 node_id="estimate_geometry",
                 port_name="cameras",
                 artifact=camera_collection,
-                derived_from=[observations],
+                derived_from=geometry_inputs,
                 operator="geometry_frontend",
                 backend=geometry_binding.name,
                 backend_version=str(
@@ -491,7 +602,7 @@ def build_multi_view_asset(
                         "backend_version", geometry_binding.backend_version
                     )
                 ),
-                parameters=_provenance_parameters(geometry.backend_metadata),
+                parameters=geometry_parameters,
                 seed=None,
                 source="estimated",
                 model_digest=geometry.backend_metadata.get("model_digest"),
@@ -505,7 +616,7 @@ def build_multi_view_asset(
                 node_id="estimate_geometry",
                 port_name="points",
                 artifact=geometry.points,
-                derived_from=[observations],
+                derived_from=geometry_inputs,
                 operator="geometry_frontend",
                 backend=geometry_binding.name,
                 backend_version=str(
@@ -513,7 +624,7 @@ def build_multi_view_asset(
                         "backend_version", geometry_binding.backend_version
                     )
                 ),
-                parameters=_provenance_parameters(geometry.backend_metadata),
+                parameters=geometry_parameters,
                 seed=None,
                 source="estimated",
                 model_digest=geometry.backend_metadata.get("model_digest"),
@@ -527,7 +638,7 @@ def build_multi_view_asset(
                 node_id="estimate_geometry",
                 port_name=f"depths[{index}]",
                 artifact=depth,
-                derived_from=[observations],
+                derived_from=geometry_inputs,
                 operator="geometry_frontend",
                 backend=geometry_binding.name,
                 backend_version=str(
@@ -535,7 +646,7 @@ def build_multi_view_asset(
                         "backend_version", geometry_binding.backend_version
                     )
                 ),
-                parameters=_provenance_parameters(geometry.backend_metadata),
+                parameters=geometry_parameters,
                 seed=None,
                 source="estimated",
                 model_digest=geometry.backend_metadata.get("model_digest"),
@@ -546,12 +657,16 @@ def build_multi_view_asset(
 
         def execute_reconstruction() -> tuple[ReconstructionOutput, dict[str, Any]]:
             try:
-                value = reconstruction_backend.reconstruct(
-                    store,
-                    observations,
-                    reconstruction_cameras,
-                    geometry.depths,
-                    geometry.points,
+                value = (
+                    prepared_reconstruction
+                    if prepared_reconstruction is not None
+                    else reconstruction_backend.reconstruct(
+                        store,
+                        observations,
+                        reconstruction_cameras,
+                        geometry.depths,
+                        geometry.points,
+                    )
                 )
             except (ContractError, PipelineError):
                 raise
@@ -599,7 +714,13 @@ def build_multi_view_asset(
             },
             execute_reconstruction,
             backend=reconstruction_binding.name,
-            execution_mode=lambda value: "cache_hit" if value.cache_hit else "executed",
+            execution_mode=lambda value: (
+                "reused_input"
+                if prepared_reconstruction is not None
+                else "cache_hit"
+                if value.cache_hit
+                else "executed"
+            ),
             validate_result=validate_reconstruction_result,
         )
         material = _material(reconstructed.material, store)
@@ -609,6 +730,13 @@ def build_multi_view_asset(
             geometry.points,
             *geometry.depths,
         ]
+        reconstruction_parameters = _provenance_parameters(reconstructed.backend_metadata)
+        if prepared_evidence is not None:
+            reconstruction_inputs.append(prepared_evidence["reconstruction"])
+            reconstruction_parameters.update(
+                execution_mode="reused_input",
+                prepared_result=to_primitive(prepared_evidence["reconstruction"]),
+            )
         reconstruction_provenance = _persist_provenance(
             store,
             run_id=run_id,
@@ -623,7 +751,7 @@ def build_multi_view_asset(
                     "backend_version", reconstruction_binding.backend_version
                 )
             ),
-            parameters=_provenance_parameters(reconstructed.backend_metadata),
+            parameters=reconstruction_parameters,
             seed=None,
             source="reconstructed",
             model_digest=reconstructed.backend_metadata.get("model_digest"),
@@ -655,7 +783,7 @@ def build_multi_view_asset(
                         "backend_version", reconstruction_binding.backend_version
                     )
                 ),
-                parameters=_provenance_parameters(reconstructed.backend_metadata),
+                parameters=reconstruction_parameters,
                 seed=None,
                 source="reconstructed",
                 model_digest=reconstructed.backend_metadata.get("model_digest"),
@@ -691,7 +819,7 @@ def build_multi_view_asset(
                         "backend_version", reconstruction_binding.backend_version
                     )
                 ),
-                parameters=_provenance_parameters(reconstructed.backend_metadata),
+                parameters=reconstruction_parameters,
                 seed=None,
                 source="reconstructed",
                 model_digest=reconstructed.backend_metadata.get("model_digest"),
@@ -977,7 +1105,7 @@ def build_multi_view_asset(
         release_attempt.finished_at = utc_now()
         run.status = "succeeded"
         run.finished_at = release_attempt.finished_at
-        run_ref = _persist_build_run(store, run)
+        run_ref = child_context.persist(run) if child_context else _persist_build_run(store, run)
         try:
             _materialize_release(store, output_path, release_ref, release, run_ref)
         except Exception:
@@ -989,5 +1117,5 @@ def build_multi_view_asset(
     except Exception:
         run.status = "failed"
         run.finished_at = utc_now()
-        _persist_build_run(store, run)
+        (child_context.persist(run) if child_context else _persist_build_run(store, run))
         raise
