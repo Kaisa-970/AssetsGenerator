@@ -773,6 +773,53 @@ export function ExecutionPanel({
                     url={output.url}
                   />
                 ))}
+              {multiInput &&
+                envelope.outputs.flatMap((output) =>
+                  Object.entries(pipeline.inputs)
+                    .filter(([, port]) =>
+                      (port.kinds || [port.kind]).includes(output.kind),
+                    )
+                    .map(([name, port]) => (
+                      <button
+                        key={`reuse:${output.node_id}:${output.port}:${name}`}
+                        disabled={pending || uploading || unresolvedCreation}
+                        onClick={() => {
+                          const revision = inputGeneration.current.revision;
+                          void mutate(async () => {
+                            const source = await request(
+                              `/api/runs/${encodeURIComponent(run.run_id)}/references/${encodeURIComponent(output.node_id)}/${encodeURIComponent(output.port)}`,
+                            );
+                            if (inputGeneration.current.revision !== revision)
+                              throw Error("输入契约已修改，请重新选择输出");
+                            if (
+                              source.source_run_id !== run.run_id ||
+                              source.node_id !== output.node_id ||
+                              source.port !== output.port ||
+                              !(port.kinds || [port.kind]).includes(
+                                source.kind,
+                              ) ||
+                              (port.schema_name &&
+                                source.schema_name !== port.schema_name) ||
+                              (port.schema_version &&
+                                source.schema_version !==
+                                  port.schema_version) ||
+                              typeof source.reference?.artifact_id !== "string"
+                            )
+                              throw Error("输出引用与目标输入契约不匹配");
+                            setInputArtifact(
+                              name,
+                              source.reference.artifact_id,
+                            );
+                            setMessage(
+                              `已将 ${run.run_id}/${output.node_id}.${output.port} 绑定到 ${name}，点击启动才会创建新运行。`,
+                            );
+                          });
+                        }}
+                      >
+                        用作输入 {name} · {output.node_id} · {output.port}
+                      </button>
+                    )),
+                )}
               {envelope.outputs.map((output) => (
                 <a
                   key={`${output.node_id}:${output.port}`}

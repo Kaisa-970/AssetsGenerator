@@ -129,3 +129,13 @@ diff 检查通过。没有新增 GPU 或浏览器真实后端验收，未声称�
 替换 mask 失败，以及挂起上传期间添加输入后迟到响应被拒绝。
 定向 Playwright 1 项、Vitest 27 项、TypeScript/Vite 构建、diff 检查通过。
 本轮没有运行 Python 回归或 GPU，构建保留已有 bundle 大小提示。
+
+## 显式复用历史输出
+
+新增只读 references 端点，验证运行归属、节点成功及输出证据闭包后提供精确
+ArtifactRef 与 kind/schema。多输入面板可将当前所选历史运行的可查看输出显式绑定
+到 kind 匹配的输入；schema 不匹配或请求期间输入契约变化时拒绝。不会自动创建
+运行或复用人工决定，启动仍执行端口及关系校验。当前不支持集合/StructuredValue。
+验证：21 项 mask/编辑器测试、4 项实际 HTTP 集成、1 项定向 Playwright 通过；
+TypeScript/Vite 构建、Ruff、mypy、Prettier、diff 检查通过。浏览器测试使用模拟 API，
+不宣称真实浏览器到 references 端点的完整验收；本轮未运行 GPU。

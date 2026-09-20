@@ -207,6 +207,15 @@ def test_remote_asset_chain_through_editor_http(tmp_path, abandon_first, masked_
                     assert sum(len(g.faces) for g in scene.geometry.values()) > 0
                 report_path = f"/api/runs/{run_id}/outputs/quality/report"
                 assert any(output["url"] == report_path for output in completed["outputs"])
+                reference = get(f"/api/runs/{run_id}/references/quality/report")
+                assert (
+                    reference["reference"]
+                    == completed["run"]["dag"]["node_states"]["quality"]["attempts"][0]["outputs"][
+                        "report"
+                    ]
+                )
+                assert reference["source_run_id"] == run_id
+                assert reference["kind"] == "quality_report"
                 report = get(report_path)
                 assert report["profile"] == "geometry-v1"
                 assert report["overall_status"] in {"pass", "warn"}

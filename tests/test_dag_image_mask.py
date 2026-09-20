@@ -107,6 +107,11 @@ def test_mask_editor_compiles_runs_and_recovers_exact_evidence(tmp_path):
                 image["artifact_id"],
                 mask["artifact_id"],
             }
+            reference = execution.output_reference(run_id, "composite", "rgba")
+            assert reference["reference"] == {"artifact_id": output.artifact_id}
+            assert reference["source_run_id"] == run_id
+            assert reference["kind"] == "rgba_image"
+            assert repo.load(run_id).dag.revision == persisted.dag.revision
             before = deepcopy(persisted.dag.node_states)
             assert engine.recover(run_id).dag.node_states == before
             assert (
@@ -116,6 +121,8 @@ def test_mask_editor_compiles_runs_and_recovers_exact_evidence(tmp_path):
                 == run_id
             )
             store.blob_path(output).unlink()
+            with pytest.raises((ValueError, OSError, RuntimeError)):
+                execution.output_reference(run_id, "composite", "rgba")
             recovered = engine.recover(run_id)
             assert recovered.dag.node_states["composite"].status == "recovery_blocked"
             assert len(recovered.dag.node_states["composite"].attempts) == 1

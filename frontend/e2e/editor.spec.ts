@@ -2286,6 +2286,16 @@ test("multi-input editor uploads RGB and mask and submits complete bindings", as
         templates: [{ id: "mask", label: "RGB + mask", pipeline: template }],
         execution_enabled: true,
       };
+    else if (path === "/api/runs/dag_mask/references/encode/image")
+      body = {
+        source_run_id: "dag_mask",
+        node_id: "encode",
+        port: "image",
+        kind: "rgb_image",
+        schema_name: "png",
+        schema_version: "1.0",
+        reference: { artifact_id: "reusable_rgb" },
+      };
     else if (path === "/api/drafts") body = { drafts: [] };
     else if (path === "/api/inputs/image")
       body = { image_ref: { artifact_id: "image_ref" } };
@@ -2302,6 +2312,14 @@ test("multi-input editor uploads RGB and mask and submits complete bindings", as
     } else if (path === "/api/runs" && route.request().method() === "POST") {
       starts.push(route.request().postDataJSON());
       body = {
+        outputs: [
+          {
+            node_id: "encode",
+            port: "image",
+            kind: "rgb_image",
+            url: "/output.png",
+          },
+        ],
         run: {
           run_id: "dag_mask",
           status: "running",
@@ -2311,6 +2329,14 @@ test("multi-input editor uploads RGB and mask and submits complete bindings", as
     } else if (path === "/api/runs") body = { runs: [] };
     else
       body = {
+        outputs: [
+          {
+            node_id: "encode",
+            port: "image",
+            kind: "rgb_image",
+            url: "/output.png",
+          },
+        ],
         run: {
           run_id: "dag_mask",
           status: "running",
@@ -2342,6 +2368,16 @@ test("multi-input editor uploads RGB and mask and submits complete bindings", as
     mask: { artifact_id: "mask_ref" },
   });
   expect(starts[0]).not.toHaveProperty("image_ref");
+  await page
+    .getByRole("button", {
+      name: "用作输入 image · encode · image",
+      exact: true,
+    })
+    .click();
+  await expect(page.getByLabel("输入 image Artifact ID")).toHaveValue(
+    "reusable_rgb",
+  );
+  expect(starts).toHaveLength(1);
   rejectMask = true;
   await page.getByLabel("上传输入 mask").setInputFiles({
     name: "bad.png",
@@ -2354,7 +2390,7 @@ test("multi-input editor uploads RGB and mask and submits complete bindings", as
   await expect(page.getByLabel("输入 mask Artifact ID")).toHaveValue("");
   await expect(start).toBeDisabled();
   await expect(page.getByLabel("输入 image Artifact ID")).toHaveValue(
-    "image_ref",
+    "reusable_rgb",
   );
   expect(starts).toHaveLength(1);
   rejectMask = false;

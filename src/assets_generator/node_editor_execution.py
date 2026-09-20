@@ -215,6 +215,27 @@ class NodeEditorExecution:
             or (review[0]._error if review and review[0].run_id == run_id else None),
         }
 
+    def output_reference(self, run_id: str, node_id: str, port: str) -> dict[str, Any]:
+        """Verify an owned output before offering its exact identity for a new run."""
+        self._owned(run_id)
+        run = self.engine.repository.load(run_id)
+        if run.dag is None or run.dag.node_states[node_id].status != "succeeded":
+            raise ContractError("output reference requires a successful node")
+        reference = run.dag.node_states[node_id].current().outputs[port]
+        if not isinstance(reference, ArtifactRef):
+            raise ContractError("output reference requires a scalar ArtifactRef")
+        self.engine.repository.verify_reference_closure(reference)
+        identity = self.engine.store.get_manifest(reference.artifact_id).identity
+        return {
+            "source_run_id": run_id,
+            "node_id": node_id,
+            "port": port,
+            "reference": to_primitive(reference),
+            "kind": identity.kind,
+            "schema_name": identity.schema_name,
+            "schema_version": identity.schema_version,
+        }
+
     def output(self, run_id: str, node_id: str, port: str) -> OutputPayload:
         self._owned(run_id)
         run = self.engine.repository.load(run_id)
