@@ -860,6 +860,30 @@ function App() {
                         </pre>
                       </details>
                       <details>
+                        <summary>输入输出端口契约</summary>
+                        <p>
+                          以下来自当前
+                          OperatorSpec。类型转换需要显式节点；多个输入的来源与空间关系还需后端校验。
+                        </p>
+                        {catalog.operators[node.operator] ? (
+                          <pre>
+                            {JSON.stringify(
+                              {
+                                inputs: catalog.operators[node.operator].inputs,
+                                outputs:
+                                  catalog.operators[node.operator].outputs,
+                              },
+                              null,
+                              2,
+                            )}
+                          </pre>
+                        ) : (
+                          <p role="alert">
+                            当前目录没有此 Operator 的端口契约。
+                          </p>
+                        )}
+                      </details>
+                      <details>
                         <summary>输入绑定与关系</summary>
                         <pre>
                           {JSON.stringify(

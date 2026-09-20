@@ -1941,3 +1941,66 @@ test("malformed YAML import reports an error without replacing the canvas", asyn
   await expect(page.locator(".react-flow__node")).toHaveCount(1);
   expect(errors).toEqual([]);
 });
+
+test("node inspector exposes authoritative input and output port contracts", async ({
+  page,
+}) => {
+  const inputs = {
+    depth: {
+      kinds: ["depth_image"],
+      cardinality: "one_or_more",
+      carriers: ["artifact_ref"],
+      schema_name: "Depth",
+      schema_version: "1",
+      require_frame: true,
+      require_unit: true,
+    },
+  };
+  const outputs = {
+    points: {
+      kinds: ["point_cloud"],
+      cardinality: "one",
+      carriers: ["artifact_ref"],
+    },
+  };
+  await page.route("**/api/**", (route) =>
+    route.fulfill({
+      json:
+        new URL(route.request().url()).pathname === "/api/catalog"
+          ? {
+              operators: {
+                "inspect@1": { name: "inspect", version: "1", inputs, outputs },
+              },
+              adapters: [],
+              templates: [
+                {
+                  id: "contracts",
+                  label: "contracts",
+                  pipeline: {
+                    pipeline: "contracts",
+                    version: "1",
+                    inputs: {},
+                    nodes: {
+                      reconstruct: { operator: "inspect@1", inputs: {} },
+                    },
+                  },
+                },
+              ],
+            }
+          : { drafts: [] },
+    }),
+  );
+  page.on("dialog", (dialog) => dialog.accept());
+  await page.goto("/");
+  await page.getByRole("button", { name: "contracts", exact: true }).click();
+  await page.locator('.react-flow__node[data-id="reconstruct"]').click();
+  await page.getByText("输入输出端口契约", { exact: true }).click();
+  const panel = page
+    .locator("details")
+    .filter({ has: page.getByText("输入输出端口契约", { exact: true }) });
+  await expect(panel.locator("pre")).toBeVisible();
+  expect(JSON.parse(await panel.locator("pre").innerText())).toEqual({
+    inputs,
+    outputs,
+  });
+});
