@@ -29,6 +29,26 @@ def server():
             self.end_headers()
             self.wfile.write(encoded)
 
+        def do_PUT(self):
+            from assets_generator.serialization import sha256_bytes
+
+            data = self.rfile.read(int(self.headers["Content-Length"]))
+            digest = sha256_bytes(data)
+            state.setdefault("uploads", []).append(data)
+            if self.path != "/v1/blobs/" + digest.split(":")[1]:
+                self.respond(400, {})
+                return
+            receipt = {
+                "protocol_version": "1",
+                "service_id": self.headers["X-Service-Id"],
+                "backend_digest": self.headers["X-Backend-Digest"],
+                "blob_digest": digest,
+                "byte_length": len(data),
+            }
+            if state.get("bad_receipt"):
+                receipt["blob_digest"] = "sha256:" + "0" * 64
+            self.respond(201, receipt)
+
         def do_POST(self):
             request = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
             key = request["submission_key"]
@@ -237,3 +257,24 @@ def test_invalid_output_descriptor_does_not_download(server, change):
     with pytest.raises(ValueError):
         client.download(request(), "job-one", "mesh")
     assert state.get("downloads", 0) == 0
+
+
+def test_content_addressed_upload_checks_local_bytes_and_remote_receipt(server):
+    from assets_generator.serialization import sha256_bytes
+
+    state, client = server
+    data = b"input pixels"
+    identity = request().identity
+    digest = sha256_bytes(data)
+    with pytest.raises(ValueError, match="digest"):
+        client.upload_blob(identity, data, "sha256:" + "0" * 64)
+    with pytest.raises(ValueError, match="limit"):
+        client.upload_blob(identity, data, digest, max_bytes=1)
+    assert state.get("uploads") is None
+    client.upload_blob(identity, data, digest)
+    client.upload_blob(identity, data, digest)
+    assert state["uploads"] == [data, data]
+    assert state["submissions"] == 0
+    state["bad_receipt"] = True
+    with pytest.raises(RemoteTransportUnknown, match="receipt"):
+        client.upload_blob(identity, data, digest)

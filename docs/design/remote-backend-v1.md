@@ -94,3 +94,11 @@ HTTP/协议合跑最终 26 项通过；相关 Ruff、mypy（89 源码文件）�
 `RemoteSubmission.download` 只接受本地已观察并耐久保存的 succeeded JobRecord；不会在下载过程中认领新的成功结果。客户端重新查询得到的完整 JobRecord 必须与固定记录一致，之后才下载并核对原描述符。`DagRemoteSubmission.download` 再次验证磁盘上的父运行/attempt 所有权。因此服务后来同时修改文件和摘要，也无法被当成原结果接受；日志丢失时拒绝下载，不补建证据。
 
 新增真实本机 HTTP 回归覆盖：仅服务端成功但未本地落盘时拒绝、客户端仓库重开后读取原成功输出、读取前后日志不变、服务换摘要时下载次数不增加、日志缺失时不下载。协议/HTTP/日志/桥接合跑 45 项通过，相关 Ruff 与 mypy 通过。仍仅返回验证后的 bytes，尚未执行 GLB/图像语义校验或创建 Artifact；远程 Scheduler 未开放。
+
+## 输入 Blob 传输
+
+客户端新增显式 `upload_blob`：PUT `/v1/blobs/<sha256 hex>`，body 为原始字节，Content-Type 为 application/octet-stream；通过 X-Service-Id/X-Backend-Digest 固定目标身份。发送前验证本地 SHA256、非空和配置大小限制（默认 128 MiB）。200/201 JSON 回执必须精确包含 protocol_version、service_id、backend_digest、blob_digest、byte_length，回执不匹配或网络异常属于上传状态未知。
+
+上传不提交模型作业，客户端不自动重试。服务契约要求同摘要同字节重复 PUT 幂等、验证 body 摘要后保存，不得把 PUT 当推理触发器。提交 payload 未来只引用已验证的内容摘要及 Operator 所需的语义元数据；远程 Blob 不等同本地 ArtifactRef，frame/unit/schema 仍由边界校验。
+
+本轮本机 HTTP 测试验证摘要错误/大小超限不联网、同内容重复请求地址稳定、上传不提交 job、回执摘要不符被拒绝；17 项 HTTP 测试及 Ruff/mypy 通过。模拟服务只验证请求行为，不代表已实现生产服务端 Blob 持久化或容量管理。尚未自动遍历输入证据上传，也尚未由 remote Scheduler 调用。

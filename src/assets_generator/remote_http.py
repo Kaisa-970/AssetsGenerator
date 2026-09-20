@@ -10,7 +10,14 @@ from urllib.error import HTTPError
 from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
-from .remote_protocol import RemoteJob, RemoteOutput, RemoteRequest, _identifier
+from .remote_protocol import (
+    RemoteIdentity,
+    RemoteJob,
+    RemoteOutput,
+    RemoteRequest,
+    _digest,
+    _identifier,
+)
 from .serialization import canonical_json_bytes, sha256_bytes
 
 
@@ -52,6 +59,60 @@ class RemoteJobClient:
         self.timeout = timeout
         self.max_response_bytes = max_response_bytes
         self.opener = build_opener(_NoRedirect())
+
+    def upload_blob(
+        self,
+        identity: RemoteIdentity,
+        data: bytes,
+        blob_digest: str,
+        *,
+        max_bytes: int = 128 * 1024 * 1024,
+    ) -> None:
+        """Explicit content-addressed input transfer; never starts a model job."""
+        _digest(blob_digest, "blob_digest")
+        if type(max_bytes) is not int or max_bytes <= 0:
+            raise ValueError("upload limit must be positive")
+        if not isinstance(data, bytes) or not 0 < len(data) <= max_bytes:
+            raise ValueError("input blob is empty or exceeds upload limit")
+        if sha256_bytes(data) != blob_digest:
+            raise ValueError("input blob digest mismatch")
+        path = "/v1/blobs/" + blob_digest.split(":")[1]
+        request = Request(
+            self.endpoint + path,
+            data=data,
+            method="PUT",
+            headers={
+                "Content-Type": "application/octet-stream",
+                "Accept": "application/json",
+                "X-Service-Id": identity.service_id,
+                "X-Backend-Digest": identity.backend_digest,
+            },
+        )
+        try:
+            with self.opener.open(request, timeout=self.timeout) as response:
+                if (
+                    response.status not in {200, 201}
+                    or response.headers.get_content_type() != "application/json"
+                ):
+                    raise RemoteTransportUnknown("invalid remote upload response")
+                body = response.read(self.max_response_bytes + 1)
+                if len(body) > self.max_response_bytes:
+                    raise RemoteTransportUnknown("remote upload response exceeds limit")
+                raw = json.loads(body)
+                expected = {
+                    "protocol_version": "1",
+                    "service_id": identity.service_id,
+                    "backend_digest": identity.backend_digest,
+                    "blob_digest": blob_digest,
+                    "byte_length": len(data),
+                }
+                if raw != expected or type(raw.get("byte_length")) is not int:
+                    raise RemoteTransportUnknown("remote upload receipt mismatch")
+        except HTTPError as error:
+            error.close()
+            raise RemoteTransportUnknown(f"remote upload HTTP {error.code}") from error
+        except (OSError, HTTPException, ValueError) as error:
+            raise RemoteTransportUnknown("remote upload outcome unknown") from error
 
     def submit(self, request: RemoteRequest) -> RemoteJob:
         raw = self._exchange("/v1/jobs", request.to_dict())
