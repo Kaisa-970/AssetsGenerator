@@ -1828,3 +1828,54 @@ test("graph edits invalidate successful and in-flight compilation feedback", asy
   await expect(page.getByRole("status")).toContainText("编译通过");
   expect(calls).toBe(3);
 });
+
+test("slow draft load preserves newer edits and save reports its snapshot", async ({
+  page,
+}) => {
+  let finishLoad: (() => void) | undefined;
+  let finishSave: (() => void) | undefined;
+  let saved: any;
+  await page.route("**/api/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    let body: unknown = {};
+    if (path === "/api/catalog")
+      body = { operators: {}, adapters: [], templates: [] };
+    else if (path === "/api/drafts") body = { drafts: ["stored"] };
+    else if (route.request().method() === "PUT") {
+      saved = route.request().postDataJSON();
+      await new Promise<void>((resolve) => {
+        finishSave = resolve;
+      });
+      body = { saved: "stored" };
+    } else {
+      await new Promise<void>((resolve) => {
+        finishLoad = resolve;
+      });
+      body = {
+        pipeline: {
+          pipeline: "old_remote",
+          version: "1",
+          inputs: {},
+          nodes: {},
+        },
+        layout: {},
+      };
+    }
+    await route.fulfill({ json: body });
+  });
+  page.on("dialog", (dialog) => dialog.accept());
+  await page.goto("/");
+  await page.getByLabel("加载草稿").selectOption("stored");
+  await expect.poll(() => !!finishLoad).toBe(true);
+  await page.getByLabel("管线名称").fill("newer_local");
+  finishLoad!();
+  await expect(page.getByRole("status")).toContainText("保留当前编辑");
+  await expect(page.getByLabel("管线名称")).toHaveValue("newer_local");
+  await page.getByRole("button", { name: "保存草稿", exact: true }).click();
+  await expect.poll(() => !!finishSave).toBe(true);
+  await page.getByLabel("管线名称").fill("after_save_request");
+  finishSave!();
+  await expect(page.getByRole("status")).toContainText("之后的编辑尚未保存");
+  expect(saved.pipeline.pipeline).toBe("newer_local");
+  await expect(page.getByLabel("管线名称")).toHaveValue("after_save_request");
+});

@@ -110,6 +110,8 @@ function App() {
   const [selectedEdges, setSelectedEdges] = useState<Set<string>>(new Set());
   const pipelineRef = useRef(pipeline);
   pipelineRef.current = pipeline;
+  const layoutRef = useRef(layout);
+  layoutRef.current = layout;
   const [message, setMessage] = useState("正在读取节点目录…");
   const [draft, setDraft] = useState("my-pipeline");
   const [drafts, setDrafts] = useState<string[]>([]);
@@ -639,7 +641,12 @@ function App() {
                         body: JSON.stringify({ pipeline, layout }),
                       });
                       setDrafts((await api("/api/drafts")).drafts);
-                      setMessage("草稿已保存；未编译的草稿也可以保存。");
+                      setMessage(
+                        pipelineRef.current !== pipeline ||
+                          layoutRef.current !== layout
+                          ? "已保存请求时的草稿；之后的编辑尚未保存。"
+                          : "草稿已保存；未编译的草稿也可以保存。",
+                      );
                     })
                   }
                 >
@@ -658,6 +665,15 @@ function App() {
                       const d = await api(
                         `/api/drafts/${encodeURIComponent(name)}`,
                       );
+                      if (
+                        pipelineRef.current !== pipeline ||
+                        layoutRef.current !== layout
+                      ) {
+                        setMessage(
+                          "加载期间画布已修改，保留当前编辑；请重新加载草稿。",
+                        );
+                        return;
+                      }
                       loadPipeline(d.pipeline, d.layout);
                       setDraft(name);
                       setMessage("已加载草稿。");
@@ -964,6 +980,15 @@ function App() {
           if (file)
             void guarded(async () => {
               const p = validateDocument(load(await file.text()));
+              if (
+                pipelineRef.current !== pipeline ||
+                layoutRef.current !== layout
+              ) {
+                setMessage(
+                  "读取 YAML 期间画布已修改，保留当前编辑；请重新导入。",
+                );
+                return;
+              }
               loadPipeline(p);
               setMessage("YAML 已导入，请编译校验。");
             });
