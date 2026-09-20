@@ -6,7 +6,8 @@
 ## 运行事实
 
 复用已有 SAM checkpoint、TRELLIS.2 独立 conda 环境和本地 4B 权重；没有下载 PyTorch、模型或输入数据。
-输入为既有 robot 图片，人工选择通过工作台决定记录完成。
+输入为既有 robot 图片。验收脚本取第一个 SAM proposal 并调用 DagEngine.decide()，
+reviewer 为 `Codex automated smoke`；这是自动化提交的人工节点决定，不是用户批准，也不是浏览器交互验收。
 
 - 父运行：`dag_c6d889664e924a3b8a643a115909fb27`
 - 状态：`succeeded`
@@ -25,3 +26,15 @@ QA 结果只能说明结构检查完成，不能替代人工查看。fallback �
 
 本轮没有把自动化验收记录为用户人工批准，也没有提交外部 Store、服务数据库、模型权重或生成资产。
 
+
+## 固定结果复核
+
+后续只读查询 service.sqlite 的 succeeded job 与其 shape_metadata Blob，确认
+`postprocess_mode=geometry_fallback_no_texture`；元数据 Blob 摘要为
+`sha256:ef8f2ca8c6a03e2e34bb19b00dee7fa4d99e2f552d83503c81888c0bfd680a53`。
+服务原生 GLB 为 46,600,028 bytes，报告 1,285,164 个顶点、2,598,104 个三角面。
+此统计来自固定服务结果，不是最终 canonical GLB 的独立回读统计。
+
+新增 CPU runner 回归通过模拟 Backend 采样与后处理，实际导出并重新加载小型 GLB，
+覆盖正常后处理、CUDA 后处理失败转几何 fallback、普通错误仍失败且不写成功响应。
+测试替身不构成新的 GPU 验收。
