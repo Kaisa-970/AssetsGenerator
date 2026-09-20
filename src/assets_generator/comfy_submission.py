@@ -37,6 +37,13 @@ class ComfySubmissionJournal:
             "submission_key TEXT PRIMARY KEY, body BLOB NOT NULL, digest TEXT NOT NULL)"
         )
 
+        self.db.execute(
+            "CREATE TABLE IF NOT EXISTS image_imports ("
+            "submission_key TEXT NOT NULL, node TEXT NOT NULL, slot INTEGER NOT NULL, "
+            "receipt BLOB NOT NULL, digest TEXT NOT NULL, "
+            "PRIMARY KEY (submission_key, node, slot))"
+        )
+
     def close(self) -> None:
         self.db.close()
 
