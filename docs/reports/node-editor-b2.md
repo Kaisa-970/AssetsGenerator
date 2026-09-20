@@ -92,3 +92,9 @@ GLB 交互预览首版：固定 npm Three.js 0.169.0，保留原下载链接，�
 预览实际资产验收：读取既有 `dag_df9385b3f8864f3f8b8c51de82864c23` 的 release GLB，在更新后的真实编辑器服务加载成功；截图可见几何及顶点颜色。重置视角、关闭后父 BuildRun 完全不变，浏览器错误/变更请求均为零，所有资源来自当前服务。外部证据为 `<DATASET_ROOT>/node-editor-multiview-validation/model-preview.png` 与 `preview-validation.json`；脚本 `frontend/smoke/preview.cjs` 只读已发布模型，不启动推理。
 
 预览改为 React.lazy 按需加载，首屏构建 JS 约 492 KB，渲染组件约 587 KB 单独加载（仍有单 chunk 大小提示）。补充输出 HTTP 400 显示错误且无旧 canvas、加载中关闭后无预览残留的浏览器回归，早期取消不继续解析。14 项 Vitest 和 13 项 Playwright 单次通过；随后新增加载中关闭断言的单个预览回归再次通过。构建通过。未重跑 GPU；内嵌纹理视觉验收、WebGL 不可用及更多切换场景仍待补，不宣称全部预览验收关闭。
+
+预览纹理与故障回归补齐：小型 GLB fixture 由测试代码构造，包含真实编码的 2×2 红色 PNG、bufferView、UV 与 PBR baseColorTexture，浏览器在渲染帧中拷贝 canvas 并统计红色像素（>1000）验证纹理实际显示。WebGL getContext 返回 null 时显示预览失败、保留原下载链接且无 canvas；切换运行时关闭预览并移除 canvas，加载中关闭的延迟响应路径继续覆盖。整个测试断言无变更 API 请求。
+
+这是小型纹理及生命周期回归，不声称所有材质、压缩纹理、动画或扩展均已支持；真实模型查看证据仍使用前一轮已发布 DA3/Open3D GLB。本轮未执行模型推理。
+
+本轮最终 Playwright 单次 13 项全部通过（17.5 秒），TypeScript/Vite 构建及 git diff --check 通过。仅修改测试与文档，没有重跑 Python 全仓；最近一次全仓记录仍为 961 项。

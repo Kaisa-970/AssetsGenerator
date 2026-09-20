@@ -135,6 +135,6 @@ PYTHONPATH=src <MAIN_CHECKOUT>/.venv/bin/python -m assets_generator.cli node-edi
 
 发布后点击“预览模型 · 节点名”，可在工作台旋转、缩放、平移模型或重置视角。面板显示固定 run ID，不跟随画布草稿变化；关闭或切换运行会释放渲染资源。读取仍经过服务端证据校验，不会提交决定或触发模型。保留 GLB 下载入口。
 
-首版使用随应用打包的 Three.js，支持自包含 GLB、内嵌 bufferView 纹理和顶点颜色；拒绝外部/data URI，预览大小上限 128 MiB。无法创建 WebGL 或解析失败时显示错误。真实发布资产外观与更多资源清理边界仍在验收中。
+首版使用随应用打包的 Three.js，支持自包含 GLB、内嵌 bufferView 纹理和顶点颜色；拒绝外部/data URI，预览大小上限 128 MiB。无法创建 WebGL 或解析失败时显示错误。已验证真实发布顶点颜色模型，以及小型内嵌 PNG 纹理的画布像素；复杂材质和压缩扩展尚未覆盖。
 
 已有发布结果可执行只读预览 smoke：`node frontend/smoke/preview.cjs <CONFIG>.json`。配置字段为 `url`、`run_id`、`node_id`、`root`；脚本打开预览、重置视角并关闭，验证没有变更请求、没有外部资源请求及 BuildRun 未变，并保存截图。不会启动模型。

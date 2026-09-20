@@ -922,14 +922,45 @@ test("published GLB preview loads geometry and closes without mutation", async (
   page,
 }) => {
   const positions = new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]);
+  const uvs = new Float32Array([0, 0, 1, 0, 0, 1]);
+  const png = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGP8z8DAwMDAxMDAwMDAAAANHQEDasKb6QAAAABJRU5ErkJggg==",
+    "base64",
+  );
+  const binary = Buffer.alloc(Math.ceil((60 + png.length) / 4) * 4);
+  Buffer.from(positions.buffer).copy(binary);
+  Buffer.from(uvs.buffer).copy(binary, 36);
+  png.copy(binary, 60);
   const document = {
     asset: { version: "2.0" },
     scene: 0,
     scenes: [{ nodes: [0] }],
     nodes: [{ mesh: 0 }],
-    meshes: [{ primitives: [{ attributes: { POSITION: 0 }, mode: 4 }] }],
-    buffers: [{ byteLength: 36 }],
-    bufferViews: [{ buffer: 0, byteOffset: 0, byteLength: 36 }],
+    meshes: [
+      {
+        primitives: [
+          { attributes: { POSITION: 0, TEXCOORD_0: 1 }, material: 0, mode: 4 },
+        ],
+      },
+    ],
+    materials: [
+      {
+        doubleSided: true,
+        pbrMetallicRoughness: {
+          baseColorTexture: { index: 0 },
+          metallicFactor: 0,
+          roughnessFactor: 1,
+        },
+      },
+    ],
+    textures: [{ source: 0 }],
+    images: [{ bufferView: 2, mimeType: "image/png" }],
+    buffers: [{ byteLength: binary.length }],
+    bufferViews: [
+      { buffer: 0, byteOffset: 0, byteLength: 36 },
+      { buffer: 0, byteOffset: 36, byteLength: 24 },
+      { buffer: 0, byteOffset: 60, byteLength: png.length },
+    ],
     accessors: [
       {
         bufferView: 0,
@@ -939,18 +970,19 @@ test("published GLB preview loads geometry and closes without mutation", async (
         min: [0, 0, 0],
         max: [1, 1, 0],
       },
+      { bufferView: 1, componentType: 5126, count: 3, type: "VEC2" },
     ],
   };
   const text = JSON.stringify(document);
   const json = Buffer.from(text.padEnd(Math.ceil(text.length / 4) * 4));
-  const glb = Buffer.alloc(28 + json.length + 36);
+  const glb = Buffer.alloc(28 + json.length + binary.length);
   [0x46546c67, 2, glb.length, json.length, 0x4e4f534a].forEach((v, i) =>
     glb.writeUInt32LE(v, i * 4),
   );
   json.copy(glb, 20);
-  glb.writeUInt32LE(36, 20 + json.length);
+  glb.writeUInt32LE(binary.length, 20 + json.length);
   glb.writeUInt32LE(0x004e4942, 24 + json.length);
-  Buffer.from(positions.buffer).copy(glb, 28 + json.length);
+  binary.copy(glb, 28 + json.length);
   let mutations = 0;
   let failOutput = false;
   let delayOutput = false;
@@ -1005,9 +1037,39 @@ test("published GLB preview loads geometry and closes without mutation", async (
   const dialog = page.getByRole("dialog", { name: "模型预览", exact: true });
   await expect(dialog.getByRole("status")).toContainText("模型已加载");
   await expect(dialog.locator("canvas")).toBeVisible();
+  const redPixels = await dialog.locator("canvas").evaluate(async (canvas) => {
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => resolve()),
+    );
+    const source = canvas as HTMLCanvasElement;
+    const copy = document.createElement("canvas");
+    copy.width = source.width;
+    copy.height = source.height;
+    const context = copy.getContext("2d")!;
+    context.drawImage(source, 0, 0);
+    const data = context.getImageData(0, 0, copy.width, copy.height).data;
+    let count = 0;
+    for (let i = 0; i < data.length; i += 4)
+      if (
+        data[i] > 100 &&
+        data[i] > data[i + 1] * 1.8 &&
+        data[i] > data[i + 2] * 1.8
+      )
+        count++;
+    return count;
+  });
+  expect(redPixels).toBeGreaterThan(1000);
   await dialog.getByRole("button", { name: "重置视角" }).click();
   await dialog.getByRole("button", { name: "关闭模型预览" }).click();
   await expect(dialog).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "预览模型 · generate", exact: true })
+    .click();
+  await expect(dialog.getByRole("status")).toContainText("模型已加载");
+  await page.getByLabel("选择运行").selectOption("");
+  await expect(dialog).toHaveCount(0);
+  await expect(page.locator("canvas")).toHaveCount(0);
+  await page.getByLabel("选择运行").selectOption("dag_preview");
   failOutput = true;
   await page
     .getByRole("button", { name: "预览模型 · generate", exact: true })
@@ -1025,5 +1087,24 @@ test("published GLB preview loads geometry and closes without mutation", async (
   releaseOutput!();
   await expect(dialog).toHaveCount(0);
   await expect(page.locator("canvas")).toHaveCount(0);
+  delayOutput = false;
+  await page.evaluate(() => {
+    const original = HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = function (
+      kind: any,
+      ...args: any[]
+    ) {
+      if (String(kind).includes("webgl")) return null;
+      return original.call(this, kind, ...args);
+    } as typeof original;
+  });
+  await page
+    .getByRole("button", { name: "预览模型 · generate", exact: true })
+    .click();
+  await expect(dialog.getByRole("status")).toContainText("预览失败");
+  await expect(dialog.locator("canvas")).toHaveCount(0);
+  await expect(
+    dialog.getByRole("link", { name: "下载原始 GLB" }),
+  ).toBeVisible();
   expect(mutations).toBe(0);
 });
