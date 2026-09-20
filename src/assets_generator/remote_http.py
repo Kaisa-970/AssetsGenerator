@@ -10,8 +10,8 @@ from urllib.error import HTTPError
 from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
-from .remote_protocol import RemoteJob, RemoteRequest, _identifier
-from .serialization import canonical_json_bytes
+from .remote_protocol import RemoteJob, RemoteOutput, RemoteRequest, _identifier
+from .serialization import canonical_json_bytes, sha256_bytes
 
 
 class RemoteTransportUnknown(RuntimeError):
@@ -67,6 +67,42 @@ class RemoteJobClient:
         _identifier(job_id, "job_id")
         raw = self._exchange("/v1/jobs/" + job_id)
         return self._parse(raw, request, job_id)
+
+    def download(
+        self,
+        request: RemoteRequest,
+        job_id: str,
+        output_id: str,
+        *,
+        max_bytes: int = 128 * 1024 * 1024,
+    ) -> bytes:
+        """Validate current job identity and return digest-checked bytes, not an Artifact."""
+        if type(max_bytes) is not int or max_bytes <= 0:
+            raise ValueError("download limit must be positive")
+        job = self.query(request, job_id)
+        descriptor = RemoteOutput.from_job(job, output_id)
+        if descriptor.byte_length > max_bytes:
+            raise ValueError("remote output exceeds configured download limit")
+        path = f"/v1/jobs/{job.job_id}/outputs/{descriptor.output_id}"
+        try:
+            with self.opener.open(
+                Request(self.endpoint + path, headers={"Accept": descriptor.media_type}),
+                timeout=self.timeout,
+            ) as response:
+                if (
+                    response.status != 200
+                    or response.headers.get_content_type() != descriptor.media_type
+                ):
+                    raise ValueError("remote output status/media mismatch")
+                data = bytes(response.read(descriptor.byte_length + 1))
+        except HTTPError as error:
+            error.close()
+            raise RemoteTransportUnknown(f"remote output HTTP {error.code}") from error
+        except (OSError, HTTPException) as error:
+            raise RemoteTransportUnknown("remote output download interrupted") from error
+        if len(data) != descriptor.byte_length or sha256_bytes(data) != descriptor.blob_digest:
+            raise ValueError("remote output size/digest mismatch")
+        return data
 
     @staticmethod
     def _parse(raw: object, request: RemoteRequest, job_id: str | None = None) -> RemoteJob:

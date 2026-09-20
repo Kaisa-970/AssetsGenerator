@@ -78,3 +78,13 @@ HTTP/协议合跑最终 26 项通过；相关 Ruff、mypy（89 源码文件）�
 已固定 binding 的 prepare/submit 必须读取现有日志，不调用重建路径。因此即使 remote_submissions 与 remote_reservations 同时丢失，父 BuildRun 仍阻止重建后提交。父快照保存失败时网络未启动，重开客户端仓库后可继续完成原 prepared 绑定；内存中未保存的 binding 无法授权提交。
 
 本轮桥接/日志/绑定合跑 21 项通过，随后新增父保存失败测试，桥接单文件 4 项通过；Ruff、mypy（92 源文件）通过。该桥接是内部持久化基础，尚未由 Scheduler 的受信 remote Adapter 调用；计划重编译、relation 检查、作业非终态调度及输出导入仍需接通，当前引擎仍拒绝执行含 remote binding 的运行。不得绕过该限制把桥接暴露为任意 HTTP 执行接口。
+
+## 结果下载传输边界
+
+成功 JobRecord 的首版结果格式为 `{"outputs": [{"output_id": "mesh", "blob_digest": "sha256:…", "byte_length": 123, "media_type": "model/gltf-binary"}]}`。描述符严格拒绝未知字段、重复 ID、非法标识和摘要；不允许服务提供任意 URL。GET `/v1/jobs/<job_id>/outputs/<output_id>` 返回原始字节；继续禁止 HTTP 重定向。
+
+`RemoteJobClient.download()` 查询并核对请求/job 身份和成功状态，解析所有描述符，先检查配置上限，再最多读取声明长度加一字节；媒体类型、实际长度、SHA256 全部匹配才返回 bytes。默认单输出上限 128 MiB，可由受信调用方收紧。非终态、未知输出、任意 URL 字段或重复 ID 均在下载前拒绝。
+
+这只验证传输字节，不信任媒体类型字符串等同于正确编码；未导入 Artifact Store，也不认领 kind、schema、frame/unit 或 provenance。未来 Adapter 必须对照耐久 observed 结果固定描述符，并做实际格式/关系校验；当前低层下载查询不是耐久终态证据的替代。输入上传、下载重连续传、流式落盘及远程 Scheduler 尚未完成。
+
+本轮协议/HTTP/日志/DAG 桥接合跑 44 项通过；修正下载返回类型后 HTTP 文件再次 16 项通过。Ruff、mypy（92 源码文件）通过；无 GPU 或真实远程模型验收。

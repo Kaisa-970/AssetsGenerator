@@ -69,6 +69,15 @@ def server():
             if state["mode"] == "error":
                 self.respond(503, {})
                 return
+            if self.path == "/v1/jobs/job-one/outputs/mesh":
+                state["downloads"] = state.get("downloads", 0) + 1
+                data = state.get("blob", b"test output")
+                self.send_response(200)
+                self.send_header("Content-Type", state.get("media", "model/gltf-binary"))
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+                return
             job = next(iter(state["jobs"].values()), None)
             if job is None:
                 self.respond(404, {})
@@ -172,3 +181,59 @@ def test_server_confirmed_failure_preserves_error_code(server):
     result = client.query(request(), "job-one")
     assert result.state == "failed"
     assert json.loads(result.error_json)["code"] == "BACKEND_TIMEOUT"
+
+
+def output_job(state):
+    from assets_generator.serialization import sha256_bytes
+
+    state["jobs"]["same-key"].update(
+        state="succeeded",
+        result={
+            "outputs": [
+                {
+                    "output_id": "mesh",
+                    "blob_digest": sha256_bytes(b"test output"),
+                    "byte_length": len(b"test output"),
+                    "media_type": "model/gltf-binary",
+                }
+            ]
+        },
+    )
+
+
+def test_download_checks_size_digest_and_media_before_return(server):
+    state, client = server
+    client.submit(request())
+    output_job(state)
+    assert client.download(request(), "job-one", "mesh") == b"test output"
+    with pytest.raises(ValueError, match="limit"):
+        client.download(request(), "job-one", "mesh", max_bytes=1)
+    assert state["downloads"] == 1
+    for bad in (b"bad", b"wrong bytes", b"test output extra"):
+        state["blob"] = bad
+        with pytest.raises(ValueError, match="size/digest"):
+            client.download(request(), "job-one", "mesh")
+    state["blob"] = b"test output"
+    state["media"] = "text/html"
+    with pytest.raises(ValueError, match="media"):
+        client.download(request(), "job-one", "mesh")
+
+
+@pytest.mark.parametrize("change", ["duplicate", "url", "traversal", "running"])
+def test_invalid_output_descriptor_does_not_download(server, change):
+    state, client = server
+    client.submit(request())
+    output_job(state)
+    job = state["jobs"]["same-key"]
+    output = job["result"]["outputs"][0]
+    if change == "duplicate":
+        job["result"]["outputs"].append(dict(output))
+    elif change == "url":
+        output["url"] = "https://other.invalid/model"
+    elif change == "traversal":
+        output["output_id"] = "../mesh"
+    else:
+        job.update(state="running", result=None)
+    with pytest.raises(ValueError):
+        client.download(request(), "job-one", "mesh")
+    assert state.get("downloads", 0) == 0

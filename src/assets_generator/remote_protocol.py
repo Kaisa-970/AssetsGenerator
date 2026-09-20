@@ -128,3 +128,49 @@ class RemoteJob:
             canonical_json_bytes(result) if result is not None else None,
             canonical_json_bytes(error) if error is not None else None,
         )
+
+
+@dataclass(frozen=True)
+class RemoteOutput:
+    """A transport descriptor; no Artifact identity or trusted semantic metadata."""
+
+    output_id: str
+    blob_digest: str
+    byte_length: int
+    media_type: str
+
+    def __post_init__(self) -> None:
+        _identifier(self.output_id, "output_id")
+        _digest(self.blob_digest, "blob_digest")
+        if type(self.byte_length) is not int or self.byte_length <= 0:
+            raise ValueError("remote output byte_length must be positive")
+        if not isinstance(self.media_type, str) or not re.fullmatch(
+            r"[a-z0-9.+-]+/[a-z0-9.+-]+", self.media_type
+        ):
+            raise ValueError("invalid output media type")
+
+    @classmethod
+    def from_job(cls, job: RemoteJob, output_id: str) -> RemoteOutput:
+        import json
+
+        if job.state != "succeeded" or job.result_json is None:
+            raise ValueError("remote output requires successful job")
+        result = json.loads(job.result_json)
+        if set(result) != {"outputs"} or not isinstance(result["outputs"], list):
+            raise ValueError("invalid remote outputs result")
+        outputs = []
+        for raw in result["outputs"]:
+            if not isinstance(raw, dict) or set(raw) != {
+                "output_id",
+                "blob_digest",
+                "byte_length",
+                "media_type",
+            }:
+                raise ValueError("invalid remote output descriptor")
+            outputs.append(cls(**raw))
+        if len({item.output_id for item in outputs}) != len(outputs):
+            raise ValueError("duplicate remote output ID")
+        matches = [item for item in outputs if item.output_id == output_id]
+        if len(matches) != 1:
+            raise ValueError("remote output not found")
+        return matches[0]
