@@ -6,10 +6,25 @@ import subprocess
 import sys
 from pathlib import Path
 
+import trimesh
+
 if __package__:
     from .model_identity import snapshot_digest
 else:
     from model_identity import snapshot_digest
+
+
+def _is_geometry_fallback_error(error: RuntimeError) -> bool:
+    message = str(error)
+    return "CuMesh" in message or "CUDA error" in message
+
+
+def _export_geometry_fallback(mesh: object, output_path: str) -> None:
+    vertices = mesh.vertices.detach().cpu().numpy()
+    faces = mesh.faces.detach().cpu().numpy()
+    trimesh.Trimesh(vertices=vertices, faces=faces, process=False).export(
+        output_path, file_type="glb"
+    )
 
 
 def main() -> int:
@@ -40,22 +55,31 @@ def main() -> int:
         pipeline_type=request["pipeline_type"],
     )[0]
     mesh.simplify(16_777_216)
-    glb = o_voxel.postprocess.to_glb(
-        vertices=mesh.vertices,
-        faces=mesh.faces,
-        attr_volume=mesh.attrs,
-        coords=mesh.coords,
-        attr_layout=mesh.layout,
-        voxel_size=mesh.voxel_size,
-        aabb=[[-0.5, -0.5, -0.5], [0.5, 0.5, 0.5]],
-        decimation_target=int(request["decimation_target"]),
-        texture_size=int(request["texture_size"]),
-        remesh=True,
-        remesh_band=1,
-        remesh_project=0,
-        verbose=True,
-    )
-    glb.export(request["output_glb"], extension_webp=False)
+    postprocess_mode = "textured_glb"
+    try:
+        glb = o_voxel.postprocess.to_glb(
+            vertices=mesh.vertices,
+            faces=mesh.faces,
+            attr_volume=mesh.attrs,
+            coords=mesh.coords,
+            attr_layout=mesh.layout,
+            voxel_size=mesh.voxel_size,
+            aabb=[[-0.5, -0.5, -0.5], [0.5, 0.5, 0.5]],
+            decimation_target=int(request["decimation_target"]),
+            texture_size=int(request["texture_size"]),
+            remesh=True,
+            remesh_band=1,
+            remesh_project=0,
+            verbose=True,
+        )
+        glb.export(request["output_glb"], extension_webp=False)
+    except RuntimeError as error:
+        if not _is_geometry_fallback_error(error):
+            raise
+        # Preserve the model's extracted geometry when optional CUDA cleanup/
+        # texture baking is unavailable on this GPU/toolchain combination.
+        postprocess_mode = "geometry_fallback_no_texture"
+        _export_geometry_fallback(mesh, request["output_glb"])
     revision = subprocess.run(
         ["git", "rev-parse", "--short", "HEAD"],
         cwd=repo,
@@ -85,6 +109,7 @@ def main() -> int:
                 "model_digest": model_digest,
                 "seed": request["seed"],
                 "pipeline_type": request["pipeline_type"],
+                "postprocess_mode": postprocess_mode,
                 "vertex_count": int(mesh.vertices.shape[0]),
                 "face_count": int(mesh.faces.shape[0]),
                 "peak_cuda_memory_mb": torch.cuda.max_memory_allocated() / 1024 / 1024,
