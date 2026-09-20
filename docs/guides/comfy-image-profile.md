@@ -115,7 +115,9 @@ assets-generator node-editor --directory /path/to/editor --store /path/to/core-s
 ```
 
 节点目录提供 image_transform@1 / comfy_image@1，实例通过 Backend 选择配置。
-该接线有启动/目录测试，尚未完成浏览器交互验收或真实 ComfyUI 验收。网关监听
+模板先通过显式 encode_png@1 节点，将 RGB raster_image 编码为独立 PNG Artifact；
+PNG/JPEG 解码像素保持不变，RGBA、灰度或调色板输入不会隐式转换。
+已完成注入上游协议的 CPU 浏览器运行验证，尚未进行真实 ComfyUI 验收。网关监听
 和显式执行命令仍需单独运行，不会因编辑器轮询自动派发远程模型。
 
 ## 退出码
@@ -124,3 +126,27 @@ assets-generator node-editor --directory /path/to/editor --store /path/to/core-s
 error 中保留错误码和详情；结果未知返回 3。命令参数或校验错误返回 2。成功执行、
 空队列及成功的只读查询返回 0；status/list 的退出码只表示查询是否成功，任务
 状态以 JSON 为准。
+
+
+### 可复现的 CPU 浏览器 smoke
+
+从仓库根目录运行（Python 环境须包含测试依赖，frontend 已安装依赖并构建）：
+
+```bash
+PYTHONPATH=src:tests python frontend/smoke/comfy_server.py --root /tmp/comfy-browser-smoke
+```
+
+保持该终端开启；另一个终端依次执行：
+
+```bash
+node frontend/smoke/comfy-run.cjs /tmp/comfy-browser-smoke/browser-config.json start
+# 服务终端输入 execute，等待打印 succeeded
+node frontend/smoke/comfy-run.cjs /tmp/comfy-browser-smoke/browser-config.json middle
+# 服务终端再次输入 execute，等待打印 succeeded
+node frontend/smoke/comfy-run.cjs /tmp/comfy-browser-smoke/browser-config.json finish
+# 可再次执行 finish，检查完成后恢复；最后服务终端输入 quit
+```
+
+使用空的新目录。脚本通过浏览器创建运行、恢复运行，并检查各节点仅一次 attempt、
+输出可下载及无页面异常。Core 与网关为真实 HTTP；ComfyUI 上游、上传和图像结果为
+注入 fixture，不执行模型，不代表真实 ComfyUI 兼容性或生成质量验收。

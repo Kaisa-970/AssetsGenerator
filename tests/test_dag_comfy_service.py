@@ -15,6 +15,7 @@ from assets_generator.comfy_profile import ComfyImageProfile
 from assets_generator.dag_adapters import AdapterRegistry
 from assets_generator.dag_comfy_image import ComfyImageAdapter
 from assets_generator.dag_engine import DagEngine
+from assets_generator.dag_image_encoding import EncodePngAdapter
 from assets_generator.dag_persistence import DagRepository
 from assets_generator.pipeline import compile_pipeline, load_default_operator_specs, load_pipeline
 
@@ -30,9 +31,14 @@ def test_two_comfy_nodes_execute_and_recover_with_original_artifacts(tmp_path, m
     image = core.persist_bytes(
         stream.getvalue(),
         kind="rgb_image",
-        schema_name="png",
+        schema_name="raster_image",
         schema_version="1.0",
-        identity_metadata={"media_type": "image/png", "channel_layout": "RGB"},
+        identity_metadata={
+            "media_type": "image/png",
+            "channel_layout": "RGB",
+            "width": 2,
+            "height": 2,
+        },
     )
     prompts, uploads = {}, []
 
@@ -77,6 +83,7 @@ def test_two_comfy_nodes_execute_and_recover_with_original_artifacts(tmp_path, m
     monkeypatch.setattr(ComfyClient, "download_image", download)
     with serve(tmp_path / "service.sqlite", identity=configured.identity) as (service, client, _):
         registry = AdapterRegistry()
+        registry.register(EncodePngAdapter())
         adapter = ComfyImageAdapter(client.endpoint, configured)
         registry.register(adapter)
         registry.register_backend("comfy_first", adapter)
@@ -101,12 +108,17 @@ def test_two_comfy_nodes_execute_and_recover_with_original_artifacts(tmp_path, m
             assert run.status == "succeeded", run
             first = run.dag.node_states["first"].current()
             second = run.dag.node_states["second"].current()
-            assert uploads == [image, first.outputs["image"]]
+            assert uploads == [
+                run.dag.node_states["encode"].current().outputs["image"],
+                first.outputs["image"],
+            ]
             assert second.resolved_inputs["image"] == first.outputs["image"]
             assert len(prompts) == 2
             for state in run.dag.node_states.values():
                 assert len(state.attempts) == 1
-                repo.verify_reference_closure(state.current().outputs["evidence"])
+                repo.verify_reference_closure(
+                    state.current().outputs.get("evidence", state.current().outputs["image"])
+                )
             restored = engine.drain(run.run_id)
             assert restored.status == "succeeded"
             assert len(prompts) == 2
@@ -118,4 +130,6 @@ def test_two_comfy_nodes_execute_and_recover_with_original_artifacts(tmp_path, m
             assert len(prompts) == len(uploads) == 2
             for state in restored.dag.node_states.values():
                 assert len(state.attempts) == 1
-                reopened.verify_reference_closure(state.current().outputs["evidence"])
+                reopened.verify_reference_closure(
+                    state.current().outputs.get("evidence", state.current().outputs["image"])
+                )

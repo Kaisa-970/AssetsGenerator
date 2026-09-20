@@ -1,6 +1,7 @@
 # ComfyUI 复合 Backend 首版边界
 
-状态：接入设计，尚未实现 Adapter 或真实服务验收。目标是将可配置的 ComfyUI
+状态：已实现实验性 Adapter、服务网关和 CPU 浏览器链路验证，尚未进行真实 ComfyUI
+服务及模型验收。目标是将可配置的 ComfyUI
 workflow 作为单个复合节点连接到 Core DAG，复用 Artifact、作业身份和发布校验，
 不要求用户把内部每个 ComfyUI 节点重新编写成 Core Operator。
 
@@ -499,3 +500,20 @@ ComfyUI 推理已闭环，也没有真实模型验收。
 执行命令此前对 failed 终态仍返回 0，已改为 1；未知仍为 3，参数错误为 2，
 status/list 成功查询保持 0。6 项 CLI 回归、Ruff 格式/检查和 mypy 通过，验证
 失败执行非零返回、JSON 保留原错误、只读状态查询不混用执行失败退出码。
+
+### 浏览器执行闭环补齐（2026-09-21）
+
+实际创建运行暴露了此前目录/编译 smoke 未覆盖的问题：编辑器导入 raster_image，
+ComfyUI 边界要求 png。模板现增加显式 encode_png@1 CPU 节点，保留原始 Artifact，
+生成独立 PNG Artifact；DAG attempt 记录转换输入输出。仅接受单帧 RGB，不自动
+丢弃 alpha 或改变通道，PNG/JPEG 解码像素回归已覆盖。
+
+运行页现允许读取 RGB/RGBA 图片输出。浏览器 smoke 强制断言 3 张输出存在并
+逐一读取，避免空输出列表导致下载检查虚假通过。可复现脚本和步骤见
+[操作指南](../guides/comfy-image-profile.md#可复现的-cpu-浏览器-smoke)。
+
+本次实际证据位于 <BROWSER_SMOKE_ROOT>：start/middle/finish.json。
+创建、两段显式服务执行、两次完成后恢复成功；3 个节点各一次 attempt，上游
+prompt 数保持 2。Core/网关 HTTP 真实运行，上游 ComfyUI/上传/生成图片为注入
+fixture，不能视为真实部署或模型验收。相关 Python 回归 139 passed，编辑器
+执行回归 15 passed；Ruff check/format、mypy 通过。未重复运行全仓测试。

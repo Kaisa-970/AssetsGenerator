@@ -6,6 +6,7 @@ from typing import Any
 from .comfy_profile import ComfyImageProfile
 from .dag_adapters import AdapterRegistry
 from .dag_comfy_image import ComfyImageAdapter
+from .dag_image_encoding import EncodePngAdapter
 
 
 def register_comfy_profiles(registry: AdapterRegistry, raw: dict[str, Any], *, base: Path) -> None:
@@ -31,6 +32,7 @@ def register_comfy_profiles(registry: AdapterRegistry, raw: dict[str, Any], *, b
         if not path.is_absolute():
             path = base / path
         adapters[name] = ComfyImageAdapter(entry["endpoint"], ComfyImageProfile.load(path))
+    registry.register(EncodePngAdapter())
     registry.register(adapters[default])
     for name, adapter in adapters.items():
         registry.register_backend(name, adapter)

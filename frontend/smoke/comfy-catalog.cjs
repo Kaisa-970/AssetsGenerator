@@ -15,7 +15,7 @@ const { chromium, expect } = require("@playwright/test");
     await page
       .getByRole("button", { name: "comfy_image_chain_v1", exact: true })
       .click();
-    await expect(page.locator(".react-flow__node")).toHaveCount(3);
+    await expect(page.locator(".react-flow__node")).toHaveCount(4);
     await page.locator('.react-flow__node[data-id="first"]').click();
     await expect(page.getByLabel("节点 Backend", { exact: true })).toHaveValue(
       "comfy_first",
@@ -35,7 +35,7 @@ const { chromium, expect } = require("@playwright/test");
     console.log(
       JSON.stringify({
         ok: true,
-        nodes: 2,
+        nodes: 3,
         backend: "comfy_second",
         execution_ready: true,
         inference_submitted: false,

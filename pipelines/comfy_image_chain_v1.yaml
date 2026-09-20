@@ -2,13 +2,17 @@
 pipeline: comfy_image_chain_v1
 version: 1
 inputs:
-  image: {kind: rgb_image, carriers: [artifact_ref], schema_name: png, schema_version: "1.0"}
+  image: {kind: rgb_image, carriers: [artifact_ref], schema_name: raster_image, schema_version: "1.0"}
 nodes:
+  encode:
+    operator: encode_png@1
+    inputs:
+      image: pipeline.inputs.image
   first:
     operator: image_transform@1
     backend: comfy_first
     inputs:
-      image: pipeline.inputs.image
+      image: encode.outputs.image
   second:
     operator: image_transform@1
     backend: comfy_second

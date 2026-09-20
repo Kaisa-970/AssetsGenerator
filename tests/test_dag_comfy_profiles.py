@@ -75,7 +75,10 @@ def test_editor_starts_with_comfy_only_catalog(tmp_path, monkeypatch):
             pass
 
     def create(editor, port):
-        assert {entry["name"] for entry in editor.catalog()["adapters"]} == {"comfy_image"}
+        assert {entry["name"] for entry in editor.catalog()["adapters"]} == {
+            "comfy_image",
+            "encode_png",
+        }
         assert editor.execution is not None
         return Server()
 

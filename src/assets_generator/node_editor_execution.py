@@ -138,6 +138,8 @@ class NodeEditorExecution:
             "asset_release",
             "asset_definition",
             "quality_report",
+            "rgb_image",
+            "rgba_image",
         }
 
     def _run_busy(self, run_id: str) -> bool:
