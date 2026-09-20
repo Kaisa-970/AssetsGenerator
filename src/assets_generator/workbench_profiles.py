@@ -297,8 +297,16 @@ def _model_identity(backend: str, model: Path, python: Path) -> dict[str, Any]:
     return {"snapshot_digest": _snapshot_digest(model), **extra}
 
 
-def _load_profiles(config: dict[str, Any]) -> dict[str, BackendProfile]:
-    root = _object(config, {"sam", "profiles"}, {"sam", "profiles"})
+@dataclass(frozen=True)
+class ProposalProfile:
+    name: str
+    proposer: SAMInstanceProposer
+    proposal_identity: dict[str, Any]
+    test_only: bool = False
+    identity_check: Callable[[], None] | None = None
+
+
+def _load_proposal_profile(name: str, definition: Any) -> ProposalProfile:
     sam_keys = {
         "python",
         "checkpoint",
@@ -311,7 +319,7 @@ def _load_profiles(config: dict[str, Any]) -> dict[str, BackendProfile]:
         "stability_score_thresh",
         "timeout_seconds",
     }
-    sam = _object(root["sam"], sam_keys, {"python", "checkpoint"})
+    sam = _object(definition, sam_keys, {"python", "checkpoint"})
     python = _path(sam["python"], executable=True)
     checkpoint = _path(sam["checkpoint"])
     proposer = SAMInstanceProposer(
@@ -333,13 +341,19 @@ def _load_profiles(config: dict[str, Any]) -> dict[str, BackendProfile]:
         "parameters": proposer.parameters,
         "timeout_seconds": proposer.timeout_seconds,
     }
+    return ProposalProfile(name, proposer, proposal_identity)
+
+
+def _load_profiles(config: dict[str, Any]) -> dict[str, BackendProfile]:
+    root = _object(config, {"sam", "profiles"}, {"sam", "profiles"})
+    proposal = _load_proposal_profile("sam", root["sam"])
     shapes = _load_shape_profiles(root["profiles"])
     return {
         name: BackendProfile(
             name,
-            proposer,
+            proposal.proposer,
             shape.shape_plan,
-            proposal_identity,
+            proposal.proposal_identity,
             shape.shape_identity,
             test_only=False,
         )
@@ -494,3 +508,35 @@ def load_shape_profiles(
     finally:
         _CHECKS.reset(token)
         _PROGRESS.reset(progress_token)
+
+
+def load_proposal_profiles(
+    config: dict[str, Any], *, progress: Callable[[str], None] | None = None
+) -> dict[str, ProposalProfile]:
+    """Load SAM-only deployments without inspecting any shape environment or model."""
+    root = _object(config, {"profiles"}, {"profiles"})
+    definitions = root["profiles"]
+    if (
+        not isinstance(definitions, dict)
+        or not definitions
+        or any(not isinstance(name, str) or not name.strip() for name in definitions)
+    ):
+        raise ValueError("proposal profiles require nonempty named definitions")
+    profiles = {}
+    for name, definition in definitions.items():
+        checks: list[Callable[[], None]] = []
+        token = _CHECKS.set(checks)
+        progress_token = _PROGRESS.set(progress)
+        try:
+            profile = _load_proposal_profile(name, definition)
+
+            def identity_check(checks: tuple[Callable[[], None], ...] = tuple(checks)) -> None:
+                for check in checks:
+                    check()
+
+            _step("proposal profile resource consistency", identity_check)
+            profiles[name] = replace(profile, identity_check=identity_check)
+        finally:
+            _CHECKS.reset(token)
+            _PROGRESS.reset(progress_token)
+    return profiles

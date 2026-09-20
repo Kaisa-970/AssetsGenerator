@@ -303,3 +303,58 @@ def test_progress_does_not_change_identity_and_resets_after_failure(tmp_path, mo
         profiles.load_profiles(config, progress=events.append)
     assert "核验失败" in events[-1]
     assert profiles._PROGRESS.get() is None
+
+
+def test_proposal_only_loader_never_loads_shape_and_preserves_resource_guards(
+    tmp_path, monkeypatch
+):
+    config = _config(tmp_path, monkeypatch)
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("shape resources must not be inspected")
+
+    monkeypatch.setattr(profiles, "_load_shape_profiles", forbidden)
+    progress = []
+    loaded = profiles.load_proposal_profiles(
+        {"profiles": {"sam": config["sam"]}}, progress=progress.append
+    )
+    profile = loaded["sam"]
+    assert profile.name == "sam" and not profile.test_only
+    assert str(profile.proposer.python) == config["sam"]["python"]
+    assert not hasattr(profile, "shape_plan")
+    assert profile.proposal_identity["checkpoint_digest"].startswith("sha256:")
+    assert profile.identity_check is not None
+    profile.identity_check()
+    assert any("SAM checkpoint" in message for message in progress)
+    Path(config["sam"]["checkpoint"]).write_bytes(b"changed")
+    with pytest.raises(ValueError, match="resources changed"):
+        profile.identity_check()
+    assert profiles._CHECKS.get() is None and profiles._PROGRESS.get() is None
+
+
+def test_proposal_profile_guards_are_independent_and_failures_restore_context(
+    tmp_path, monkeypatch
+):
+    config = _config(tmp_path, monkeypatch)
+    second_checkpoint = tmp_path / "second.pth"
+    second_checkpoint.write_bytes(b"second")
+    loaded = profiles.load_proposal_profiles(
+        {
+            "profiles": {
+                "first": config["sam"],
+                "second": {**config["sam"], "checkpoint": str(second_checkpoint)},
+            }
+        }
+    )
+    second_checkpoint.write_bytes(b"changed")
+    loaded["first"].identity_check()
+    with pytest.raises(ValueError, match="resources changed"):
+        loaded["second"].identity_check()
+    for raw in (
+        {"profiles": {}},
+        {"profiles": {"": config["sam"]}},
+        {"profiles": {"broken": {"python": "/missing", "checkpoint": "/missing"}}},
+    ):
+        with pytest.raises(ValueError):
+            profiles.load_proposal_profiles(raw)
+        assert profiles._CHECKS.get() is None and profiles._PROGRESS.get() is None
