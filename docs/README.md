@@ -6,7 +6,8 @@
 
 - [固定流程节点工作台 v1（实现中）](design/node-workbench-v1.md)
 - [通用 DAG 编排与节点编辑器实施设计（部分实现）](design/generic-dag-orchestration.md)
-- [节点编辑器结果预览首版（实施准备）](design/node-editor-result-preview.md)
+- [节点编辑器结果预览首版](design/node-editor-result-preview.md)
+- [远程 Backend v1 作业协议（实施中）](design/remote-backend-v1.md)
 
 - [Phase 7 场景到资产首版契约](design/scene-to-assets.md)
 - [SAM v1 实例候选契约](design/sam-instance-proposals.md)
