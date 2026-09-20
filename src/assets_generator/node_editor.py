@@ -447,9 +447,10 @@ def serve_editor(
             # Operator catalogs only expose utilities whose contracts they contain.
             if comfy_config is None:
                 from .dag_image_encoding import EncodePngAdapter
+                from .dag_image_mask import ApplyBinaryMaskAdapter
                 from .dag_image_resize import ResizeImageAdapter
 
-                for utility in (EncodePngAdapter(), ResizeImageAdapter()):
+                for utility in (EncodePngAdapter(), ResizeImageAdapter(), ApplyBinaryMaskAdapter()):
                     if utility.spec.operators[0] in editor.specs:
                         registry.register(utility)
             repository = DagRepository(LocalArtifactStore(store), directory / "runtime")

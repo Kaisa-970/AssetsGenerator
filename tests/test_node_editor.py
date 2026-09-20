@@ -377,6 +377,7 @@ def test_proposal_only_editor_registers_no_local_shape(tmp_path, monkeypatch):
             "image_mask_selection",
             "encode_png",
             "resize_image",
+            "apply_binary_mask",
         }
         return Server()
 

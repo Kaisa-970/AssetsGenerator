@@ -34,7 +34,11 @@ def main() -> None:
             args.directory / "drafts",
             templates=[
                 Path(__file__).with_name(name)
-                for name in ("cpu-image-editor.yaml", "cpu-image-resize.yaml")
+                for name in (
+                    "cpu-image-editor.yaml",
+                    "cpu-image-resize.yaml",
+                    "cpu-image-mask.yaml",
+                )
             ],
             execution=execution,
         )
