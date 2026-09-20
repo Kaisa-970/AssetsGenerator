@@ -1326,7 +1326,17 @@ test("RGBA canvas upload uses the explicit endpoint and preserves returned refer
         ],
       };
     else if (path === "/api/drafts") body = { drafts: [] };
-    else if (path.startsWith("/api/inputs/")) {
+    else if (path === "/api/runs/dag_remote/references/prepared/rgba") {
+      body = {
+        source_run_id: "dag_remote",
+        node_id: "prepared",
+        port: "rgba",
+        kind: "rgba_image",
+        schema_name: "png",
+        schema_version: "1.0",
+        reference: { artifact_id: "historical_rgba_exact" },
+      };
+    } else if (path.startsWith("/api/inputs/")) {
       uploads.push(path);
       body = { image_ref: imageRef };
     } else if (path === "/api/runs" && route.request().method() === "POST") {
@@ -1355,6 +1365,14 @@ test("RGBA canvas upload uses the explicit endpoint and preserves returned refer
           },
         },
         busy: false,
+        outputs: [
+          {
+            node_id: "prepared",
+            port: "rgba",
+            kind: "rgba_image",
+            url: "/prepared.png",
+          },
+        ],
       };
     } else if (path === "/api/runs") body = { runs: [] };
     else
@@ -1382,6 +1400,14 @@ test("RGBA canvas upload uses the explicit endpoint and preserves returned refer
           },
         },
         busy: false,
+        outputs: [
+          {
+            node_id: "prepared",
+            port: "rgba",
+            kind: "rgba_image",
+            url: "/prepared.png",
+          },
+        ],
       };
     await route.fulfill({ json: body });
   });
@@ -1413,12 +1439,29 @@ test("RGBA canvas upload uses the explicit endpoint and preserves returned refer
   );
   expect(starts[0].image_ref).toEqual(imageRef);
   expect(starts[0].pipeline.inputs.image.kind).toBe("rgba_image");
+  await page
+    .getByRole("button", {
+      name: "用作输入 image · prepared · rgba",
+      exact: true,
+    })
+    .click();
+  await expect(page.getByLabel("图片来源", { exact: true })).toHaveValue(
+    "reference",
+  );
+  await expect(
+    page.getByText("historical_rgba_exact", { exact: true }),
+  ).toBeVisible();
+  expect(starts).toHaveLength(1);
+  await page.getByRole("button", { name: "启动新运行", exact: true }).click();
+  await expect.poll(() => starts.length).toBe(2);
+  expect(starts[1].image_ref).toEqual({ artifact_id: "historical_rgba_exact" });
+  expect(uploads).toEqual(["/api/inputs/rgba"]);
   await page.getByRole("button", { name: "普通 RGB", exact: true }).click();
   await page.getByRole("button", { name: "运行", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "启动新运行", exact: true }),
   ).toBeDisabled();
-  expect(starts).toHaveLength(1);
+  expect(starts).toHaveLength(2);
 });
 
 for (const editDuringLoad of [false, true]) {

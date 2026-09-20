@@ -133,6 +133,7 @@ export function ExecutionPanel({
   const [showReview, setShowReview] = useState(false);
   const [showGraph, setShowGraph] = useState(false);
   const [imagePath, setImagePath] = useState("");
+  const [reusedImage, setReusedImage] = useState<{ artifact_id: string }>();
   const [observationsId, setObservationsId] = useState("");
   const [observationFiles, setObservationFiles] = useState<string[]>([]);
   const [inputRefs, setInputRefs] = useState<
@@ -148,6 +149,7 @@ export function ExecutionPanel({
   }
   useEffect(() => {
     setInputRefs({});
+    setReusedImage(undefined);
   }, [inputSignature]);
   const multiView =
     Object.keys(pipeline.inputs).length === 1 &&
@@ -493,9 +495,17 @@ export function ExecutionPanel({
             >
               <option value="path">服务器本地路径</option>
               <option value="upload">从浏览器上传</option>
+              <option value="reference">使用历史输出</option>
             </select>
           </label>
-          {imageSource === "path" ? (
+          {imageSource === "reference" ? (
+            <div>
+              <p>在下方选择历史运行，点击匹配输出的“用作输入”。</p>
+              {reusedImage && (
+                <p className="run-identity">{reusedImage.artifact_id}</p>
+              )}
+            </div>
+          ) : imageSource === "path" ? (
             <label>
               服务所在电脑的图片绝对路径
               <input
@@ -549,9 +559,11 @@ export function ExecutionPanel({
               )
             : multiView
               ? !observationsId.trim()
-              : imageSource === "path"
-                ? !imagePath.trim()
-                : !uploaded || uploaded.rgba !== rgbaInput) ||
+              : imageSource === "reference"
+                ? !reusedImage
+                : imageSource === "path"
+                  ? !imagePath.trim()
+                  : !uploaded || uploaded.rgba !== rgbaInput) ||
           !!executionReason
         }
         onClick={() =>
@@ -570,9 +582,11 @@ export function ExecutionPanel({
                   }
                 : multiView
                   ? { observations_ref: { artifact_id: observationsId.trim() } }
-                  : imageSource === "path"
-                    ? { image_path: imagePath.trim() }
-                    : { image_ref: structuredClone(uploaded!.ref) }),
+                  : imageSource === "reference"
+                    ? { image_ref: structuredClone(reusedImage!) }
+                    : imageSource === "path"
+                      ? { image_path: imagePath.trim() }
+                      : { image_ref: structuredClone(uploaded!.ref) }),
             }),
           )
         }
@@ -773,7 +787,7 @@ export function ExecutionPanel({
                     url={output.url}
                   />
                 ))}
-              {multiInput &&
+              {(multiInput || (!multiView && "image" in pipeline.inputs)) &&
                 envelope.outputs.flatMap((output) =>
                   Object.entries(pipeline.inputs)
                     .filter(([, port]) =>
@@ -806,10 +820,17 @@ export function ExecutionPanel({
                               typeof source.reference?.artifact_id !== "string"
                             )
                               throw Error("输出引用与目标输入契约不匹配");
-                            setInputArtifact(
-                              name,
-                              source.reference.artifact_id,
-                            );
+                            if (multiInput) {
+                              setInputArtifact(
+                                name,
+                                source.reference.artifact_id,
+                              );
+                            } else {
+                              setReusedImage({
+                                artifact_id: source.reference.artifact_id,
+                              });
+                              setImageSource("reference");
+                            }
                             setMessage(
                               `已将 ${run.run_id}/${output.node_id}.${output.port} 绑定到 ${name}，点击启动才会创建新运行。`,
                             );

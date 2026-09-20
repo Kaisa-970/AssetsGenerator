@@ -154,3 +154,12 @@ composite resolved_inputs 均等于第一运行输出引用；绑定期间仍只
 改用 footer 状态定位后在全新目录完成验收，保留第一次证据。两次临时服务均正常
 关闭。本次仅 CPU 浏览器验收，不证明 GPU 模型质量或服务中断恢复；未重复运行
 全仓回归，Prettier 和 diff 检查通过。
+
+## 单图历史输出入口
+
+单图 image 表单新增历史输出来源，复用既有只读 references 校验端点和 image_ref
+创建协议。点击“用作输入”不会上传/派发，明确启动才发送已验证引用；输入契约
+变化后清除绑定。当前适用于 RGB/RGBA image，不扩展 observations 或集合输入。
+验证：2 项定向 Playwright（模拟 API）通过，覆盖精确 RGBA 引用提交、绑定不启动、
+不重复上传、改为 RGB 契约后禁止启动和已有多输入路径。27 项 Vitest、前端构建、
+Prettier 与 diff 检查通过。未做此新增入口的真实 GPU/浏览器后端联合验收。
