@@ -44,11 +44,19 @@ class DraftEditor:
         self.execution = execution
         self.execution_profile = execution_profile
         self.adapters = execution.engine.registry if execution else adapters
-        self.specs = load_default_operator_specs()
-        if operators:
-            self.specs.update(load_operator_specs(operators))
-        self.relations = default_relation_registry()
-        register_multi_view_relations(self.relations)
+        if execution is not None:
+            self.specs = execution.specs
+            self.relations = execution.relations
+            if operators:
+                declared = load_operator_specs(operators)
+                if any(self.specs.get(key) != value for key, value in declared.items()):
+                    raise ContractError("editor operator contracts differ from execution service")
+        else:
+            self.specs = load_default_operator_specs()
+            if operators:
+                self.specs.update(load_operator_specs(operators))
+            self.relations = default_relation_registry()
+            register_multi_view_relations(self.relations)
         self.templates = [
             {"id": p.stem, "label": p.stem, "pipeline": yaml.safe_load(p.read_text())}
             for p in templates or []

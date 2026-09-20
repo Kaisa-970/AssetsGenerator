@@ -61,10 +61,11 @@ DraftEditor 的目录从 OperatorSpec 和 AdapterRegistry 生成，不另写前�
 当前 CLI 的 profile 加载器支持已实现的模型族；加入全新 Adapter 类需要在受信
 Python 启动代码中注册，不支持任意动态插件发现。
 
-自定义启动代码应让 DraftEditor、NodeEditorExecution 与 DagEngine 使用一致的
-OperatorSpec 和关系注册表。静态编译支持的图不一定满足当前运行输入入口；
+执行模式下 DraftEditor 直接使用 NodeEditorExecution 的 OperatorSpec 和关系注册表；
+额外传入的 Operator 文件若与执行服务不一致，启动时拒绝。自定义启动代码仍应让
+NodeEditorExecution 与 DagEngine 使用一致的关系注册表。静态编译支持的图不一定满足当前运行输入入口；
 编辑器当前支持单图 image 或 observations 入口，开发者不能以目录可见替代执行验收。
-新增关系的画布集成还需核对 DraftEditor 所使用的注册表，不可仅在引擎注册。
+新增关系应先登记到执行服务使用的注册表，画布编译随后复用该注册表。
 
 ## 验收顺序
 

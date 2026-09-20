@@ -417,3 +417,39 @@ def test_proposal_configuration_requires_profile_before_loading(tmp_path, monkey
             profile="sam",
             store=tmp_path / "store",
         )
+
+
+def test_execution_editor_uses_authoritative_custom_contracts_and_relations(tmp_path):
+    from assets_generator.artifact_store import LocalArtifactStore
+    from assets_generator.dag_adapters import AdapterRegistry
+    from assets_generator.dag_engine import DagEngine
+    from assets_generator.dag_persistence import DagRepository
+    from assets_generator.node_editor_execution import NodeEditorExecution
+    from assets_generator.pipeline import load_operator_specs
+    from assets_generator.relations import default_relation_registry
+
+    specs = load_operator_specs(Path("examples/dag-operators.yaml"))
+    relations = default_relation_registry()
+    with DagRepository(LocalArtifactStore(tmp_path / "store"), tmp_path / "runtime") as repo:
+        service = NodeEditorExecution(
+            DagEngine(repo, AdapterRegistry(), relations), specs=specs, relations=relations
+        )
+        try:
+            editor = DraftEditor(tmp_path / "drafts", execution=service)
+            assert editor.specs is service.specs
+            assert editor.relations is relations
+            assert set(editor.catalog()["operators"]) == set(specs)
+            assert (
+                DraftEditor(
+                    tmp_path / "same", Path("examples/dag-operators.yaml"), execution=service
+                ).specs
+                is specs
+            )
+            from assets_generator.contracts import ContractError
+
+            with pytest.raises(ContractError, match="differ"):
+                DraftEditor(
+                    tmp_path / "conflict", Path("pipelines/operators-v1.yaml"), execution=service
+                )
+        finally:
+            service.close()
