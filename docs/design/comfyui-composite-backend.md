@@ -246,3 +246,16 @@ ComfyUI 测试及 Ruff/mypy 通过，HTTP 链覆盖结构化 Artifact 持久化�
 遍历发现输入输出、离线重建证据值和删除输入/输出后阻塞。此处只组装证据值，
 调用者仍需在外层完成结果引用的预分配和耐久固定；不能反复持久化来补回丢失证据。
 尚未接生产复合 handler、DAG 或画布，也没有真实 ComfyUI 验收。
+
+### 外层结果预分配与离线采用
+
+外层 job 行新增 comfy_result，fix_image_result 先以事务固定 Store、证据 Artifact
+身份及提交绑定，再持久化 ComfyImageBoundary。已有预分配只能通过
+recover_image_result 读取原 Artifact 和依赖闭包；不再组装并补写。原 journal 或
+远程服务不参与本地结果读取。输出映射更改拒绝复用；此接口不改变 job 终态。
+
+ComfyUI 与服务相关测试 105 项通过，覆盖正常/丢回执 HTTP 路径上的证据写入前后
+中断：写前阻塞、写后采用、随后删除证据仍阻塞。补充输出映射检查后重跑 HTTP
+链 6 项通过；Ruff 格式/检查和 mypy 通过。测试调用者仍负责先完成图片导入；
+输出导入回执尚未与外层预分配形成同一个完整生产入口，不能宣称整个复合 handler
+恢复已闭环。真实 ComfyUI、DAG/画布接入仍待完成。

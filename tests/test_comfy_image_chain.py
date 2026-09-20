@@ -21,8 +21,11 @@ from assets_generator.comfy_workflow import ComfyWorkflow
 from assets_generator.dag_adapters import AdapterSpec
 
 
+@pytest.mark.parametrize("commit_crash", ["none", "before", "after"])
 @pytest.mark.parametrize("lose_ack", [False, True])
-def test_image_chain_recovers_without_reupload_resubmit_or_redownload(tmp_path, lose_ack):
+def test_image_chain_recovers_without_reupload_resubmit_or_redownload(
+    tmp_path, lose_ack, commit_crash, monkeypatch
+):
     def png(color):
         output = io.BytesIO()
         Image.new("RGB", (3, 2), color).save(output, format="PNG")
@@ -156,6 +159,53 @@ def test_image_chain_recovers_without_reupload_resubmit_or_redownload(tmp_path, 
         result = import_image(client, journal, store, "one", node="3", index=0, mode="RGB")
         assert store.blob_path(result).read_bytes() == output_bytes
         assert source != result
+        from test_remote_http import request
+
+        from assets_generator.comfy_result import fix_image_result, recover_image_result
+        from assets_generator.remote_protocol import RemoteRequest
+        from assets_generator.remote_service_store import RemoteServiceStore
+
+        req = RemoteRequest.create(request().identity, "one", {})
+        owner_path = tmp_path / "owner.sqlite"
+        owner = RemoteServiceStore(owner_path, req.identity)
+        owner.submit(req)
+        owner.transition(req, expected="queued", state="running")
+        owner.authorize_comfy_submission(req, journal.submission_binding("one"))
+        persist = store.persist_structured
+
+        def interrupted(value):
+            if commit_crash == "after":
+                persist(value)
+            raise OSError("injected result commit crash")
+
+        try:
+            if commit_crash != "none":
+                monkeypatch.setattr(store, "persist_structured", interrupted)
+                with pytest.raises(ComfySubmissionUnknown):
+                    fix_image_result(owner, req, journal, store, node="3", index=0, mode="RGB")
+            else:
+                fixed = fix_image_result(owner, req, journal, store, node="3", index=0, mode="RGB")
+        finally:
+            owner.close()
+        owner = RemoteServiceStore(owner_path, req.identity)
+        monkeypatch.setattr(store, "persist_structured", lambda *_: pytest.fail("repaired result"))
+        try:
+            if commit_crash == "before":
+                with pytest.raises(ComfySubmissionUnknown):
+                    fix_image_result(owner, req, journal, store, node="3", index=0, mode="RGB")
+            else:
+                fixed = recover_image_result(owner, req, store)
+                assert (
+                    fix_image_result(owner, req, journal, store, node="3", index=0, mode="RGB")
+                    == fixed
+                )
+                store.blob_path(fixed).unlink()
+                with pytest.raises(ComfySubmissionUnknown):
+                    fix_image_result(owner, req, journal, store, node="3", index=0, mode="RGB")
+                assert not store.blob_path(fixed).exists()
+        finally:
+            owner.close()
+            monkeypatch.setattr(store, "persist_structured", persist)
         evidence = image_boundary_evidence(journal, store, "one", node="3", index=0, mode="RGB")
         evidence_ref = store.persist_structured(evidence)
         loaded = store.read_structured(evidence_ref)

@@ -41,6 +41,8 @@ class RemoteServiceStore:
                 row[1] for row in self.db.execute("PRAGMA table_info(jobs)")
             }:
                 self.db.execute("ALTER TABLE jobs ADD COLUMN comfy_binding BLOB")
+            if "comfy_result" not in {row[1] for row in self.db.execute("PRAGMA table_info(jobs)")}:
+                self.db.execute("ALTER TABLE jobs ADD COLUMN comfy_result BLOB")
             self.db.execute(
                 "CREATE TABLE IF NOT EXISTS blobs (digest TEXT PRIMARY KEY, body BLOB NOT NULL)"
             )
@@ -201,6 +203,47 @@ class RemoteServiceStore:
                     self.db.execute(
                         "UPDATE jobs SET comfy_binding=? WHERE key=?",
                         (canonical_json_bytes(binding), request.submission_key),
+                    )
+                self.db.execute("COMMIT")
+                return previous is None
+            except BaseException:
+                self.db.execute("ROLLBACK")
+                raise
+
+    def comfy_result(self, request: RemoteRequest) -> dict[str, Any] | None:
+        with self._lock:
+            if self.lookup(request) is None:
+                raise ValueError("ComfyUI owner job missing")
+            raw = self.db.execute(
+                "SELECT comfy_result FROM jobs WHERE key=?", (request.submission_key,)
+            ).fetchone()[0]
+            if raw is None:
+                return None
+            result = json.loads(raw)
+            if not isinstance(result, dict) or canonical_json_bytes(result) != raw:
+                raise ValueError("invalid ComfyUI result reservation")
+            return result
+
+    def reserve_comfy_result(self, request: RemoteRequest, result: dict[str, Any]) -> bool:
+        """Fix the exact local result identity before Store writes; never replace it."""
+        if set(result) != {"store", "artifact_id", "submission"}:
+            raise ValueError("invalid ComfyUI result reservation fields")
+        with self._lock:
+            self.db.execute("BEGIN IMMEDIATE")
+            try:
+                job = self.lookup(request)
+                if job is None or job.state != "running":
+                    raise ValueError("ComfyUI result requires running job")
+                binding = self.comfy_binding(request)
+                if binding is None or result["submission"] != binding:
+                    raise ValueError("ComfyUI result owner mismatch")
+                previous = self.comfy_result(request)
+                if previous is not None and previous != result:
+                    raise ValueError("ComfyUI result reservation conflict")
+                if previous is None:
+                    self.db.execute(
+                        "UPDATE jobs SET comfy_result=? WHERE key=?",
+                        (canonical_json_bytes(result), request.submission_key),
                     )
                 self.db.execute("COMMIT")
                 return previous is None
