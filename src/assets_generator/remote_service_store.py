@@ -419,10 +419,8 @@ class RemoteServiceStore:
             state="failed",
             error={
                 "code": "SERVICE_RESULT_ABANDONED",
-                "detail": (
-                    "Operator explicitly abandoned unpublished result "
-                    "after confirmed process exit"
-                ),
+                "detail": "Operator explicitly abandoned unpublished result "
+                "after confirmed process exit",
             },
         )
 
