@@ -131,6 +131,7 @@ function App() {
       pipelineRef.current = next;
       setPipeline(next);
       setResult(undefined);
+      setMessage("图已修改，请重新编译校验当前配置。");
     },
     [],
   );

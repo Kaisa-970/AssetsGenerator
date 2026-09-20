@@ -1773,3 +1773,58 @@ test("pending dispatch blockers are visible without inventing attempts or pollin
   ).toHaveCount(0);
   expect(mutations).toBe(0);
 });
+
+test("graph edits invalidate successful and in-flight compilation feedback", async ({
+  page,
+}) => {
+  let release: (() => void) | undefined;
+  let calls = 0;
+  await page.route("**/api/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === "/api/compile") {
+      calls++;
+      if (calls === 2)
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+      await route.fulfill({
+        json: { ok: true, execution_ready: true, plan: { marker: "old-plan" } },
+      });
+      return;
+    }
+    await route.fulfill({
+      json:
+        path === "/api/catalog"
+          ? {
+              operators: {},
+              adapters: [],
+              templates: [],
+              execution_enabled: true,
+            }
+          : path === "/api/runs"
+            ? { runs: [] }
+            : { drafts: [] },
+    });
+  });
+  await page.goto("/");
+  const compile = page.getByRole("button", { name: "编译校验", exact: true });
+  await compile.click();
+  await expect(page.getByRole("status")).toContainText("编译通过");
+  await page.getByLabel("管线名称").fill("changed_graph");
+  await expect(page.getByRole("status")).toContainText("请重新编译");
+  await expect(
+    page.getByText("尚无当前图的编译结果。", { exact: true }),
+  ).toBeVisible();
+  await compile.click();
+  await expect.poll(() => !!release).toBe(true);
+  await page.getByLabel("管线版本").fill("2");
+  release!();
+  await expect(page.getByRole("status")).toContainText("忽略旧版本的编译结果");
+  await expect(
+    page.getByText("尚无当前图的编译结果。", { exact: true }),
+  ).toBeVisible();
+  await expect(compile).toBeEnabled();
+  await compile.click();
+  await expect(page.getByRole("status")).toContainText("编译通过");
+  expect(calls).toBe(3);
+});
