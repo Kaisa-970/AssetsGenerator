@@ -3,6 +3,7 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 import json
+from collections.abc import Mapping
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -13,10 +14,12 @@ def to_primitive(value: Any) -> Any:
         return {
             field.name: to_primitive(getattr(value, field.name))
             for field in dataclasses.fields(value)
+            if not (field.metadata.get("omit_empty", False) and getattr(value, field.name) == ())
+            and not (field.metadata.get("omit_none", False) and getattr(value, field.name) is None)
         }
     if isinstance(value, Enum):
         return value.value
-    if isinstance(value, dict):
+    if isinstance(value, Mapping):
         return {str(key): to_primitive(item) for key, item in value.items()}
     if isinstance(value, (list, tuple)):
         return [to_primitive(item) for item in value]

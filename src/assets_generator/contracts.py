@@ -43,11 +43,34 @@ class PortSpec:
 
 
 @dataclass(frozen=True)
+class RelationSpec:
+    """An Operator's explicit reference to a versioned cross-input contract."""
+
+    validator: str
+    inputs: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.validator, str):
+            raise ContractError("relation validator must use name@version")
+        parts = self.validator.split("@")
+        if len(parts) != 2 or not all(parts) or any(p.strip() != p for p in parts):
+            raise ContractError("relation validator must use name@version")
+        if not isinstance(self.inputs, (list, tuple)):
+            raise ContractError("relation inputs must be a sequence of port names")
+        object.__setattr__(self, "inputs", tuple(self.inputs))
+        if len(self.inputs) < 2 or any(not isinstance(p, str) or not p for p in self.inputs):
+            raise ContractError("relation requires at least two named inputs")
+        if len(set(self.inputs)) != len(self.inputs):
+            raise ContractError("relation contains duplicate inputs")
+
+
+@dataclass(frozen=True)
 class OperatorSpec:
     name: str
     version: str
     inputs: dict[str, PortSpec]
     outputs: dict[str, PortSpec]
+    relations: tuple[RelationSpec, ...] = field(default=(), metadata={"omit_empty": True})
 
 
 @dataclass(frozen=True)
