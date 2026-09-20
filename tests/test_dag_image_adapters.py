@@ -218,3 +218,55 @@ def test_missing_child_evidence_is_not_recreated_after_parent_crash(tmp_path, mo
         assert ref.artifact_id in repo.load(run.run_id).dag.invalid_evidence
         assert DagEngine(repo, registry).recover(run.run_id).status == "recovery_blocked"
         assert not path.exists()
+
+
+def test_shared_selection_fans_out_to_profile_bound_generators(tmp_path):
+    store, image, profile = fixture_engine(tmp_path)
+    other = replace(profile, name="second", shape_identity={"model": "second-fixture"})
+    registry, _ = image_plan(profile)
+    registry.register_backend("first", DagImageBuildAdapter(profile))
+    registry.register_backend("second", DagImageBuildAdapter(other))
+    definition = load_pipeline(Path("examples/dag-image-compare.yaml"))
+    definition.nodes["generate_first"]["backend"] = "first"
+    definition.nodes["generate_second"]["backend"] = "second"
+    definition.nodes["generate_second"]["parameters"]["seed"] = 123
+    plan = registry.bind_plan(
+        compile_pipeline(
+            definition,
+            load_default_operator_specs(),
+            require_explicit_joins=True,
+        )
+    )
+    with DagRepository(store, tmp_path / "dag") as repo:
+        engine = DagEngine(repo, registry)
+        run = engine.drain(engine.create(plan, {"image": image}).run_id)
+        assert run.status == "waiting_for_input"
+        run = engine.decide(
+            run.run_id,
+            "choose_object",
+            expected_revision=run.dag.revision,
+            idempotency_key="shared-choice",
+            reviewer="CPU multi-profile fixture",
+            payload={"proposal_id": "p0", "invert": False, "keep_largest": True},
+        )
+        assert run.status == "succeeded"
+        selection = run.dag.node_states["choose_object"].current().outputs["binding"]
+        child_ids = set()
+        for node_id, backend in (("generate_first", "first"), ("generate_second", "second")):
+            attempt = run.dag.node_states[node_id].current()
+            assert attempt.resolved_inputs["binding"] == selection
+            child_ids.add(attempt.child_registration.child_run_id)
+            repo.verify_reference_closure(attempt.outputs["release"])
+            provenance = store.read_structured(attempt.provenance["glb"][0])
+            assert provenance["node_id"] == node_id
+            assert provenance["parameters"]["adapter_identity"]["backend"] == backend
+            child = repo.load(attempt.child_registration.child_run_id)
+            assert child.parent_run_id == run.run_id and child.status == "succeeded"
+        assert len(child_ids) == 2
+        assert len(run.dag.receipts) == 1
+        assert all(len(state.attempts) == 1 for state in run.dag.node_states.values())
+    with DagRepository(store, tmp_path / "dag") as repo:
+        restored = DagEngine(repo, registry).drain(run.run_id)
+        assert restored.status == "succeeded"
+        assert restored.dag.node_states == run.dag.node_states
+        assert restored.dag.receipts == run.dag.receipts

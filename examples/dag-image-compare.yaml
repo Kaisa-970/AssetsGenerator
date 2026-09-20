@@ -1,0 +1,27 @@
+# Replace backend names with installed profile names from the editor catalog.
+# One confirmed selection fans out to two serially executed generation nodes.
+pipeline: dag_image_compare
+version: '1'
+inputs:
+  image: {kind: rgb_image, carriers: [artifact_ref]}
+nodes:
+  candidates:
+    operator: instance_proposals@1
+    adapter: image_proposals@1
+    inputs: {image: pipeline.inputs.image}
+  choose_object:
+    operator: workbench_mask_selection@1
+    adapter: image_mask_selection@1
+    inputs: {proposals: candidates.outputs.proposals}
+  generate_first:
+    operator: workbench_image_workflow@1
+    adapter: image_build@1
+    backend: first-profile
+    parameters: {seed: 42, pipeline_type: '512'}
+    inputs: {binding: choose_object.outputs.binding}
+  generate_second:
+    operator: workbench_image_workflow@1
+    adapter: image_build@1
+    backend: second-profile
+    parameters: {seed: 42, pipeline_type: '512'}
+    inputs: {binding: choose_object.outputs.binding}

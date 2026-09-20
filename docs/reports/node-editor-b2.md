@@ -46,3 +46,5 @@
 逐节点本地 profile 首片：AdapterRegistry 允许同一 Adapter key 按显式 Backend 名注册多个实现；绑定新增可选 backend 字段，旧无显式绑定计划的序列化保持不变。编辑器加载配置中的全部 profiles，`--profile` 为默认绑定；下拉目录按 Operator/Adapter 过滤，切换配置清除旧 profile_digest 覆盖，参数表单和契约面板读取对应 schema。
 
 验证：53 项 Adapter/Engine/编辑器 Python 测试、8 项 Playwright、TypeScript/Vite、Ruff、mypy 通过。新增双实例执行回归证明各自调用对应实现，provenance adapter_identity 中固定 Backend 名，重启恢复不增加调用次数；缺少原 Backend 时拒绝恢复且不改写原节点证据。当前为 CPU 实现隔离验收，尚未进行同图两种真实模型组合运行。未声称完整 B2 完成。
+
+双生成分支 CPU 验收：新增 `examples/dag-image-compare.yaml`，一次 proposals/人工选择后扇出到两个显式 profile 的生成节点。真实单图 Adapter 逻辑配合 Fake Backend 完成两个独立子发布；核对精确共享 SelectionInputBinding、独立 child run、各自 backend provenance、单一决定回执及恢复后节点证据不变。单图 Adapter 文件的 7 项测试通过；随后改为直接加载新示例的单项回归通过（未将两轮相加宣称 8 个独立测试）。两个真实模型的 GPU 组合尚未验收，示例中的 profile 名必须替换为本机已安装配置。
