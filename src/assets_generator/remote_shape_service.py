@@ -9,6 +9,7 @@ from pathlib import Path
 
 from .artifact_store import LocalArtifactStore
 from .backend_registry import ShapeBackend
+from .operators import ShapeOutput
 from .remote_protocol import RemoteIdentity, RemoteRequest
 from .remote_service_process import ServiceProcessWorker
 from .remote_service_store import RemoteServiceStore
@@ -30,11 +31,13 @@ class ShapeServiceHandler:
         workspace: Path,
         factory: Callable[[ServiceProcessWorker], ShapeBackend],
         verify_identity: Callable[[], RemoteIdentity],
+        validate_output_identity: Callable[[ShapeOutput], None] | None = None,
     ):
         self.identity = identity
         self.workspace = workspace
         self.factory = factory
         self.verify_identity = verify_identity
+        self.validate_output_identity = validate_output_identity
 
     def __call__(
         self, request: RemoteRequest, service: RemoteServiceStore
@@ -65,6 +68,8 @@ class ShapeServiceHandler:
             output = backend.generate(store, rgba, **parameters)
             if self.verify_identity() != self.identity:
                 raise ValueError("shape deployment identity changed during inference")
+            if self.validate_output_identity is not None:
+                self.validate_output_identity(output)
             raw_worker = service.worker_record(request)
             if raw_worker is None:
                 raise ValueError("shape Backend did not register its process")

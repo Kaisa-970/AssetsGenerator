@@ -62,3 +62,26 @@ def test_shape_only_loader_never_constructs_sam(tmp_path, monkeypatch):
     assert not hasattr(profile, "proposer")
     with pytest.raises(ValueError):
         workbench_profiles.load_shape_profiles(config)
+
+
+def test_profile_rejects_backend_response_identity_mismatch(tmp_path, monkeypatch):
+    from test_remote_shape_output import fixture
+
+    from assets_generator.artifact_store import LocalArtifactStore
+
+    profile = load_profiles(_config(tmp_path, monkeypatch))["local-triposr"]
+    handler = shape_handler_from_profile(profile, service_id="shape", workspace=tmp_path)
+    output = fixture(LocalArtifactStore(tmp_path / "store"))
+    expected = {
+        "backend": "triposr",
+        "model_digest": profile.shape_identity["model"]["snapshot_digest"],
+    }
+    valid = replace(output, backend_metadata=expected)
+    handler.validate_output_identity(valid)
+    for metadata in (
+        {},
+        {**expected, "backend": "trellis2"},
+        {**expected, "model_digest": "other"},
+    ):
+        with pytest.raises(ValueError, match="model identity"):
+            handler.validate_output_identity(replace(output, backend_metadata=metadata))

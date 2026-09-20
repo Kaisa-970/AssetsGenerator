@@ -307,3 +307,9 @@ profile/原 workbench loader/DAG shape 合跑 26 项通过；新增测试将 SAM
 ## 首次真实模型结果
 
 TRELLIS.2 已完成单个远程 shape DAG 节点的真实 GPU smoke，含完成后关闭 HTTP 服务的离线恢复。详见[报告](../reports/remote-shape-real-smoke.md)。该结果不关闭完整发布、编辑器目录、自动队列或推理中真实模型中断验收。
+
+### 模型响应身份核对
+
+真实 profile factory 为 ShapeServiceHandler 注入输出身份校验：Backend 响应的 backend 和 model_digest 必须匹配加载时核验的 shape_identity。资源前后检查不能替代响应核对；响应缺失或串到其他模型时，禁止输出封装和成功发布。CPU 通用 handler 可不配置此钩子，真实 profile 路径强制提供。
+
+profile/handler/DAG shape 合跑 6 项通过，覆盖缺失身份、Backend 不符和模型摘要不符；Ruff/mypy（104 文件）通过。本轮只读取既有真实 smoke 响应，没有重新推理，不将新增校验声称为已重新做 GPU 验收。
