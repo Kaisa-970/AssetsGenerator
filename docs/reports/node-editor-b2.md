@@ -74,3 +74,9 @@
 CPU 测试确认多视图编译就绪、启动/发布、重复请求、显式恢复、输出读取及输入来源拒绝，模型契约替身各调用一次；服务配置测试确认目录加载；浏览器测试确认观测包精确引用与刷新重试。后端 editor/execution 合跑 18 项通过，前端单测 9 项通过。首次浏览器新增用例漏处理模板覆盖确认框导致超时，修正脚本后该用例通过；未将其归为产品故障。Ruff、mypy 通过。当前尚未从真实画布运行 DA3/Open3D GPU，批量图片导入未实现；不得宣称完整 B2 完成。
 
 最终前端回归单次 12 项 Playwright 全部通过；TypeScript/Vite 与 Python wheel/sdist 构建通过。本轮未获得独立 subagent review（现有 agent 线程配额已满），由主 agent 检查改动和验证结果。
+
+真实画布 DA3/Open3D 验收已完成：2026-09-20 使用既有 DA3 与 sugar 环境、DA3-Base 本地模型和原 SOH 双视图观测包，无新增安装/下载。通过浏览器加载多视图模板、填写 ObservationBundle ID 并启动，run `dag_df9385b3f8864f3f8b8c51de82864c23` succeeded；geometry/reconstruction/release 各一次 attempt。浏览器错误为 0，固定运行图显示发布成功，四类输出读取均 200 且非空。
+
+GLB 独立回读：70740 顶点、96610 三角面、2292388 字节；Store 中父 BuildRun 的完整 Artifact 证据闭包校验通过。随后通过实际 HTTP resume 并等待命令完成，状态仍 succeeded，node_states（含 attempts、worker 与输出）完全相同。这里验证的是同一服务内显式恢复，不声称本轮已做服务 SIGKILL 或重启恢复。数据沿用旧 Store 的不可变观测包，新父/子运行及发布使用新运行目录，不更改历史证据。
+
+证据位于 `<DATASET_ROOT>/node-editor-multiview-validation/` 的 browser-config.json、created.json、completed.json、completed.png、restored.json、validation.json 和 editor/。可复现浏览器脚本为 `frontend/smoke/multi-view.cjs`，恢复及独立网格回读在该目录外部脚本执行。本次只证明固定双视图功能路径，不代表任意物体质量验收；多图浏览器导入、HTTP/ComfyUI 等仍未完成。

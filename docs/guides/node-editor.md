@@ -128,3 +128,5 @@ PYTHONPATH=src <MAIN_CHECKOUT>/.venv/bin/python -m assets_generator.cli node-edi
 加载模板后，在运行面板填写 ObservationBundle Artifact ID，点击启动。三个节点都可选择具名多视图配置；同一重建链必须满足既有 profile 和证据关系约束，不能任意混用不兼容来源。配置在服务启动时核验，使用已有环境，不下载权重。可同时增加单图的 `--config` 和 `--profile`，在同一服务使用两类模板。
 
 编译与启动共用输入适用性检查：仅支持单个 `image` RGB 或 `observations` ObservationBundle 输入，均须接收标量 ArtifactRef。启动再次验证观测内容、证据闭包和绑定；幂等键、固定计划、输出读取及恢复与单图一致。当前多视图浏览器批量导入尚未实现；真实画布 DA3/Open3D GPU 端到端仍待验收。
+
+真实服务启动后，可用 `frontend/smoke/multi-view.cjs <BROWSER_CONFIG>.json` 验收画布路径。配置包含 `url`（不含尾斜杠）、`observations`（Store 中现有观测包 Artifact ID）和 `root`（已存在的仓库外证据目录）。脚本通过 UI 启动，等待发布，核对精确输入与每节点一次 attempt，读取各输出并截图固定运行图。此命令会实际调用所配置模型，GPU 验收请串行执行。
