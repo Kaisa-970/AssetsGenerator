@@ -193,3 +193,16 @@ class RemoteServiceStore:
             if len(data) != output.byte_length:
                 raise ValueError("service output length mismatch")
             return output, data
+
+    def request_for(self, key: str) -> RemoteRequest | None:
+        """Resolve the protocol's job ID/submission key to its immutable request."""
+        _identifier(key, "job key")
+        with self._lock:
+            row = self.db.execute("SELECT request FROM jobs WHERE key=?", (key,)).fetchone()
+            if row is None:
+                return None
+            raw = json.loads(row[0])
+            request = RemoteRequest.create(self.identity, key, raw["payload"])
+            if canonical_json_bytes(request.to_dict()) != row[0]:
+                raise ValueError("corrupt service request")
+            return request

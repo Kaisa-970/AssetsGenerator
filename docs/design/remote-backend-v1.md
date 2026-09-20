@@ -198,3 +198,9 @@ RemoteNodeAdapter.input_blobs 显式选择待上传的直接输入 ArtifactRef�
 RemoteServiceStore 在 running→succeeded 的事务内解析完整 outputs 描述列表，逐项核对服务端已保存 Blob 的摘要和长度；缺失 Blob、长度不符、重复 output_id 或任意额外 URL 字段均拒绝，事务回滚为 running。download 只按固定成功描述读取，并再次验证 Blob，不接受调用方提供存储路径。空 outputs 保留为协议允许的空结果；具体 Operator 是否允许由导入契约决定。
 
 服务存储/协议合跑 29 项通过，覆盖数据库重开后下载、发布拒绝回滚及数据库内容损坏后的下载拒绝；Ruff/mypy 通过。此层仅保证传输内容，不将 MIME 字符串当格式验证，图像/GLB 语义仍由 Core 导入端处理。HTTP 服务及真实模型仍未接入。
+
+## 本机耐久 HTTP 服务入口
+
+新增 create_remote_server，固定监听 127.0.0.1，提供 Blob PUT、job POST、按提交键/job ID 查询和按固定描述下载。请求体有大小及读取超时限制，严格解析 JSON 和请求身份，拒绝 Origin 请求；暂无认证，因此不提供公网绑定或生产部署入口。POST 仅登记 queued，不自动调用模型或重放 running 作业。
+
+真实本机 HTTP 测试关闭监听器和数据库后，使用原端口重开，核对同 job ID 与 running 状态；固定成功输出后再重开并通过既有客户端下载核验。重启是同进程中关闭/重新实例化服务，不是子进程 SIGKILL，不能证明 worker 中断恢复或掉电耐久性。服务/存储合跑 9 项通过，Ruff lint/format（191 文件）、mypy（96 源文件）通过。下一步接明确 worker 执行与进程级中断测试，真实模型仍未验收。
