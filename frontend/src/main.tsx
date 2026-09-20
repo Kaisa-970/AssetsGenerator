@@ -1,3 +1,4 @@
+import { ParameterForm } from "./ParameterForm";
 import React, {
   useEffect,
   useState,
@@ -677,6 +678,25 @@ function App() {
                           }
                         />
                       </label>
+                      <ParameterForm
+                        key={`${selected}:${node.adapter || ""}`}
+                        adapter={adapters.find(
+                          (a) => `${a.name}@${a.version}` === node.adapter,
+                        )}
+                        parameters={node.parameters || {}}
+                        onChange={(value) =>
+                          update((previous) => ({
+                            ...previous,
+                            nodes: {
+                              ...previous.nodes,
+                              [selected]: {
+                                ...previous.nodes[selected],
+                                parameters: value,
+                              },
+                            },
+                          }))
+                        }
+                      />
                       <label>
                         节点参数 · JSON
                         <textarea

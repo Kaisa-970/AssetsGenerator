@@ -67,6 +67,12 @@ class NodeEditorExecution:
         if owner.get("workbench_directory") != str(self.engine.repository.directory.resolve()):
             raise ContractError("run belongs to another editor directory")
 
+    def plan(self, run_id: str) -> dict[str, Any]:
+        """Read the verified persisted plan; never recover or dispatch a run."""
+        self._owned(run_id)
+        run = self.engine.repository.load(run_id)
+        return self.engine._plan(run).to_dict()
+
     def snapshot(self, run_id: str) -> dict[str, Any]:
         self._owned(run_id)
         run = self.engine.repository.load(run_id)

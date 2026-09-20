@@ -51,6 +51,9 @@ def test_async_start_frozen_plan_readonly_snapshots_and_review(tmp_path, monkeyp
             assert (
                 engine._plan(repo.load(run_id)).bindings["generate_asset"].parameters["seed"] == 42
             )
+            persisted = service.plan(run_id)
+            assert persisted["plan_id"] == started["run"]["dag"]["plan_id"]
+            assert persisted["bindings"]["generate_asset"]["parameters"]["seed"] == 42
             before = store.blob_path(repo.load(run_id).dag.plan).read_bytes()
             assert service.snapshot(run_id)["run"]["dag"]["revision"] == 0
             assert store.blob_path(repo.load(run_id).dag.plan).read_bytes() == before
@@ -163,6 +166,8 @@ def test_foreign_directory_cannot_read_mutate_or_export(tmp_path):
                 service = NodeEditorExecution(DagEngine(other, registry))
                 try:
                     assert service.list_runs() == []
+                    with pytest.raises(ContractError, match="another editor"):
+                        service.plan(run_id)
                     with pytest.raises(ContractError, match="another editor"):
                         service.snapshot(run_id)
                     with pytest.raises(ContractError, match="another editor"):

@@ -1,3 +1,4 @@
+import { RunGraph } from "./RunGraph";
 import { useEffect, useRef, useState } from "react";
 import type { Pipeline } from "./graph";
 
@@ -14,7 +15,11 @@ type NodeState = {
 type Run = {
   run_id: string;
   status: string;
-  dag?: { revision: number; node_states: Record<string, NodeState> };
+  dag?: {
+    plan_id?: string;
+    revision: number;
+    node_states: Record<string, NodeState>;
+  };
 };
 type Envelope = {
   run: Run;
@@ -43,6 +48,8 @@ export function ExecutionPanel({
   profile?: string;
   executionReason?: string;
 }) {
+  const [showReview, setShowReview] = useState(false);
+  const [showGraph, setShowGraph] = useState(false);
   const [imagePath, setImagePath] = useState("");
   const [runs, setRuns] = useState<{ run_id: string; status: string }[]>([]);
   const [selected, setSelected] = useState("");
@@ -65,6 +72,8 @@ export function ExecutionPanel({
     void refreshRuns().catch((error) => setMessage(String(error)));
   }, []);
   const choose = (id: string) => {
+    setShowGraph(false);
+    setShowReview(false);
     selectedRef.current = id;
     setSelected(id);
     setEnvelope(undefined);
@@ -192,6 +201,18 @@ export function ExecutionPanel({
       {run && (
         <>
           <p className="run-identity">{run.run_id}</p>
+          {run.dag?.plan_id && (
+            <button onClick={() => setShowGraph(true)}>查看固定运行图</button>
+          )}
+          {showGraph && run.dag?.plan_id && (
+            <RunGraph
+              runId={run.run_id}
+              planId={run.dag.plan_id}
+              states={run.dag.node_states}
+              onClose={() => setShowGraph(false)}
+            />
+          )}
+
           <strong>
             运行状态：{run.status}
             {envelope.busy ? " · 后台处理中" : ""}
@@ -266,6 +287,7 @@ export function ExecutionPanel({
                         !["localhost", "127.0.0.1"].includes(url.hostname)
                       )
                         throw Error("无效的本地审查地址");
+                      setShowReview(false);
                       setReview({
                         runId: run.run_id,
                         nodeId: id,
@@ -299,13 +321,38 @@ export function ExecutionPanel({
               {review?.runId === run.run_id &&
                 review.nodeId === id &&
                 state.status === "waiting_for_input" && (
-                  <a href={review.url} target="_blank" rel="noreferrer">
-                    打开 mask 审查页面 ↗
-                  </a>
+                  <>
+                    <button onClick={() => setShowReview(true)}>
+                      在工作台审查 mask
+                    </button>
+                    <a href={review.url} target="_blank" rel="noreferrer">
+                      打开 mask 审查页面 ↗
+                    </a>
+                  </>
                 )}
             </div>
           ))}
         </>
+      )}
+      {showReview && review && run?.run_id === review.runId && (
+        <div
+          className="run-graph-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label="mask 审查"
+        >
+          <header>
+            <strong>mask 审查 · {review.nodeId}</strong>
+            <button onClick={() => setShowReview(false)}>收起审查</button>
+          </header>
+          <p>确认将在下方审查页提交。收起此面板不会取消运行或撤销决定。</p>
+          <iframe
+            className="mask-review-frame"
+            title={`mask 审查 ${review.nodeId}`}
+            src={review.url}
+            referrerPolicy="no-referrer"
+          />
+        </div>
       )}
       {message && <p role="status">{message}</p>}
     </section>

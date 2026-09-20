@@ -179,6 +179,8 @@ def create_editor_server(editor: DraftEditor, port: int = 8767) -> ThreadingHTTP
                     if len(parts) == 4 and parts[1] == "outputs":
                         output = editor.execution.output(parts[0], parts[2], parts[3])
                         self.send(200, output.data, output.media_type)
+                    elif len(parts) == 2 and parts[1] == "plan":
+                        self.respond(200, editor.execution.plan(parts[0]))
                     elif len(parts) == 1:
                         self.respond(200, editor.execution.snapshot(parts[0]))
                     else:

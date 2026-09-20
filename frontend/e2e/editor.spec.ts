@@ -1,3 +1,5 @@
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { test, expect } from "@playwright/test";
 test("edits a template, saves layout, compiles and reloads a draft", async ({
   page,
@@ -171,6 +173,7 @@ test("execution uses frozen server runs and explicit revisioned actions", async 
 }) => {
   const calls: { path: string; body: any }[] = [];
   let status = "waiting_for_input";
+  let reviewUrl = "";
   const run = () => ({
     run_id: "dag_test",
     status,
@@ -207,7 +210,7 @@ test("execution uses frozen server runs and explicit revisioned actions", async 
     else if (path === "/api/drafts") body = { drafts: [] };
     else if (path === "/api/runs" && route.request().method() === "GET")
       body = { runs: [{ run_id: "dag_test", status }] };
-    else if (path.endsWith("/review")) body = { url: "http://127.0.0.1:9876/" };
+    else if (path.endsWith("/review")) body = { url: reviewUrl };
     else
       body = {
         run: run(),
@@ -216,6 +219,16 @@ test("execution uses frozen server runs and explicit revisioned actions", async 
       };
     await route.fulfill({ json: body });
   });
+  const reviewServer = createServer((_, response) => {
+    response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+    response.end("<p>真实审查组件边界</p><button>确认区域并生成</button>");
+  });
+  await new Promise<void>((resolve) =>
+    reviewServer.listen(0, "127.0.0.1", resolve),
+  );
+  reviewUrl = `http://127.0.0.1:${(reviewServer.address() as AddressInfo).port}/`;
+  reviewServer.unref();
+  page.on("close", () => reviewServer.close());
   await page.goto("/");
   await page.getByRole("button", { name: "运行", exact: true }).click();
   await expect(page.getByText("已配置模型：trellis-local")).toBeVisible();
@@ -233,7 +246,17 @@ test("execution uses frozen server runs and explicit revisioned actions", async 
     .click();
   await expect(
     page.getByRole("link", { name: "打开 mask 审查页面 ↗" }),
-  ).toHaveAttribute("href", "http://127.0.0.1:9876/");
+  ).toHaveAttribute("href", reviewUrl);
+  const beforeReviewCalls = calls.length;
+  await page.getByRole("button", { name: "在工作台审查 mask" }).click();
+  await expect(
+    page
+      .frameLocator('iframe[title="mask 审查 choose"]')
+      .getByText("真实审查组件边界"),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "收起审查" }).click();
+  await expect(page.getByRole("dialog", { name: "mask 审查" })).toHaveCount(0);
+  expect(calls).toHaveLength(beforeReviewCalls);
   await page.getByLabel("管线名称").fill("changed_draft");
   await expect(
     page.getByText("草稿已修改，与此运行的计划不同。"),
@@ -327,4 +350,169 @@ test("compiled graph can be ineligible for the current execution endpoint", asyn
   await expect(
     page.getByRole("button", { name: "启动新运行", exact: true }),
   ).toBeDisabled();
+});
+
+test("parameter form sends typed values and preserves other instances", async ({
+  page,
+}) => {
+  let submitted: any;
+  const node = {
+    operator: "generate@1",
+    adapter: "local@1",
+    inputs: {},
+    parameters: {},
+  };
+  await page.route("**/api/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === "/api/compile")
+      submitted = route.request().postDataJSON().pipeline;
+    await route.fulfill({
+      json:
+        path === "/api/catalog"
+          ? {
+              operators: {
+                "generate@1": {
+                  name: "generate",
+                  version: "1",
+                  inputs: {},
+                  outputs: {},
+                },
+              },
+              adapters: [
+                {
+                  name: "local",
+                  version: "1",
+                  operators: ["generate@1"],
+                  defaults: { seed: 42, size: "512", enabled: true },
+                  parameter_schema: {
+                    type: "object",
+                    properties: {
+                      seed: { type: "integer", minimum: 0 },
+                      size: { type: "string", enum: ["512", "1024"] },
+                      enabled: { type: "boolean" },
+                    },
+                  },
+                },
+              ],
+              templates: [
+                {
+                  id: "forms",
+                  label: "forms",
+                  pipeline: {
+                    pipeline: "forms",
+                    version: "1",
+                    inputs: {},
+                    nodes: {
+                      first: node,
+                      second: { ...node, parameters: { seed: 7 } },
+                    },
+                  },
+                },
+              ],
+            }
+          : path === "/api/compile"
+            ? { ok: true }
+            : { drafts: [] },
+    });
+  });
+  await page.goto("/");
+  page.on("dialog", (d) => d.accept());
+  await page.getByRole("button", { name: "forms", exact: true }).click();
+  await page.locator('.react-flow__node[data-id="first"]').click();
+  await expect(page.getByLabel("参数 seed", { exact: true })).toHaveValue("42");
+  await page.getByLabel("参数 seed", { exact: true }).fill("1.5");
+  await page.getByLabel("参数 seed", { exact: true }).press("Tab");
+  await expect(page.getByRole("alert")).toContainText("尚未应用");
+  await page.getByLabel("参数 seed", { exact: true }).fill("99");
+  await page.getByLabel("参数 seed", { exact: true }).press("Tab");
+  await page.getByLabel("参数 size", { exact: true }).selectOption("1");
+  await page.getByLabel("参数 enabled", { exact: true }).selectOption("false");
+  await page.getByRole("button", { name: "编译校验", exact: true }).click();
+  await expect.poll(() => submitted?.nodes.first.parameters.seed).toBe(99);
+  expect(submitted.nodes.first.parameters).toEqual({
+    seed: 99,
+    size: "1024",
+    enabled: false,
+  });
+  expect(submitted.nodes.second.parameters).toEqual({ seed: 7 });
+});
+
+test("fixed run graph displays persisted plan instead of edited draft", async ({
+  page,
+}) => {
+  await page.route("**/api/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    const plan = {
+      plan_id: "fixed-id",
+      static_plan: {
+        pipeline_name: "fixed",
+        inputs: {},
+        nodes: [{ node_id: "original", operator: "copy@1", inputs: {} }],
+        topological_order: ["original"],
+        dependencies: { original: [] },
+      },
+    };
+    await route.fulfill({
+      json:
+        path === "/api/catalog"
+          ? {
+              operators: {
+                "copy@1": {
+                  name: "copy",
+                  version: "1",
+                  inputs: {},
+                  outputs: {},
+                },
+              },
+              adapters: [],
+              templates: [],
+              execution_enabled: true,
+            }
+          : path === "/api/runs"
+            ? { runs: [{ run_id: "dag_saved", status: "succeeded" }] }
+            : path.endsWith("/plan")
+              ? plan
+              : path === "/api/runs/dag_saved"
+                ? {
+                    run: {
+                      run_id: "dag_saved",
+                      status: "succeeded",
+                      dag: {
+                        revision: 2,
+                        plan_id: "fixed-id",
+                        node_states: { original: { status: "succeeded" } },
+                      },
+                    },
+                  }
+                : { drafts: [] },
+    });
+  });
+  await page.goto("/");
+  await page.locator(".catalog-item").click();
+  const draftCanvas = page.locator("main.canvas");
+  const draftNode = draftCanvas.locator('.react-flow__node[data-id="copy"]');
+  await expect(draftNode).toBeVisible();
+  const viewport = await draftCanvas
+    .locator(".react-flow__viewport")
+    .getAttribute("style");
+  await page.getByLabel("管线名称").fill("changed_draft");
+  await page.getByRole("button", { name: "运行", exact: true }).click();
+  await page.getByLabel("选择运行").selectOption("dag_saved");
+  await page.getByRole("button", { name: "查看固定运行图" }).click();
+  const dialog = page.getByRole("dialog", { name: "固定运行图" });
+  await expect(
+    dialog.locator('.react-flow__node[data-id="original"]'),
+  ).toContainText("succeeded");
+  await dialog.locator(".react-flow__controls-zoomout").click();
+  await expect(draftNode).toBeAttached();
+  await expect(
+    draftCanvas.locator('.react-flow__node[data-id="original"]'),
+  ).toHaveCount(0);
+  await expect(draftCanvas.locator(".react-flow__viewport")).toHaveAttribute(
+    "style",
+    viewport!,
+  );
+  await page.getByRole("button", { name: "关闭运行图" }).click();
+  await expect(draftNode).toBeVisible();
+  await expect(page.getByLabel("管线名称")).toHaveValue("changed_draft");
 });
