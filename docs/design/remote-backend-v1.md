@@ -18,7 +18,8 @@
 当前目录是启动配置，不是自动服务发现、在线注册或部署管理。新配置入口的真实浏览器
 全链已通过 [正常执行验收](../reports/sam-only-browser-real-complete.md)；
 真实 TRELLIS.2 执行器中断与孤儿门控已完成[独立验收](../reports/trellis-executor-interruption.md)；
-HTTP 服务异常退出、父 DAG 重试到后续成功发布仍未闭环，不能据此声称任意中断均可恢复。
+父 DAG 显式重试到成功发布已通过[真实 API 脚本验收](../reports/parent-dag-retry-real.md)。
+HTTP 服务异常退出及采样阶段中断仍未独立验收，不能据此声称任意中断均可恢复。
 验证与使用见 [服务指南](../guides/remote-shape-service.md)、
 [真实 shape](../reports/remote-shape-real-smoke.md)、
 [选区发布链](../reports/remote-selected-trellis-fallback-real-smoke.md) 和
