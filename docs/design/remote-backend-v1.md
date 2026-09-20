@@ -184,3 +184,11 @@ RemoteNodeAdapter.input_blobs 显式选择待上传的直接输入 ArtifactRef�
 在导入前、导入完成但父成功快照保存前分别注入 BaseException 模拟进程中断；关闭并重开客户端 Repository 后完成同一个 job/attempt，POST 和上传均只有一次。后一个窗口允许重新执行尚未固定到父快照的确定性导入；已经固定的成功输出损坏仍由前一轮回归保证只阻塞、不重建。此次中断由测试注入，不声称执行了真实 SIGKILL。
 
 验证记录：远程执行/HTTP/日志/桥接/绑定/既有引擎合跑 78 项通过；fixture 增加终态不重复处理条件后，远程执行单文件再次 8 项通过。两轮重叠不相加。Ruff lint/format、mypy（94 源文件）通过；无真实模型/GPU 或服务端重启验收。
+
+## 服务端耐久存储基础
+
+新增内部 RemoteServiceStore，使用 SQLite WAL 与 synchronous=FULL 保存固定服务身份、提交键/完整请求/JobRecord、按摘要校验的 Blob。提交以事务处理，同键同请求返回原作业，同键异请求拒绝；queued→running 使用事务内状态比较，同库多个连接只能认领一次。running→succeeded/failed 后不可再次改写终态。无效终态验证失败会回滚，仍保持 running。
+
+重开数据库不重置 running，不自动执行排队或运行中作业；服务监督器仍需明确处理进程身份与中断。此层不提供 HTTP、认证、容量管理或模型执行，成功结果描述尚未绑定服务端输出 Blob，不能单凭该存储层宣称远程模型服务可用。当前数据库重开测试也不等同真实服务 SIGKILL 或掉电验收。
+
+本轮服务存储、协议和 HTTP 合跑 45 项通过；Ruff lint/format（189 文件）、mypy（95 源文件）通过。包含数据库重开、双连接并发认领、同键冲突、服务身份变化、无效终态事务回滚和 Blob 摘要拒绝。无 GPU 或真实远程模型验证。
