@@ -14,8 +14,12 @@
 
 相关证据见 [B2 实现记录](node-editor-b2.md)、[真实单图画布验收](node-editor-b2-real-smoke.md)、[多视图迁移](generic-dag-multi-view.md)。真实运行数据位于各报告声明的仓库外目录，不提交模型、Store 或生成资产。
 
-下一阶段先补实际结果预览与剩余交互验收，再进入远程 Backend。远程部分必须先验证幂等 submission、job lookup、响应丢失和超时状态；不能把现有本地进程退出规则直接套到远程作业，也不能用一次 HTTP 200 代替模型身份及输出证据验收。
+实际结果预览及其交互回归已经补齐。当前进入远程 Backend 协议与持久化基础实施：幂等 submission、job lookup、响应丢失、超时、输入上传及固定结果下载已有本机 HTTP 测试；DAG remote 调度、输出语义导入及真实模型服务仍未开放。下一切片为远程 CPU 菱形 DAG，状态与验收规则见[远程 Backend 设计](../design/remote-backend-v1.md)。不能把现有本地进程退出规则直接套到远程作业，也不能用一次 HTTP 200 代替模型身份及输出证据验收。
 
 ## 本次回归
 
 在多图上传提交 `1abadca` 后启动完整 Python 回归；测试过程中只有前端格式整理及文档变化，没有修改 Python 实现。单次结果 **961 passed in 249.86s**。格式整理后的前端 Playwright **12 passed**，TypeScript/Vite 构建通过；Ruff lint/format（174 文件）、mypy（87 源码文件）、Prettier 指定三文件检查通过。此轮未执行 GPU，不能替代上表未完成的验收。
+
+## 远程协议基础加入后的全量回归
+
+在 `9e0d018`（严格远程 HTTP JSON 解析）上执行单次完整 Python 测试：**1026 passed in 235.85s**。测试期间只修改设计与状态文档，未修改 Python 实现。仓库级 Ruff format（184 文件）、Ruff lint、mypy（92 源文件）、sdist/wheel 构建及 git diff --check 通过。此次没有重跑前端浏览器测试或真实 GPU 推理；远程调度与真实服务仍未验收。
