@@ -176,3 +176,22 @@ GET /object_info/<class_type>，检查 workflow 所需节点类存在，并检�
 deployment_verified=false：节点声明不能证明模型文件可用、输入语义兼容、
 自定义节点身份可靠或推理成功。它是配置诊断，不能替代真实 workflow 验收，
 也不参与已有运行恢复或自动授权重试。
+
+### 随仓库提供的图片复制配置
+
+可直接使用 examples/comfy-copy-profile.json 与 examples/comfy-copy-editor.json，
+无需从文档复制 JSON。两者配合 pipelines/comfy_image_chain_v1.yaml：
+显式 PNG 编码 → 图片复制 → 图片复制。两个 Backend 名称指向同一服务，
+用于先核对上传、执行、下载和连接关系，不加载生成模型，也不产生新的 3D 资产。
+
+先按目标部署调整 profile 的上游 endpoint；编辑器 JSON 的 endpoint 是外层网关。
+可先离线校验：
+
+```bash
+assets-generator comfy-image validate --profile examples/comfy-copy-profile.json
+```
+
+目标 ComfyUI 服务已启动时，再执行 preflight、comfy-service serve 和 node-editor。
+网关作业仍需显式 execute-next，完成后在画布点击恢复以导入结果、推进下一节点。
+服务不存在时 preflight 失败不代表可以重新提交已有作业。该样例已通过本地配置与
+DAG 绑定测试，尚未在真实 ComfyUI 部署执行，不作为真实验收报告。

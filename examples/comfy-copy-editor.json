@@ -1,0 +1,13 @@
+{
+  "default_profile": "comfy_first",
+  "profiles": {
+    "comfy_first": {
+      "endpoint": "http://127.0.0.1:8771",
+      "profile": "comfy-copy-profile.json"
+    },
+    "comfy_second": {
+      "endpoint": "http://127.0.0.1:8771",
+      "profile": "comfy-copy-profile.json"
+    }
+  }
+}

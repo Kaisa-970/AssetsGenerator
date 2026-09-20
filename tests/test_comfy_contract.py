@@ -28,3 +28,30 @@ def test_comfy_chain_rejects_implicit_rgba_conversion():
     )
     with pytest.raises(ContractError):
         compile_pipeline(pipeline, load_default_operator_specs())
+
+
+def test_shipped_copy_example_binds_without_network():
+    import json
+
+    from assets_generator.comfy_profile import ComfyImageProfile
+    from assets_generator.dag_adapters import AdapterRegistry
+    from assets_generator.dag_comfy_profiles import register_comfy_profiles
+
+    config = Path("examples/comfy-copy-editor.json")
+    registry = AdapterRegistry()
+    register_comfy_profiles(registry, json.loads(config.read_text()), base=config.parent)
+    bound = registry.bind_plan(
+        compile_pipeline(
+            load_pipeline(Path("pipelines/comfy_image_chain_v1.yaml")),
+            load_default_operator_specs(),
+            require_explicit_joins=True,
+        )
+    )
+    profile = ComfyImageProfile.load(config.parent / "comfy-copy-profile.json")
+    assert bound.bindings["first"].parameters["backend_digest"] == profile.identity.backend_digest
+    assert bound.bindings["second"].parameters["backend_digest"] == profile.identity.backend_digest
+    assert bound.bindings["encode"].adapter == "encode_png@1"
+    assert {node["class_type"] for node in profile.to_dict()["prompt"].values()} == {
+        "LoadImage",
+        "SaveImage",
+    }

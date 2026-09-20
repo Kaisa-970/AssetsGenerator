@@ -1,0 +1,18 @@
+{
+  "schema": "comfy-image-profile@1",
+  "service_id": "comfy-copy-local",
+  "endpoint": "http://127.0.0.1:8188",
+  "prompt": {
+    "1": {"class_type": "LoadImage", "inputs": {"image": "placeholder.png"}},
+    "2": {"class_type": "SaveImage", "inputs": {"images": ["1", 0], "filename_prefix": "AssetsGenerator"}}
+  },
+  "parameter_schema": {"type": "object", "properties": {}},
+  "defaults": {},
+  "parameter_targets": {},
+  "image_targets": {"image": ["1", "image"]},
+  "output": {"node": "2", "index": 0, "mode": "RGB"},
+  "deployment_claims": {
+    "revision": "unverified",
+    "models": "none declared; image copy only"
+  }
+}
