@@ -96,3 +96,66 @@ def test_failed_durable_write_never_sends(tmp_path, http_server):
         with pytest.raises(RuntimeError, match="healthy"):
             journal.submit(request())
         assert state["submissions"] == 0
+
+
+@pytest.mark.parametrize("damage", ["missing", "corrupt", "reservation_missing"])
+def test_missing_or_corrupt_journal_never_recreates_submission(tmp_path, http_server, damage):
+    state, client = http_server
+    store = LocalArtifactStore(tmp_path / "store")
+    directory = tmp_path / "journal"
+    with WorkbenchRepository(store, directory) as repo:
+        journal = RemoteSubmission(repo, client)
+        journal.submit(request())
+        if damage == "missing":
+            journal._path(request()).unlink()
+        elif damage == "reservation_missing":
+            journal._reservation(request()).unlink()
+        else:
+            journal._path(request()).write_text("{broken")
+    with WorkbenchRepository(store, directory) as repo:
+        journal = RemoteSubmission(repo, client)
+        with pytest.raises((ValueError, OSError)):
+            journal.submit(request())
+        assert state["submissions"] == 1
+
+
+def test_response_received_before_observation_write_failure_recovers(tmp_path, http_server):
+    state, client = http_server
+    store = LocalArtifactStore(tmp_path / "store")
+    directory = tmp_path / "journal"
+    writes = []
+
+    def fail(operation, path):
+        if operation == "publish" and path.parent.name == "remote_submissions":
+            writes.append(path)
+            if len(writes) == 3:
+                raise OSError("crash before observed publication")
+
+    with WorkbenchRepository(store, directory, io=DurableIO(fail)) as repo:
+        journal = RemoteSubmission(repo, client)
+        with pytest.raises(OSError):
+            journal.submit(request())
+        assert state["submissions"] == 1
+    with WorkbenchRepository(store, directory) as repo:
+        journal = RemoteSubmission(repo, client)
+        assert journal.recover(request()).job_id == "job-one"
+        assert journal.submit(request()).job_id == "job-one"
+        assert state["submissions"] == 1
+
+
+def test_reservation_survives_crash_before_journal_creation(tmp_path, http_server):
+    state, client = http_server
+    store = LocalArtifactStore(tmp_path / "store")
+    directory = tmp_path / "journal"
+
+    def fail(operation, path):
+        if operation == "publish" and path.parent.name == "remote_submissions":
+            raise OSError("journal unavailable")
+
+    with WorkbenchRepository(store, directory, io=DurableIO(fail)) as repo:
+        with pytest.raises(OSError):
+            RemoteSubmission(repo, client).submit(request())
+    with WorkbenchRepository(store, directory) as repo:
+        with pytest.raises(ValueError, match="refusing to recreate"):
+            RemoteSubmission(repo, client).submit(request())
+        assert state["submissions"] == 0

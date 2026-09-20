@@ -25,7 +25,19 @@ class RemoteSubmission:
         key = sha256_bytes(request.submission_key.encode()).split(":")[1]
         return self.repository.directory / "remote_submissions" / f"{key}.json"
 
+    def _reservation(self, request: RemoteRequest) -> Path:
+        return self.repository.directory / "remote_reservations" / self._path(request).name
+
+    def _reservation_value(self, request: RemoteRequest) -> dict[str, Any]:
+        return {
+            "schema_version": "1",
+            "endpoint": self.client.endpoint,
+            "request": request.to_dict(),
+        }
+
     def _load(self, request: RemoteRequest) -> dict[str, Any]:
+        if read_json(self._reservation(request)) != self._reservation_value(request):
+            raise ValueError("remote reservation identity conflict")
         record = read_json(self._path(request))
         if (
             set(record) != {"schema_version", "endpoint", "request", "phase", "job"}
@@ -59,6 +71,16 @@ class RemoteSubmission:
             if self._path(request).exists():
                 self._load(request)
                 return
+            reservation = self._reservation(request)
+            if reservation.exists():
+                raise ValueError("reserved remote journal missing; refusing to recreate")
+            self.repository._mutate(
+                lambda: self.repository.io.write(
+                    reservation,
+                    canonical_json_bytes(self._reservation_value(request)),
+                    exclusive=True,
+                )
+            )
             self._write(
                 request,
                 {
