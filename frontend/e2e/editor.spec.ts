@@ -2150,3 +2150,56 @@ test("repeated catalog additions keep distinct instances clear of existing nodes
       ).toBe(true);
     }
 });
+
+test("recovery evidence diagnostics expose exact references without dispatch", async ({
+  page,
+}) => {
+  let mutations = 0;
+  const bad = { "sha256:missing-output": "blob not found" };
+  await page.route("**/api/**", (route) => {
+    if (route.request().method() !== "GET") mutations++;
+    const path = new URL(route.request().url()).pathname;
+    return route.fulfill({
+      json:
+        path === "/api/catalog"
+          ? {
+              operators: {},
+              adapters: [],
+              templates: [],
+              execution_enabled: true,
+            }
+          : path === "/api/drafts"
+            ? { drafts: [] }
+            : path === "/api/runs"
+              ? {
+                  runs: [{ run_id: "dag_blocked", status: "recovery_blocked" }],
+                }
+              : {
+                  run: {
+                    run_id: "dag_blocked",
+                    status: "recovery_blocked",
+                    dag: {
+                      revision: 3,
+                      node_states: {},
+                      invalid_evidence: bad,
+                      unassigned_evidence_blocks: bad,
+                    },
+                  },
+                },
+    });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "运行", exact: true }).click();
+  await page
+    .getByLabel("选择运行", { exact: true })
+    .selectOption("dag_blocked");
+  await expect(
+    page.getByRole("alert", { name: "未定位的证据阻塞" }),
+  ).toContainText("sha256:missing-output");
+  const summary = page.getByText("已登记的证据问题", { exact: true });
+  await summary.click();
+  expect(
+    JSON.parse(await summary.locator("..").locator("pre").innerText()),
+  ).toEqual(bad);
+  expect(mutations).toBe(0);
+});

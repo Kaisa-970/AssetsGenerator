@@ -36,6 +36,8 @@ type Run = {
   dag?: {
     plan_id?: string;
     revision: number;
+    invalid_evidence?: Record<string, string>;
+    unassigned_evidence_blocks?: Record<string, string>;
     node_states: Record<string, NodeState>;
   };
 };
@@ -555,6 +557,23 @@ export function ExecutionPanel({
               <p>草稿已修改，与此运行的计划不同。</p>
             )}
           {envelope.error && <p role="alert">{envelope.error}</p>}
+          {!!Object.keys(run.dag?.invalid_evidence || {}).length && (
+            <details>
+              <summary>已登记的证据问题</summary>
+              <p>
+                这些记录来自恢复校验，可能包含历史问题；当前是否阻塞以节点和运行状态为准。展开不会修复文件或执行模型。
+              </p>
+              <pre>{JSON.stringify(run.dag?.invalid_evidence, null, 2)}</pre>
+            </details>
+          )}
+          {!!Object.keys(run.dag?.unassigned_evidence_blocks || {}).length && (
+            <div role="alert" aria-label="未定位的证据阻塞">
+              <p>以下证据问题尚未定位到具体节点，整个运行仍被阻塞。</p>
+              <pre>
+                {JSON.stringify(run.dag?.unassigned_evidence_blocks, null, 2)}
+              </pre>
+            </div>
+          )}
           <button
             disabled={executing}
             onClick={() =>
