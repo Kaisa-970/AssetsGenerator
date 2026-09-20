@@ -1,6 +1,6 @@
 # 本机远程 shape 服务实验入口
 
-当前供开发验收使用，尚未完成真实 GPU 服务验收，也未接编辑器服务目录。复用已有 TripoSR/TRELLIS2 环境和模型，不安装 PyTorch 或下载权重。
+当前供开发验收使用。已完成 [TRELLIS.2 远程 shape GPU smoke](../reports/remote-shape-real-smoke.md)，尚未接编辑器服务目录；五节点完整资产链另见 [真实运行报告](../reports/remote-asset-chain-real-smoke.md)。这些 smoke 不代表质量验收。复用已有 TripoSR/TRELLIS2 环境和模型，不安装 PyTorch 或下载权重。
 
 配置 JSON 只包含 `profiles`，每个 profile 的字段沿用 workbench shape 配置（backend/python/repo/model，以及可选模型参数）；不包含 `sam`。所有资源路径指向现有本地资源，TripoSR 仍要求 frame_validation。
 
@@ -19,3 +19,15 @@ PYTHONPATH=src python -m assets_generator.remote_shape_cli serve \
 `observe --job <SUBMISSION_KEY>` 重新探测原进程身份。只有确认进程组退出才释放同数据库占用，不自动改写原作业状态或补跑。缺失身份仍阻塞。每个命令当前都会重新核验 profile，模型较大时启动较慢。
 
 同一数据库只允许一个未确认退出的模型进程；不同数据库之间尚无 GPU 互斥。当前仅监听 127.0.0.1，无公网认证，不应通过反向代理开放公网。Store、数据库、模型、输入和输出均放仓库外。
+
+
+模块化资产链示例为 `pipelines/remote_shape_asset_v1.yaml`，输入是已确认的 RGBA Artifact。
+客户端可信 registry 需注册 `RemoteShapeAdapter(endpoint, identity)`、`CanonicalizeAdapter()`、
+`GeometryValidationAdapter()`、`ShapeAssetAssemblyAdapter()`、`AssetExportAdapter()`。
+用 `load_pipeline()` 加载 YAML，`compile_pipeline(..., require_explicit_joins=True)` 编译，
+随后 `registry.bind_plan()`、`DagEngine.create()` 和 `drain()`。
+
+首次 drain 提交服务作业并保持 running。服务端 execute 完成后再次 drain，Core 才会继续
+规范化、QA、组装和导出。`publish.outputs.release` 是 Store 内 AssetRelease，
+`publish.outputs.glb` 是可读取的 GLB Artifact；尚未自动生成下载目录。
+关闭 HTTP 服务后，对已成功运行调用 recover 应仅核验本地证据，不重新推理。
