@@ -1381,65 +1381,80 @@ test("RGBA canvas upload uses the explicit endpoint and preserves returned refer
   expect(starts).toHaveLength(1);
 });
 
-test("loading a saved run configuration only changes the draft", async ({
-  page,
-}) => {
-  let writes = 0;
-  const pipeline = {
-    pipeline: "original_run",
-    version: "1",
-    inputs: { image: { kind: "rgb_image" } },
-    nodes: {},
-  };
-  await page.route("**/api/**", async (route) => {
-    const path = new URL(route.request().url()).pathname;
-    if (route.request().method() === "POST") writes++;
-    let body: unknown = {};
-    if (path === "/api/catalog")
-      body = {
-        operators: {},
-        adapters: [],
-        templates: [],
-        execution_enabled: true,
-      };
-    else if (path === "/api/drafts") body = { drafts: [] };
-    else if (path === "/api/runs")
-      body = { runs: [{ run_id: "dag_original", status: "succeeded" }] };
-    else if (path.endsWith("/draft"))
-      body = {
-        source_run_id: "dag_original",
-        source_plan_id: "original-plan",
-        pipeline,
-      };
-    else
-      body = {
-        run: {
-          run_id: "dag_original",
-          status: "succeeded",
-          dag: { plan_id: "original-plan", revision: 1, node_states: {} },
-        },
-      };
-    await route.fulfill({ json: body });
+for (const editDuringLoad of [false, true]) {
+  test(`loading a saved run configuration preserves intent (edited=${editDuringLoad})`, async ({
+    page,
+  }) => {
+    let writes = 0;
+    let release: (() => void) | undefined;
+    const pipeline = {
+      pipeline: "original_run",
+      version: "1",
+      inputs: { image: { kind: "rgb_image" } },
+      nodes: {},
+    };
+    await page.route("**/api/**", async (route) => {
+      const path = new URL(route.request().url()).pathname;
+      if (route.request().method() === "POST") writes++;
+      let body: unknown = {};
+      if (path === "/api/catalog")
+        body = {
+          operators: {},
+          adapters: [],
+          templates: [],
+          execution_enabled: true,
+        };
+      else if (path === "/api/drafts") body = { drafts: [] };
+      else if (path === "/api/runs")
+        body = { runs: [{ run_id: "dag_original", status: "succeeded" }] };
+      else if (path.endsWith("/draft")) {
+        if (editDuringLoad)
+          await new Promise<void>((resolve) => {
+            release = resolve;
+          });
+        body = {
+          source_run_id: "dag_original",
+          source_plan_id: "original-plan",
+          pipeline,
+        };
+      } else
+        body = {
+          run: {
+            run_id: "dag_original",
+            status: "succeeded",
+            dag: { plan_id: "original-plan", revision: 1, node_states: {} },
+          },
+        };
+      await route.fulfill({ json: body });
+    });
+    await page.goto("/");
+    await page.getByRole("button", { name: "运行", exact: true }).click();
+    await page
+      .getByLabel("选择运行", { exact: true })
+      .selectOption("dag_original");
+    page.once("dialog", (dialog) => dialog.dismiss());
+    await page
+      .getByRole("button", { name: "将配置载入画布", exact: true })
+      .click();
+    await expect(
+      page.getByRole("button", { name: "将配置载入画布", exact: true }),
+    ).toBeVisible();
+    page.once("dialog", (dialog) => dialog.accept());
+    await page
+      .getByRole("button", { name: "将配置载入画布", exact: true })
+      .click();
+    if (editDuringLoad) {
+      await expect.poll(() => !!release).toBe(true);
+      await page.getByLabel("管线名称").fill("new_local_config");
+      release!();
+      await expect(page.getByText(/读取运行配置期间画布已修改/)).toBeVisible();
+      await expect(page.getByLabel("管线名称")).toHaveValue("new_local_config");
+    } else {
+      await expect(page.locator('input[value="original_run"]')).toBeVisible();
+    }
+    expect(writes).toBe(0);
   });
-  await page.goto("/");
-  await page.getByRole("button", { name: "运行", exact: true }).click();
-  await page
-    .getByLabel("选择运行", { exact: true })
-    .selectOption("dag_original");
-  page.once("dialog", (dialog) => dialog.dismiss());
-  await page
-    .getByRole("button", { name: "将配置载入画布", exact: true })
-    .click();
-  await expect(
-    page.getByRole("button", { name: "将配置载入画布", exact: true }),
-  ).toBeVisible();
-  page.once("dialog", (dialog) => dialog.accept());
-  await page
-    .getByRole("button", { name: "将配置载入画布", exact: true })
-    .click();
-  await expect(page.locator('input[value="original_run"]')).toBeVisible();
-  expect(writes).toBe(0);
-});
+}
 
 test("image outputs preview on demand and report errors without dispatch", async ({
   page,

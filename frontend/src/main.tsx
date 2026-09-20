@@ -566,6 +566,13 @@ function App() {
               <ExecutionPanel
                 pipeline={pipeline}
                 onLoadDraft={(draft) => {
+                  if (
+                    pipelineRef.current !== pipeline ||
+                    layoutRef.current !== layout
+                  )
+                    throw Error(
+                      "读取运行配置期间画布已修改，保留当前编辑；请重新载入。",
+                    );
                   loadPipeline(draft);
                   setTab("plan");
                 }}
