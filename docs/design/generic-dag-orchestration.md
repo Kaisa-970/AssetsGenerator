@@ -37,7 +37,7 @@ Artifact Store + BuildRun + Provenance + QualityReport
 - 单图 SAM/选择/生成、多视图 geometry/reconstruction/release 已有 DAG Adapter。原 Python Workflow 作为算子内部子流程复用，固定工作台入口仍保留。
 - Artifact Store、父子 BuildRun、provenance、决定回执与进程门控负责持久化和恢复；关系 validator 校验观测、相机和空间输入之间的关系。
 - React Flow 可编辑草稿、编译、执行单图、展示固定运行图、基础参数表单及嵌入 mask 审查。
-- 本地 profile 可按节点选择，名称及身份进入绑定和 provenance；多实例共享选区的独立发布已有 CPU 验证及[同一 RGBA 的双真实模型 API 验收](../reports/dual-shape-real.md)，尚未验收双模型浏览器交互。
+- 本地 profile 可按节点选择，名称及身份进入绑定和 provenance；多实例共享选区的独立发布已有 CPU 验证及[同一 RGBA 的双真实模型 API 验收](../reports/dual-shape-real.md)，另已通过[双模型浏览器交互验收](../reports/dual-shape-browser-real.md)。
 
 浏览器图像上传已接入，输入持久化为 Artifact 后显式启动。画布多视图已接入已有 ObservationBundle 引用的执行入口，并完成真实 DA3/Open3D 双视图功能 smoke；多视图浏览器逐张上传 RGB、组包、真实重建及完成后服务重启已通过[独立验收](../reports/multiview-browser-upload-real.md)；HTTP shape 服务已通过受信配置接入；任意 HTTP 模型协议仍需专用适配；实验性 ComfyUI 图片复合节点及 CPU 浏览器链已接入，真实部署尚未验收；复杂嵌套参数仍使用 JSON。运行创建已支持耐久幂等回执及浏览器原请求显式重试；重复 POST 不自动恢复或派发已有运行。真实 SAM→人工选区→远程 TRELLIS.2→发布链已完成一次 smoke（当前 TRELLIS.2 后处理采用无纹理几何 fallback）；完整 B2 和远程 Milestone C 仍需后续验收。
 

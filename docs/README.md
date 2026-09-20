@@ -133,3 +133,5 @@
 - [同一 RGBA 的双真实 Shape Backend 验收](reports/dual-shape-real.md)
 
 - [双服务比较管线的 CPU 浏览器验收](reports/shape-compare-browser-cpu.md)
+
+- [双真实 Shape Backend 浏览器全链验收](reports/dual-shape-browser-real.md)

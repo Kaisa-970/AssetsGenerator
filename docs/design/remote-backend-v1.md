@@ -12,7 +12,7 @@
 | 真实模型 | TRELLIS.2 shape 和 SAM→选区→发布链脚本 smoke；一次 CuMesh 后处理采用无纹理 fallback，不代表质量验收 |
 | 服务目录与 UI | 启动时 `--remote-config` 注册可信 profiles，画布逐节点选择；固定部署参数随切换清除，后端重新绑定 |
 | 本地分割与远程生成 | `--proposal-config` 只加载 SAM，无本地 Shape 依赖；真实 SAM 启动核验及 CPU 发布/恢复回归 |
-| 双服务组合 | 两个 HTTP 服务的 CPU 独立作业、10 节点双发布与离线恢复；同一 RGBA 的 TRELLIS.2/TripoSR 双发布已通过[真实 API 验收](../reports/dual-shape-real.md)，浏览器双模型操作待验收 |
+| 双服务组合 | 两个 HTTP 服务的 CPU 独立作业、10 节点双发布与离线恢复；同一 RGBA 的 TRELLIS.2/TripoSR 双发布已通过[真实 API 验收](../reports/dual-shape-real.md)，[浏览器双模型操作](../reports/dual-shape-browser-real.md)亦已验收 |
 | ComfyUI | 实验性图片复合节点、服务边界及浏览器 CPU 协议链已实现；内部来源明确未核实，真实部署/模型验收未完成，见 [专项设计](comfyui-composite-backend.md) |
 
 当前目录是启动配置，不是自动服务发现、在线注册或部署管理。新配置入口的真实浏览器

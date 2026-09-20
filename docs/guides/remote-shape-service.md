@@ -321,5 +321,5 @@ node frontend/smoke/shape-compare.cjs <CONFIG>.json complete
 再恢复一次并比较完整节点和输出记录。它不替用户批准人工选择，也不评价模型质量。
 
 本脚本已通过实际编辑器与双 HTTP 服务的 CPU Backend 浏览器 smoke，
-尚未使用本脚本验收两个真实模型。API 层的双真实模型证据见
-[双模型报告](../reports/dual-shape-real.md)，两者不能合称真实浏览器全链验收。
+随后同一脚本已完成 TRELLIS.2/TripoSR 的[真实浏览器全链验收](../reports/dual-shape-browser-real.md)。
+API 层的独立证据见[双模型报告](../reports/dual-shape-real.md)。
