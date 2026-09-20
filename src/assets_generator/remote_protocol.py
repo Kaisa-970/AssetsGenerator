@@ -2,12 +2,32 @@
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 from typing import Any
 
 from .compiled_plan import digest
 from .serialization import canonical_json_bytes
+
+
+def decode_remote_json(data: bytes) -> Any:
+    """Reject ambiguous duplicate keys and non-JSON numeric constants at the wire boundary."""
+
+    def pairs(items: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, value in items:
+            if key in result:
+                raise ValueError("duplicate remote JSON field")
+            result[key] = value
+        return result
+
+    def constant(value: str) -> Any:
+        raise ValueError("nonfinite remote JSON number")
+
+    value = json.loads(data, object_pairs_hook=pairs, parse_constant=constant)
+    canonical_json_bytes(value)  # Also rejects numeric overflow such as 1e999.
+    return value
 
 
 def _identifier(value: object, label: str) -> str:

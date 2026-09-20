@@ -88,3 +88,26 @@ def test_terminal_results_are_copied_and_not_accepted_as_artifacts():
 def test_reject_noncanonical_payload(payload):
     with pytest.raises(ValueError):
         RemoteRequest(request().identity, "key", payload)
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        b'{"a":1,"a":2}',
+        b'{"a":NaN}',
+        b'{"a":Infinity}',
+        b'{"a":1e999}',
+        b'{"nested":{"a":0,"a":1}}',
+    ],
+)
+def test_strict_wire_json_rejects_ambiguity(raw):
+    from assets_generator.remote_protocol import decode_remote_json
+
+    with pytest.raises(ValueError):
+        decode_remote_json(raw)
+
+
+def test_strict_wire_json_preserves_valid_nested_values():
+    from assets_generator.remote_protocol import decode_remote_json
+
+    assert decode_remote_json(b'{"nested":[true,null,42,1.5]}') == {"nested": [True, None, 42, 1.5]}

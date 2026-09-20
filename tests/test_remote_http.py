@@ -75,6 +75,14 @@ def server():
             self.respond(202, state["jobs"][key])
 
         def do_GET(self):
+            if "raw_response" in state:
+                body = state["raw_response"]
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
             if state["mode"] == "timeout":
                 state["release"].wait(2)
                 return
@@ -278,3 +286,20 @@ def test_content_addressed_upload_checks_local_bytes_and_remote_receipt(server):
     state["bad_receipt"] = True
     with pytest.raises(RemoteTransportUnknown, match="receipt"):
         client.upload_blob(identity, data, digest)
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        b'{"job_id":"one","job_id":"two"}',
+        b'{"value":NaN}',
+        b'{"value":1e999}',
+        b'{"nested":{"x":1,"x":2}}',
+    ],
+)
+def test_ambiguous_wire_json_is_unknown(server, raw):
+    state, client = server
+    state["raw_response"] = raw
+    with pytest.raises(RemoteTransportUnknown):
+        client.lookup(request())
+    assert state["submissions"] == 0

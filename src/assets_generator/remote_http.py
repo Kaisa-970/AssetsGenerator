@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import math
 from http.client import HTTPException
 from typing import Any
@@ -17,6 +16,7 @@ from .remote_protocol import (
     RemoteRequest,
     _digest,
     _identifier,
+    decode_remote_json,
 )
 from .serialization import canonical_json_bytes, sha256_bytes
 
@@ -98,7 +98,7 @@ class RemoteJobClient:
                 body = response.read(self.max_response_bytes + 1)
                 if len(body) > self.max_response_bytes:
                     raise RemoteTransportUnknown("remote upload response exceeds limit")
-                raw = json.loads(body)
+                raw = decode_remote_json(body)
                 expected = {
                     "protocol_version": "1",
                     "service_id": identity.service_id,
@@ -194,7 +194,7 @@ class RemoteJobClient:
                 body = response.read(self.max_response_bytes + 1)
                 if len(body) > self.max_response_bytes:
                     raise RemoteTransportUnknown("remote response exceeds limit")
-                return json.loads(body)
+                return decode_remote_json(body)
         except HTTPError as error:
             error.close()
             if error.code == 404 and allow_missing:
