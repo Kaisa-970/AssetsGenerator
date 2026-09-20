@@ -476,6 +476,8 @@ test("parameter form sends typed values and preserves other instances", async ({
                       seed: { type: "integer", minimum: 0 },
                       size: { type: "string", enum: ["512", "1024"] },
                       enabled: { type: "boolean" },
+                      matrix: { type: "array", items: { type: "number" } },
+                      options: { type: "object", properties: {} },
                     },
                   },
                 },
@@ -513,14 +515,48 @@ test("parameter form sends typed values and preserves other instances", async ({
   await page.getByLabel("参数 seed", { exact: true }).press("Tab");
   await page.getByLabel("参数 size", { exact: true }).selectOption("1");
   await page.getByLabel("参数 enabled", { exact: true }).selectOption("false");
+  await page.getByLabel("参数 matrix JSON", { exact: true }).fill("{}");
+  await page
+    .getByRole("button", { name: "应用字段 · matrix", exact: true })
+    .click();
+  await expect(page.getByRole("alert")).toContainText("尚未应用");
+  await page
+    .getByLabel("参数 matrix JSON", { exact: true })
+    .fill("[1, 0, 0, 1]");
+  await page
+    .getByRole("button", { name: "应用字段 · matrix", exact: true })
+    .click();
+  await page.getByLabel("参数 options JSON", { exact: true }).fill("null");
+  await page
+    .getByRole("button", { name: "应用字段 · options", exact: true })
+    .click();
+  await expect(page.getByRole("alert")).toContainText("尚未应用");
+  await page
+    .getByLabel("参数 options JSON", { exact: true })
+    .fill('{"label":"example"}');
+  await page
+    .getByRole("button", { name: "应用字段 · options", exact: true })
+    .click();
   await page.getByRole("button", { name: "编译校验", exact: true }).click();
   await expect.poll(() => submitted?.nodes.first.parameters.seed).toBe(99);
   expect(submitted.nodes.first.parameters).toEqual({
     seed: 99,
     size: "1024",
     enabled: false,
+    matrix: [1, 0, 0, 1],
+    options: { label: "example" },
   });
   expect(submitted.nodes.second.parameters).toEqual({ seed: 7 });
+  await page
+    .getByRole("button", { name: "移除覆盖 · matrix", exact: true })
+    .click();
+  await page.getByRole("button", { name: "编译校验", exact: true }).click();
+  await expect
+    .poll(() => submitted.nodes.first.parameters.matrix)
+    .toBeUndefined();
+  expect(submitted.nodes.first.parameters.options).toEqual({
+    label: "example",
+  });
 });
 
 test("fixed run graph displays persisted plan instead of edited draft", async ({

@@ -29,7 +29,9 @@ export function ParameterForm({
   const fields = Object.entries(properties).filter(
     ([, field]) =>
       field.enum ||
-      ["string", "integer", "number", "boolean"].includes(field.type),
+      ["string", "integer", "number", "boolean", "array", "object"].includes(
+        field.type,
+      ),
   );
   if (!fields.length) return null;
   const effective = { ...adapter?.defaults, ...parameters };
@@ -40,7 +42,8 @@ export function ParameterForm({
       {fields.map(([name, field]) => {
         const value = effective[name];
         const fixed = field.enum?.length === 1;
-        const stale = fixed && JSON.stringify(value) !== JSON.stringify(field.enum![0]);
+        const stale =
+          fixed && JSON.stringify(value) !== JSON.stringify(field.enum![0]);
         return (
           <label key={name}>
             {name}
@@ -64,10 +67,51 @@ export function ParameterForm({
                 </option>
                 {field.enum.map((option, i) => (
                   <option key={i} value={i}>
-                    {String(option)}
+                    {typeof option === "string"
+                      ? option
+                      : JSON.stringify(option)}
                   </option>
                 ))}
               </select>
+            ) : ["array", "object"].includes(field.type) ? (
+              <>
+                <textarea
+                  aria-label={`参数 ${name} JSON`}
+                  spellCheck={false}
+                  value={
+                    draft[name] ??
+                    (value === undefined ? "" : JSON.stringify(value, null, 2))
+                  }
+                  onChange={(e) =>
+                    setDraft({ ...draft, [name]: e.target.value })
+                  }
+                />
+                <button
+                  type="button"
+                  disabled={!(name in draft)}
+                  onClick={() => {
+                    try {
+                      const parsed: unknown = JSON.parse(draft[name]);
+                      if (
+                        (field.type === "array" && !Array.isArray(parsed)) ||
+                        (field.type === "object" &&
+                          (parsed === null ||
+                            typeof parsed !== "object" ||
+                            Array.isArray(parsed)))
+                      )
+                        throw Error(`需要 ${field.type}`);
+                      setError("");
+                      onChange({ ...parameters, [name]: parsed });
+                    } catch {
+                      setError(
+                        `${name} 需要有效的 ${field.type} JSON，尚未应用`,
+                      );
+                    }
+                  }}
+                >
+                  应用字段 · {name}
+                </button>
+              </>
             ) : field.type === "boolean" ? (
               <select
                 aria-label={`参数 ${name}`}
@@ -116,11 +160,14 @@ export function ParameterForm({
             )}
             {stale && (
               <span role="alert">
-                {name} 与当前部署不一致。草稿值：{JSON.stringify(value) ?? "未设置"}；
-                当前要求：{JSON.stringify(field.enum![0])}。
+                {name} 与当前部署不一致。草稿值：
+                {JSON.stringify(value) ?? "未设置"}； 当前要求：
+                {JSON.stringify(field.enum![0])}。
                 <button
                   type="button"
-                  onClick={() => onChange({ ...parameters, [name]: field.enum![0] })}
+                  onClick={() =>
+                    onChange({ ...parameters, [name]: field.enum![0] })
+                  }
                 >
                   使用当前部署值 · {name}
                 </button>
@@ -142,7 +189,10 @@ export function ParameterForm({
         );
       })}
       {error && <p role="alert">{error}</p>}
-      <p>复杂对象和数组可在下方 JSON 编辑。</p>
+      <p>
+        对象和数组按字段显式应用；嵌套内容由后端编译校验。也可在下方编辑完整
+        JSON。
+      </p>
     </section>
   );
 }
