@@ -32,3 +32,5 @@ GPU 显示约 29% 活动且未列出所属进程，因此没有创建运行或�
 
 外部证据：`<DATASET_ROOT>/sam-only-real-browser-v1/` 下 service.log、editor.log、
 endpoint.json、browser-compile.json 和 compiled.png。完整浏览器执行仍待验收。
+
+后续已完成 [真实浏览器正常全链验收](sam-only-browser-real-complete.md)，包括选区、远程生成、发布与完成后恢复；本报告保留当时仅启动核验的历史范围。

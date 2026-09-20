@@ -250,3 +250,7 @@ node frontend/smoke/remote-complete.cjs <BROWSER_CONFIG>
 运行 `dag_474fa726596740c0b73fbd751edc22b7` 的外部证据位于
 `<DATASET_ROOT>/browser-remote-complete-cpu-v1/`。这是浏览器操作、服务边界和恢复验收，
 SAM/TRELLIS.2 均未在本次执行，不能作为真实模型全链证据。
+
+真实 SAM-only 与远程 TRELLIS.2 已用以上浏览器脚本完成正常全链，
+见 [2026-09-21 验收报告](../reports/sam-only-browser-real-complete.md)。
+输出使用无纹理几何 fallback；不表示完整纹理质量或推理中异常恢复通过。

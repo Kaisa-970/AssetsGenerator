@@ -16,7 +16,8 @@
 | ComfyUI | 尚未实现；需独立定义复合 workflow 与内部证据边界 |
 
 当前目录是启动配置，不是自动服务发现、在线注册或部署管理。新配置入口的真实浏览器
-全链、远程真实模型推理中的服务异常退出仍需单独验收；CPU 测试不能替代这些证据。
+全链已通过 [正常执行验收](../reports/sam-only-browser-real-complete.md)；
+远程真实模型推理中的服务异常退出仍需单独验收；CPU 测试不能替代这些证据。
 验证与使用见 [服务指南](../guides/remote-shape-service.md)、
 [真实 shape](../reports/remote-shape-real-smoke.md)、
 [选区发布链](../reports/remote-selected-trellis-fallback-real-smoke.md) 和

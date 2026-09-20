@@ -120,3 +120,4 @@
 新增或移动文档时维护此索引及引用链接，具体归档规则见 [AGENTS.md](../AGENTS.md)。
 
 - [SAM-only 编辑器真实环境启动核验](reports/sam-only-editor-startup.md)
+- [SAM-only 与远程 TRELLIS.2 浏览器全链](reports/sam-only-browser-real-complete.md)
