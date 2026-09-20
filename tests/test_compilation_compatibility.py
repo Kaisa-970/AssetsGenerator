@@ -32,6 +32,7 @@ def test_legacy_contract_serialization_preserves_historical_identities():
         "shape_asset_assembly@1",
         "asset_export@1",
         "selection_prepare@1",
+        "image_transform@1",
     ):
         del specs[key]
     specs["canonicalize@1"] = replace(specs["canonicalize@1"], relations=())
@@ -64,6 +65,7 @@ def test_canonicalization_relation_changes_plan_identity_but_unrelated_operators
                 "geometry_validation@1",
                 "shape_asset_assembly@1",
                 "asset_export@1",
+                "image_transform@1",
             }
         }
         assert resolve_plan_contract_digest(pipeline, without_new_operators) == current
