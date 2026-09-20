@@ -102,7 +102,14 @@ def test_profile_start_binds_request_and_finish_mapping(tmp_path, monkeypatch):
         loaded.start(
             None, RemoteRequest.create(loaded.identity, "two", raw), tmp_path / "journal", None
         )
+    from unittest.mock import Mock
+
+    import assets_generator.comfy_failure as failure
+
+    monkeypatch.setattr(failure, "finish_failure", lambda *a: None)
+    owner = Mock()
+    owner.comfy_result.return_value = None
     monkeypatch.setattr(service, "finish_owned_image", lambda *a, **kw: calls.append(kw))
     monkeypatch.setattr(result, "publish_image_result", lambda *a: "published")
-    assert loaded.finish(None, req, tmp_path / "journal", None) == "published"
+    assert loaded.finish(owner, req, tmp_path / "journal", None) == "published"
     assert calls[-1] == profile()["output"]

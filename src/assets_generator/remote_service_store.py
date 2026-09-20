@@ -405,6 +405,60 @@ class RemoteServiceStore:
                 self.db.execute("ROLLBACK")
                 raise
 
+    def publish_comfy_failure(
+        self, request: RemoteRequest, *, record: dict[str, Any], history: dict[str, Any]
+    ) -> RemoteJob:
+        """Atomically retain correlated failure history and publish a failed job."""
+        from .comfy_history import validate_history
+
+        observation = validate_history({**record, "phase": "sending"}, history)
+        if observation["state"] != "failed":
+            raise ValueError("ComfyUI failure publication requires failed history")
+        body = canonical_json_bytes({"record": record, "history": history})
+        evidence_digest = sha256_bytes(body)
+        with self._lock:
+            self.db.execute("BEGIN IMMEDIATE")
+            try:
+                binding = self.comfy_binding(request)
+                if (
+                    binding is None
+                    or binding["prompt_id"] != record["prompt_id"]
+                    or binding["request_digest"]
+                    != sha256_bytes(
+                        canonical_json_bytes(
+                            {"deployment": record["deployment"], "prompt": record["prompt"]}
+                        )
+                    )
+                ):
+                    raise ValueError("ComfyUI failure request mismatch")
+                wire = self._wire(request)
+                wire.update(
+                    state="failed",
+                    error={
+                        "code": "COMFY_EXECUTION_FAILED",
+                        "detail": "Correlated upstream failure; evidence " + evidence_digest,
+                    },
+                )
+                job = RemoteJob.parse(wire, request)
+                previous = self.lookup(request)
+                if previous is None or previous.state not in {"running", "failed"}:
+                    raise ValueError("ComfyUI failure publication state conflict")
+                if previous.state == "failed":
+                    if previous != job or self.get_blob(evidence_digest) != body:
+                        raise ValueError("ComfyUI failure evidence conflict")
+                else:
+                    self._validate_worker_terminal(request, "failed")
+                    self.put_blob(body, evidence_digest)
+                    self.db.execute(
+                        "UPDATE jobs SET job=? WHERE key=?",
+                        (canonical_json_bytes(wire), request.submission_key),
+                    )
+                self.db.execute("COMMIT")
+                return job
+            except BaseException:
+                self.db.execute("ROLLBACK")
+                raise
+
     def transition(
         self,
         request: RemoteRequest,

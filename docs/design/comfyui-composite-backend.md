@@ -368,3 +368,15 @@ ArtifactRef 与证据内 profile digest 均匹配，并断言没有新增网络�
 上传、prompt POST、输出下载均各一次。HTTP 链共 8 项通过，Ruff 格式/检查通过；
 本轮未改生产代码，未重跑 mypy 或完整套件。fixture 未运行真实 ComfyUI 节点，
 不代表真实模型验收。失败终态处理和 DAG/画布接入仍待完成。
+
+### 明确失败历史的终态发布
+
+profile.finish 现在区分匹配的失败历史与未知结果。失败发布重新校验 prompt UUID、
+实际图与外层请求摘要，并将完整 record/history Blob 和 COMFY_EXECUTION_FAILED
+状态放在同一事务。错误详情固定证据摘要，保留上游 messages。已发布失败可以
+从外层数据库离线复核；证据缺失则阻塞，不能重新联网或补写。失败确认表示该
+workflow 的终态历史，不证明不透明自定义节点没有另外创建后台任务。
+
+103 项 ComfyUI 测试及 Ruff 格式/检查、mypy 通过。新增回归覆盖正常失败、错误
+workflow 历史保持 running、删除内部日志后的离线失败复核及失败 Blob 缺失阻塞。
+这仍是协议 fixture 验证，没有真实 ComfyUI 验收。DAG/画布接入尚未完成。

@@ -69,5 +69,6 @@ assets-generator comfy-image download --profile /path/to/profile.json \
 下载验证已发布 Blob 摘要与长度，原子写入新文件，拒绝覆盖已有路径。它不恢复或
 派发计算，也不是包含所有依赖的可移植 Store 备份。证据同时固定在 Artifact Store，
 只覆盖复合边界，内部模型、自定义节点身份仍标为 unverified。保留 jobs 与 Store。
-上传后、提交绑定前中断会保守阻塞，尚不支持自动续跑或远程取消。上游明确失败
-历史的终态发布仍待接入，不应手工删除日志来解锁。
+上传后、提交绑定前中断会保守阻塞，尚不支持自动续跑或远程取消。匹配原请求的上游失败
+历史会持久化并记为 COMFY_EXECUTION_FAILED，可离线恢复；缺失或不匹配的历史仍
+保持不确定，不应手工删除日志来解锁。

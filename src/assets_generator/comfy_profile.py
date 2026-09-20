@@ -180,12 +180,17 @@ class ComfyImageProfile:
         journal_path: Path,
         store: LocalArtifactStore,
     ) -> RemoteJob:
+        from .comfy_failure import finish_failure
         from .comfy_result import publish_image_result
         from .comfy_service import finish_owned_image
 
         if request.identity != self.identity:
             raise ValueError("ComfyUI request targets another profile")
         raw = self.to_dict()
+        if owner.comfy_result(request) is None:
+            failed = finish_failure(owner, request, journal_path, ComfyClient(raw["endpoint"]))
+            if failed is not None:
+                return failed
         finish_owned_image(
             owner, request, journal_path, ComfyClient(raw["endpoint"]), store, **raw["output"]
         )
