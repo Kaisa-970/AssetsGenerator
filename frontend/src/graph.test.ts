@@ -310,3 +310,16 @@ it("direct adapter selection clears fixed values while preserving editable param
     selectAdapter({ ...node, backend: "shared" }, "b@1", catalog).parameters,
   ).toEqual({ seed: 42 });
 });
+
+it.each([
+  { nodes: "abc" },
+  { inputs: 5 },
+  { nodes: { bad: { operator: "copy@1", inputs: [] } } },
+  { nodes: { bad: { operator: "copy@1", inputs: {}, parameters: [] } } },
+  { inputs: { image: { kinds: "rgb_image" } } },
+  { inputs: { image: { kinds: [42] } } },
+  { inputs: { image: { kind: "rgb_image", carriers: "artifact_ref" } } },
+])("rejects unsafe imported document structure: %j", (invalid) => {
+  expect(() => validateDocument({ ...p, ...invalid })).toThrow();
+  expect(p.nodes.a.parameters).toEqual({ seed: 42 });
+});

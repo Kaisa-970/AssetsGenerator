@@ -1913,3 +1913,31 @@ test("slow draft load preserves newer edits and save reports its snapshot", asyn
   expect(saved.pipeline.pipeline).toBe("newer_local");
   await expect(page.getByLabel("管线名称")).toHaveValue("after_save_request");
 });
+
+test("malformed YAML import reports an error without replacing the canvas", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.route("**/api/**", (route) =>
+    route.fulfill({
+      json:
+        new URL(route.request().url()).pathname === "/api/catalog"
+          ? { operators: {}, adapters: [], templates: [] }
+          : { drafts: [] },
+    }),
+  );
+  await page.goto("/");
+  await page.getByLabel("管线名称").fill("keep_my_graph");
+  await page.locator('input[type="file"][accept=".yaml,.yml"]').setInputFiles({
+    name: "broken.yaml",
+    mimeType: "application/yaml",
+    buffer: Buffer.from(
+      "pipeline: broken\nversion: 1\ninputs:\n  image:\n    kinds: rgb_image\nnodes: {}\n",
+    ),
+  });
+  await expect(page.getByRole("status")).toContainText("无效输入");
+  await expect(page.getByLabel("管线名称")).toHaveValue("keep_my_graph");
+  await expect(page.locator(".react-flow__node")).toHaveCount(1);
+  expect(errors).toEqual([]);
+});

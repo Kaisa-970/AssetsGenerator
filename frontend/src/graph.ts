@@ -183,33 +183,44 @@ export function removeNodes(p: Pipeline, ids: Set<string>): Pipeline {
     ),
   };
 }
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === "object" && !Array.isArray(value);
+
 export function validateDocument(value: unknown): Pipeline {
-  if (!value || typeof value !== "object" || Array.isArray(value))
-    throw Error("YAML 顶层必须是 Pipeline 对象");
+  if (!isRecord(value)) throw Error("YAML 顶层必须是 Pipeline 对象");
   const p = value as Pipeline;
   if (
     typeof p.pipeline !== "string" ||
     !p.pipeline ||
     !p.version ||
-    !p.inputs ||
-    !p.nodes ||
-    Array.isArray(p.nodes) ||
-    Array.isArray(p.inputs)
+    !isRecord(p.inputs) ||
+    !isRecord(p.nodes)
   )
     throw Error("需要 pipeline、version、inputs 和 nodes");
   for (const [id, n] of Object.entries(p.nodes)) {
     if (
       !/^[A-Za-z_][\w-]*$/.test(id) ||
-      !n ||
+      !isRecord(n) ||
       typeof n.operator !== "string" ||
-      !n.inputs ||
-      typeof n.inputs !== "object" ||
+      !isRecord(n.inputs) ||
+      (n.parameters !== undefined && !isRecord(n.parameters)) ||
       Object.values(n.inputs).some((v) => typeof v !== "string")
     )
       throw Error(`无效节点：${id}`);
   }
   for (const [id, port] of Object.entries(p.inputs))
-    if (!port || !portKinds(port).length) throw Error(`无效输入：${id}`);
+    if (
+      !isRecord(port) ||
+      (port.kind !== undefined && typeof port.kind !== "string") ||
+      (port.kinds !== undefined &&
+        (!Array.isArray(port.kinds) ||
+          port.kinds.some((kind) => typeof kind !== "string"))) ||
+      (port.carriers !== undefined &&
+        (!Array.isArray(port.carriers) ||
+          port.carriers.some((carrier) => typeof carrier !== "string"))) ||
+      !portKinds(port).length
+    )
+      throw Error(`无效输入：${id}`);
   return { ...p, version: String(p.version) };
 }
 
