@@ -1,0 +1,37 @@
+operators:
+  - name: dag_geometry_frontend
+    version: 1
+    inputs:
+      observations: {kind: observation_bundle, carriers: [artifact_ref], schema_name: ObservationBundle, schema_version: '1.0'}
+    outputs:
+      cameras: {kind: camera_record, cardinality: one_or_more, carriers: [structured], schema_name: CameraRecord, schema_version: '1.0'}
+      depths: {kind: depth_map, cardinality: zero_or_more, carriers: [artifact_ref], requires_frame: true, requires_unit: true}
+      points: {kind: point_cloud, carriers: [artifact_ref], requires_frame: true, requires_unit: true}
+      evidence: {kind: quality_evidence, carriers: [artifact_ref], schema_name: GeometryFrontendEvidence, schema_version: '1.0'}
+  - name: dag_reconstruction
+    version: 1
+    relations:
+      - validator: multi_view_reconstruction@1
+        inputs: [observations, cameras, depths, points, geometry_evidence]
+    inputs:
+      observations: {kind: observation_bundle, carriers: [artifact_ref], schema_name: ObservationBundle, schema_version: '1.0'}
+      cameras: {kind: camera_record, cardinality: one_or_more, carriers: [structured], schema_name: CameraRecord, schema_version: '1.0'}
+      depths: {kind: depth_map, cardinality: zero_or_more, carriers: [artifact_ref], requires_frame: true, requires_unit: true}
+      points: {kind: point_cloud, carriers: [artifact_ref], requires_frame: true, requires_unit: true}
+      geometry_evidence: {kind: quality_evidence, carriers: [artifact_ref], schema_name: GeometryFrontendEvidence, schema_version: '1.0'}
+    outputs:
+      evidence: {kind: quality_evidence, carriers: [artifact_ref], schema_name: ReconstructionEvidence, schema_version: '1.0'}
+  - name: dag_multi_view_release
+    version: 1
+    relations:
+      - validator: multi_view_release@1
+        inputs: [observations, geometry_evidence, reconstruction_evidence]
+    inputs:
+      observations: {kind: observation_bundle, carriers: [artifact_ref], schema_name: ObservationBundle, schema_version: '1.0'}
+      geometry_evidence: {kind: quality_evidence, carriers: [artifact_ref], schema_name: GeometryFrontendEvidence, schema_version: '1.0'}
+      reconstruction_evidence: {kind: quality_evidence, carriers: [artifact_ref], schema_name: ReconstructionEvidence, schema_version: '1.0'}
+    outputs:
+      asset: {kind: asset_definition, carriers: [artifact_ref]}
+      release: {kind: asset_release, carriers: [artifact_ref]}
+      glb: {kind: gltf_asset, carriers: [artifact_ref], requires_frame: true, requires_unit: true}
+      qa: {kind: quality_report, carriers: [artifact_ref]}

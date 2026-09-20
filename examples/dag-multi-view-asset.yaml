@@ -1,0 +1,25 @@
+pipeline: dag_multi_view_asset
+version: '1'
+inputs:
+  observations: {kind: observation_bundle, carriers: [artifact_ref], schema_name: ObservationBundle, schema_version: '1.0'}
+nodes:
+  geometry:
+    operator: dag_geometry_frontend@1
+    adapter: multi_view_geometry@1
+    inputs: {observations: pipeline.inputs.observations}
+  reconstruction:
+    operator: dag_reconstruction@1
+    adapter: multi_view_reconstruction@1
+    inputs:
+      observations: pipeline.inputs.observations
+      cameras: geometry.outputs.cameras
+      depths: geometry.outputs.depths
+      points: geometry.outputs.points
+      geometry_evidence: geometry.outputs.evidence
+  release:
+    operator: dag_multi_view_release@1
+    adapter: multi_view_release@1
+    inputs:
+      observations: pipeline.inputs.observations
+      geometry_evidence: geometry.outputs.evidence
+      reconstruction_evidence: reconstruction.outputs.evidence

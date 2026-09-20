@@ -66,7 +66,7 @@ PYTHONPATH=src <MAIN_CHECKOUT>/.venv/bin/python -m assets_generator.cli dag-imag
 
 `resume --run <RUN_ID>` 恢复并继续 ready 节点；`retry` 另需节点和最新 revision。重复决定只核对回执，中断执行通过显式 retry 继续。不要将新决定复用旧 key。`generate_asset` 输出 asset/release/glb/qa ArtifactRef，实际发布目录位于服务目录 `executions/<RUN_ID>/<CHILD_ID>/release`。
 
-此入口已完成真实 SAM → 用户确认 → TRELLIS2 → GLB smoke，以及完成后的服务重启验证，见 [真实运行报告](../reports/generic-dag-real-smoke.md)。这不代表生成质量验收或完整里程碑 A 完成；多视图迁移与空间关系 validator 仍待实现。
+此入口已完成真实 SAM → 用户确认 → TRELLIS2 → GLB smoke，以及完成后的服务重启验证，见 [真实运行报告](../reports/generic-dag-real-smoke.md)。这不代表生成质量验收或完整里程碑 A 完成；多视图三节点迁移与空间关系 validator 的当前验收见下文，尚未开放全部算子的任意组合。
 
 
 浏览器审查入口复用自动预览与图片点击选择：
@@ -79,3 +79,17 @@ PYTHONPATH=src <MAIN_CHECKOUT>/.venv/bin/python -m assets_generator.cli dag-imag
 ```
 
 服务仅绑定本机，选择对应的已有候选，检查预览后填写检查人并确认。请为 DAG 使用独立端口；同一个 service directory 同时只能由一个进程持有，浏览器服务运行时不要再用另一 CLI 写该目录。具体 UI 验证状态见 A3 报告。
+
+## 多视图三节点入口
+
+`examples/dag-multi-view-asset.yaml` 定义 geometry → reconstruction → release；端口契约见同目录 `dag-multi-view-operators.yaml`。现有 ObservationBundle 必须位于指定 Store，资源均使用已有本地安装。
+
+```bash
+PYTHONPATH=src <MAIN_CHECKOUT>/.venv/bin/python examples/dag_multi_view_demo.py start \
+  --store <RUN_ROOT>/store --directory <RUN_ROOT>/service \
+  --observations <OBSERVATION_ARTIFACT_ID> \
+  --da3-python <DA3_ENV>/bin/python --da3-repo <DA3_REPO> --da3-model <DA3_MODEL> \
+  --open3d-python <OPEN3D_ENV>/bin/python
+```
+
+恢复使用同一组资源参数，将 `start --observations ...` 替换为 `resume --run <RUN_ID>`；显式重试使用 `retry --run <RUN_ID> --node <NODE_ID> --expected-revision <REVISION>`。发布输出位于 `service/executions/<RUN_ID>/<CHILD_ID>/release`。默认保留 Open3D 的顶点颜色；这是固定的本地三节点配置，尚非可视自由编排。运行记录与边界见 [迁移报告](../reports/generic-dag-multi-view.md)。
