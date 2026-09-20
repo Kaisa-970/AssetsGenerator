@@ -56,5 +56,9 @@ PYTHONPATH=src python -m assets_generator.remote_shape_cli serve \
 endpoint/service_id/backend_digest 固定在参数 enum 中，草稿不能任意改写。
 规范化、QA、组装、导出四个 Core Adapter 同时进入目录。
 
-本次只开放目录和编译绑定；编辑器输入入口仍只接受 RGB 或 ObservationBundle。
-因此 prepared RGBA 五节点图当前应显示编译通过但不可启动，不能据此宣称画布远程链验收。
+编辑器支持 prepared RGBA 五节点图的编译与启动。使用 `--template pipelines/remote_shape_asset_v1.yaml`
+载入示例；上传已处理好的 RGBA PNG，或填写服务所在电脑的文件路径。RGBA 保留透明通道，
+拒绝全透明输入；不会自动抠图。已有 Artifact 引用同样检查编码、身份和非空 alpha。
+
+远程服务 POST 仍只登记作业；需由服务端显式 execute。作业完成后在画布执行恢复命令，
+继续 Core 节点；页面状态轮询不派发模型。这部分已有 CPU API 测试，尚未做浏览器真实模型全链验收。

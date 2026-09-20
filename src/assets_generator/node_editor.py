@@ -229,7 +229,11 @@ def create_editor_server(editor: DraftEditor, port: int = 8767) -> ThreadingHTTP
                 return
             try:
                 path = urlsplit(self.path).path
-                if self.command == "POST" and path == "/api/inputs/image" and editor.execution:
+                if (
+                    self.command == "POST"
+                    and path in {"/api/inputs/image", "/api/inputs/rgba"}
+                    and editor.execution
+                ):
                     if self.headers.get("Content-Type") != "application/octet-stream":
                         raise ValueError("application/octet-stream required")
                     length = int(self.headers.get("Content-Length", "0"))
@@ -239,7 +243,9 @@ def create_editor_server(editor: DraftEditor, port: int = 8767) -> ThreadingHTTP
                     data = self.rfile.read(length)
                     if len(data) != length:
                         raise ValueError("incomplete image upload")
-                    self.respond(201, editor.execution.upload_image(data))
+                    self.respond(
+                        201, editor.execution.upload_image(data, rgba=path == "/api/inputs/rgba")
+                    )
                     return
                 if self.headers.get("Content-Type", "").split(";")[0] != "application/json":
                     raise ValueError("application/json required")

@@ -107,6 +107,7 @@ export function ExecutionPanel({
   const multiView =
     Object.keys(pipeline.inputs).length === 1 &&
     "observations" in pipeline.inputs;
+  const rgbaInput = pipeline.inputs.image?.kind === "rgba_image";
   const [imageSource, setImageSource] = useState("path");
   const [uploaded, setUploaded] = useState<{
     name: string;
@@ -230,7 +231,7 @@ export function ExecutionPanel({
     uploadPending.current = true;
     setUploading(true);
     try {
-      const response = await fetch("/api/inputs/image", {
+      const response = await fetch(rgbaInput ? "/api/inputs/rgba" : "/api/inputs/image", {
         method: "POST",
         headers: { "Content-Type": "application/octet-stream" },
         body: file,
@@ -333,6 +334,7 @@ export function ExecutionPanel({
         </div>
       ) : (
         <>
+          {rgbaInput && <p>请提供已处理好的 RGBA PNG，透明区域为背景；此流程不自动抠图。</p>}
           <label>
             图片来源
             <select
@@ -363,7 +365,7 @@ export function ExecutionPanel({
                 <input
                   type="file"
                   aria-label="上传运行图片"
-                  accept="image/*"
+                  accept={rgbaInput ? "image/png" : "image/*"}
                   disabled={pending || uploading}
                   onChange={(e) => {
                     const file = e.target.files?.[0];

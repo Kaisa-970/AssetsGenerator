@@ -33,7 +33,11 @@ from .workflow import _import_image
 def validate_editor_inputs(plan: CompiledPlan) -> str:
     """Return the supported input name; compilation and creation share this gate."""
     if set(plan.inputs) == {"image"}:
-        name, kind = "image", "rgb_image"
+        name = "image"
+        kinds = tuple(plan.inputs[name].contract["kinds"])
+        if kinds not in {("rgb_image",), ("rgba_image",)}:
+            raise ContractError("canvas image input must have rgb_image or rgba_image kind")
+        kind = kinds[0]
     elif set(plan.inputs) == {"observations"}:
         name, kind = "observations", "observation_bundle"
     else:
@@ -208,7 +212,7 @@ class NodeEditorExecution:
         self._worker = threading.Thread(target=execute, daemon=True)
         self._worker.start()
 
-    def upload_image(self, data: bytes) -> dict[str, Any]:
+    def upload_image(self, data: bytes, *, rgba: bool = False) -> dict[str, Any]:
         """Import a decoded image without creating a run or dispatching inference."""
         if not 0 < len(data) <= 20 * 1024 * 1024:
             raise ContractError("image upload must be at most 20 MiB")
@@ -222,6 +226,10 @@ class NodeEditorExecution:
             if image.width * image.height > 25_000_000 or getattr(image, "n_frames", 1) != 1:
                 raise ContractError("upload must be a single image of at most 25 megapixels")
             image.load()
+            if rgba and (image.format != "PNG" or image.mode != "RGBA"):
+                raise ContractError("prepared RGBA input must be an RGBA PNG")
+            if rgba and image.getchannel("A").getextrema()[1] == 0:
+                raise ContractError("prepared RGBA input contains no foreground")
             metadata = {
                 "media_type": Image.MIME[image.format],
                 "width": image.width,
@@ -233,10 +241,12 @@ class NodeEditorExecution:
                 raise ContractError("editor execution service is closing")
             ref = self.engine.store.persist_bytes(
                 data,
-                kind="rgb_image",
-                schema_name="raster_image",
+                kind="rgba_image" if rgba else "rgb_image",
+                schema_name="png" if rgba else "raster_image",
                 schema_version="1.0",
-                identity_metadata=metadata,
+                identity_metadata={"media_type": "image/png", "channel_layout": "RGBA"}
+                if rgba
+                else metadata,
             )
         return {"image_ref": to_primitive(ref)}
 
@@ -313,7 +323,15 @@ class NodeEditorExecution:
             else:
                 if not isinstance(image_path, str) or not image_path.strip():
                     raise ContractError("image path is required")
-                image = _import_image(self.engine.store, Path(image_path).expanduser(), "rgb_image")
+                source_path = Path(image_path).expanduser()
+                if tuple(contract["kinds"]) == ("rgba_image",):
+                    if source_path.stat().st_size > 20 * 1024 * 1024:
+                        raise ContractError("image upload must be at most 20 MiB")
+                    image = ArtifactRef(
+                        **self.upload_image(source_path.read_bytes(), rgba=True)["image_ref"]
+                    )
+                else:
+                    image = _import_image(self.engine.store, source_path, "rgb_image")
             if name == "observations":
                 from .observations import observation_bundle_from_artifact
 
@@ -326,6 +344,28 @@ class NodeEditorExecution:
                 value=image,
                 store=self.engine.store,
             )
+            if tuple(contract["kinds"]) == ("rgba_image",):
+                identity = self.engine.store.get_manifest(image.artifact_id).identity
+                if (identity.schema_name, identity.schema_version, identity.identity_metadata) != (
+                    "png",
+                    "1.0",
+                    {"media_type": "image/png", "channel_layout": "RGBA"},
+                ):
+                    raise ContractError("prepared RGBA Artifact has an invalid identity")
+                blob = self.engine.store.blob_path(image)
+                if blob.stat().st_size > 20 * 1024 * 1024:
+                    raise ContractError("image upload must be at most 20 MiB")
+                with Image.open(blob) as prepared:
+                    if (
+                        prepared.format != "PNG"
+                        or prepared.mode != "RGBA"
+                        or prepared.width * prepared.height > 25_000_000
+                        or getattr(prepared, "n_frames", 1) != 1
+                    ):
+                        raise ContractError("prepared RGBA input must be a bounded RGBA PNG")
+                    prepared.load()
+                    if prepared.getchannel("A").getextrema()[1] == 0:
+                        raise ContractError("prepared RGBA input contains no foreground")
             run_id = None
             marker = None
             repository = self.engine.repository

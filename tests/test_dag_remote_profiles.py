@@ -86,11 +86,71 @@ def test_remote_only_editor_starts_without_model_environment(tmp_path, monkeypat
         raw = yaml.safe_load(Path("pipelines/remote_shape_asset_v1.yaml").read_text())
         compiled = editor.compile(raw)
         assert compiled["ok"]
-        assert not compiled["execution_ready"]
-        assert "rgb_image" in compiled["execution_reason"]
+        assert compiled["execution_ready"]
         return Server()
 
     monkeypatch.setattr(node_editor, "create_editor_server", create)
     node_editor.serve_editor(
         tmp_path / "editor", 0, None, [], store=tmp_path / "store", remote_config=path
     )
+
+
+def test_editor_rgba_upload_start_and_empty_foreground_rejection(tmp_path):
+    import io
+
+    from PIL import Image
+    from test_node_editor_execution import wait
+    from test_remote_http import request
+    from test_remote_service_http import serve
+
+    from assets_generator.artifact_store import LocalArtifactStore
+    from assets_generator.dag_engine import DagEngine
+    from assets_generator.dag_persistence import DagRepository
+    from assets_generator.models import ArtifactRef
+    from assets_generator.node_editor_execution import NodeEditorExecution
+
+    with serve(tmp_path / "service.sqlite") as (remote, client, _):
+        identity = request().identity
+        registry = AdapterRegistry()
+        register_remote_shape_profiles(
+            registry,
+            {
+                "default_profile": "test",
+                "profiles": {
+                    "test": {
+                        "endpoint": client.endpoint,
+                        "service_id": identity.service_id,
+                        "backend_digest": identity.backend_digest,
+                    }
+                },
+            },
+        )
+        with DagRepository(LocalArtifactStore(tmp_path / "store"), tmp_path / "core") as repo:
+            execution = NodeEditorExecution(DagEngine(repo, registry))
+            try:
+                graph = yaml.safe_load(Path("pipelines/remote_shape_asset_v1.yaml").read_text())
+                buffer = io.BytesIO()
+                Image.new("RGBA", (2, 2), (255, 0, 0, 100)).save(buffer, format="PNG")
+                uploaded = execution.upload_image(buffer.getvalue(), rgba=True)
+                run = execution.start(graph, image_ref=uploaded["image_ref"])
+                state = wait(execution, run["run"]["run_id"])
+                assert state["run"]["dag"]["node_states"]["shape"]["status"] == "running"
+                assert (
+                    repo.store.blob_path(ArtifactRef(**uploaded["image_ref"])).read_bytes()
+                    == buffer.getvalue()
+                )
+                buffer = io.BytesIO()
+                Image.new("RGBA", (2, 2), (255, 0, 0, 0)).save(buffer, format="PNG")
+                with pytest.raises(ValueError, match="foreground"):
+                    execution.upload_image(buffer.getvalue(), rgba=True)
+                bad = repo.store.persist_bytes(
+                    buffer.getvalue(),
+                    kind="rgba_image",
+                    schema_name="png",
+                    schema_version="1.0",
+                    identity_metadata={"media_type": "image/png", "channel_layout": "RGBA"},
+                )
+                with pytest.raises(ValueError, match="foreground"):
+                    execution.start(graph, image_ref={"artifact_id": bad.artifact_id})
+            finally:
+                execution.close()

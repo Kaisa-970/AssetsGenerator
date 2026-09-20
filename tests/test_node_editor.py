@@ -129,8 +129,8 @@ def test_http_execution_routes_and_strict_requests(tmp_path):
             assert images == [{"artifact_id": "one"}, {"artifact_id": "two"}]
             return {"observations_ref": {"artifact_id": "bundle"}}
 
-        def upload_image(self, data):
-            assert data == b"image bytes"
+        def upload_image(self, data, *, rgba=False):
+            assert data == (b"rgba bytes" if rgba else b"image bytes")
             return {"image_ref": {"artifact_id": "sha256:" + "a" * 64}}
 
         def start(
@@ -204,6 +204,15 @@ def test_http_execution_routes_and_strict_requests(tmp_path):
                 )
             )
         assert caught.value.code == 403
+        with urlopen(
+            Request(
+                base + "/api/inputs/rgba",
+                b"rgba bytes",
+                {"Content-Type": "application/octet-stream"},
+                method="POST",
+            )
+        ) as response:
+            assert response.status == 201
         with pytest.raises(HTTPError) as caught:
             post("/api/inputs/image", {})
         assert caught.value.code == 400
