@@ -364,7 +364,9 @@ def serve_editor(
             if proposal_config is not None and config is not None:
                 raise ValueError("choose either image config or proposal config")
             if (config is None and proposal_config is None) != (profile is None):
-                raise ValueError("image execution requires --config and --profile together")
+                raise ValueError(
+                    "local execution requires --profile with --config or --proposal-config"
+                )
             from .artifact_store import LocalArtifactStore
             from .dag_engine import DagEngine
             from .dag_persistence import DagRepository

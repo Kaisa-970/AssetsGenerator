@@ -118,3 +118,5 @@
 
 契约文档定义规则；指南描述操作；报告记录指定数据和配置下的事实与限制。
 新增或移动文档时维护此索引及引用链接，具体归档规则见 [AGENTS.md](../AGENTS.md)。
+
+- [SAM-only 编辑器真实环境启动核验](reports/sam-only-editor-startup.md)

@@ -382,3 +382,32 @@ def test_proposal_only_editor_registers_no_local_shape(tmp_path, monkeypatch):
         profile="sam",
         store=tmp_path / "store",
     )
+
+
+def test_proposal_configuration_requires_profile_before_loading(tmp_path, monkeypatch):
+    from assets_generator import node_editor, workbench_profiles
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("invalid configuration must fail before loading models")
+
+    monkeypatch.setattr(workbench_profiles, "load_proposal_profiles", forbidden)
+    with pytest.raises(ValueError, match="--proposal-config"):
+        node_editor.serve_editor(
+            tmp_path / "editor",
+            0,
+            None,
+            [],
+            proposal_config=tmp_path / "sam.json",
+            store=tmp_path / "store",
+        )
+    with pytest.raises(ValueError, match="either image config or proposal config"):
+        node_editor.serve_editor(
+            tmp_path / "editor",
+            0,
+            None,
+            [],
+            config=tmp_path / "image.json",
+            proposal_config=tmp_path / "sam.json",
+            profile="sam",
+            store=tmp_path / "store",
+        )
