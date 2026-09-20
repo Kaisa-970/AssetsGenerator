@@ -139,3 +139,7 @@ ObservationBundle ID 自动补进资产。后续可通过显式观测关联扩�
 
 CPU 集成测试覆盖人工等待/决定、alpha 保留、精确 RGBA 输入、HTTP shape 发布及服务关闭后恢复。
 此示例尚未完成真实 SAM + 远程 TRELLIS.2 同次运行验收。
+
+selection_prepare 在任何转换前验证绑定的完整引用闭包，并用已有 selection、原 proposals 和
+MaskDraft 在内存中重建预期绑定身份；仅比较图片/mask 自报字段不足以通过。缺失历史 mask
+会拒绝且保持缺失，不会因验证重算而重新写回 Store。
