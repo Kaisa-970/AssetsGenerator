@@ -1,0 +1,115 @@
+from dataclasses import replace
+
+import pytest
+from test_dag_persistence import run_record
+from test_remote_binding import binding
+from test_remote_http import server as _server_fixture
+
+from assets_generator.artifact_store import LocalArtifactStore
+from assets_generator.dag_models import DagAttempt
+from assets_generator.dag_persistence import DagRepository
+from assets_generator.dag_remote_submission import DagRemoteSubmission
+from assets_generator.remote_http import RemoteTransportUnknown
+
+
+@pytest.fixture
+def http_server():
+    yield from _server_fixture.__wrapped__()
+
+
+def setup(repo, client):
+    owned = replace(binding(), endpoint=client.endpoint)
+    run = run_record(repo.store)
+    node = run.dag.node_states["a"]
+    node.status = "running"
+    node.attempts.append(
+        DagAttempt(1, input_digest=owned.input_digest, binding_digest=owned.binding_digest)
+    )
+    repo.create(run)
+    return owned
+
+
+def test_no_network_without_persisted_owner_and_recover_after_restart(tmp_path, http_server):
+    state, client = http_server
+    store = LocalArtifactStore(tmp_path / "store")
+    directory = tmp_path / "service"
+    with DagRepository(store, directory) as repo:
+        owned = setup(repo, client)
+        bridge = DagRemoteSubmission(repo, client)
+        with pytest.raises(ValueError, match="persisted"):
+            bridge.submit(owned)
+        with pytest.raises(ValueError, match="revision"):
+            bridge.prepare(owned, expected_revision=-1)
+        assert state["submissions"] == 0
+        bridge.prepare(owned, expected_revision=0)
+        assert repo.load(owned.run_id).dag.node_states["a"].current().remote_binding == owned
+        assert state["submissions"] == 0
+        state["drop"] = True
+        with pytest.raises(RemoteTransportUnknown):
+            bridge.submit(owned)
+    with DagRepository(store, directory) as repo:
+        bridge = DagRemoteSubmission(repo, client)
+        assert bridge.recover(owned).job_id == "job-one"
+        assert bridge.submit(owned).job_id == "job-one"
+        assert state["submissions"] == 1
+
+
+def test_missing_both_journal_files_cannot_recreate_bound_submission(tmp_path, http_server):
+    state, client = http_server
+    with DagRepository(LocalArtifactStore(tmp_path / "store"), tmp_path / "service") as repo:
+        owned = setup(repo, client)
+        bridge = DagRemoteSubmission(repo, client)
+        bridge.prepare(owned, expected_revision=0)
+        bridge.submit(owned)
+        bridge.journal._path(owned.request()).unlink()
+        bridge.journal._reservation(owned.request()).unlink()
+        with pytest.raises(OSError):
+            bridge.submit(owned)
+        with pytest.raises(OSError):
+            bridge.prepare(owned, expected_revision=repo.load(owned.run_id).dag.revision)
+        assert state["submissions"] == 1
+
+
+def test_foreign_directory_and_stopped_attempt_cannot_submit(tmp_path, http_server):
+    state, client = http_server
+    store = LocalArtifactStore(tmp_path / "store")
+    with DagRepository(store, tmp_path / "service") as repo:
+        owned = setup(repo, client)
+        bridge = DagRemoteSubmission(repo, client)
+        bridge.prepare(owned, expected_revision=0)
+        run = repo.load(owned.run_id)
+        node = run.dag.node_states["a"]
+        node.status = node.current().status = "interrupted"
+        repo.save(run, expected_revision=run.dag.revision)
+        with pytest.raises(ValueError, match="running"):
+            bridge.submit(owned)
+    with DagRepository(store, tmp_path / "foreign") as repo:
+        with pytest.raises(ValueError, match="another service"):
+            DagRemoteSubmission(repo, client).submit(owned)
+    assert state["submissions"] == 0
+
+
+def test_parent_save_failure_keeps_prepared_request_unsent(tmp_path, http_server, monkeypatch):
+    state, client = http_server
+    store = LocalArtifactStore(tmp_path / "store")
+    directory = tmp_path / "service"
+    with DagRepository(store, directory) as repo:
+        owned = setup(repo, client)
+        bridge = DagRemoteSubmission(repo, client)
+        original = repo.save
+
+        def fail(*args, **kwargs):
+            raise OSError("parent snapshot unavailable")
+
+        monkeypatch.setattr(repo, "save", fail)
+        with pytest.raises(OSError):
+            bridge.prepare(owned, expected_revision=0)
+        monkeypatch.setattr(repo, "save", original)
+        with pytest.raises(ValueError, match="persisted"):
+            bridge.submit(owned)
+        assert state["submissions"] == 0
+    with DagRepository(store, directory) as repo:
+        bridge = DagRemoteSubmission(repo, client)
+        bridge.prepare(owned, expected_revision=0)
+        assert bridge.submit(owned).job_id == "job-one"
+        assert state["submissions"] == 1

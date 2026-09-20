@@ -70,3 +70,11 @@ HTTP/协议合跑最终 26 项通过；相关 Ruff、mypy（89 源码文件）�
 模型层核对 node/attempt/input/backend，Repository 创建与保存核对父 run；一旦存在，连活动 attempt 也不能移除或替换绑定。已保存记录可往返读取，状态变为 interrupted 不移除绑定。当前 Scheduler 明确拒绝包含远程绑定的运行，直到 remote execution kind/查询恢复/输出导入完整接通；不能让其落入旧本地恢复路径。
 
 测试：远程绑定/既有 DAG persistence/engine 合跑 50 项通过；随后新增调度拒绝且记录不变回归，绑定文件 9 项通过（两轮重叠不相加）。Ruff、mypy 通过。此步仅建立归属模型，RemoteSubmission 尚未自动由引擎注册/调用，远程执行尚不可用。
+
+## DAG 与提交日志桥接
+
+内部 `DagRemoteSubmission` 新增 prepare/submit/recover。prepare 在单写者/命令锁内先保存准备日志，再 CAS 保存当前 attempt.remote_binding；不联网。每次 submit/recover 都从 Store 重读父运行及目录所有权，核对当前 attempt、输入/Backend 摘要与完整绑定。首次 submit 仅允许 running owner；恢复只查询原请求，不改变 DAG 成功状态。
+
+已固定 binding 的 prepare/submit 必须读取现有日志，不调用重建路径。因此即使 remote_submissions 与 remote_reservations 同时丢失，父 BuildRun 仍阻止重建后提交。父快照保存失败时网络未启动，重开客户端仓库后可继续完成原 prepared 绑定；内存中未保存的 binding 无法授权提交。
+
+本轮桥接/日志/绑定合跑 21 项通过，随后新增父保存失败测试，桥接单文件 4 项通过；Ruff、mypy（92 源文件）通过。该桥接是内部持久化基础，尚未由 Scheduler 的受信 remote Adapter 调用；计划重编译、relation 检查、作业非终态调度及输出导入仍需接通，当前引擎仍拒绝执行含 remote binding 的运行。不得绕过该限制把桥接暴露为任意 HTTP 执行接口。
