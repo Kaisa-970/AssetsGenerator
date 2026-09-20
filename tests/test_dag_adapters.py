@@ -179,3 +179,78 @@ def test_actual_class_identity_changes_plan_and_refuses_stale_load():
 def test_nonfinite_parameter_identity_rejected(value):
     with pytest.raises(ContractError):
         fixture(parameters={"count": value})
+
+
+def test_explicit_backends_are_pinned_and_do_not_change_legacy_binding():
+    plan, registry = fixture()
+    legacy = registry.bind_plan(plan)
+    first = CopyAdapter()
+    second = CopyAdapter()
+    second.spec = replace(CopyAdapter.spec, defaults={"count": 3})
+    registry.register_backend("local-a", first)
+    registry.register_backend("local-b", second)
+    assert registry.bind_plan(plan).to_dict() == legacy.to_dict()
+    assert "backend" not in legacy.bindings["instance"].to_dict()
+    a, _ = fixture(backend="local-a")
+    b, _ = fixture(backend="local-b")
+    bound_a, bound_b = registry.bind_plan(a), registry.bind_plan(b)
+    assert bound_a.plan_id != bound_b.plan_id
+    assert registry.resolve(bound_a.bindings["instance"]) is first
+    assert registry.resolve(bound_b.bindings["instance"]) is second
+    assert bound_b.bindings["instance"].parameters["count"] == 3
+    assert BoundDagPlan.from_json(bound_b.to_json(), registry=registry) == bound_b
+    assert len(registry.backend_catalog()) == 2
+    second.spec = replace(second.spec, defaults={"count": 4})
+    with pytest.raises(ContractError, match="identity changed"):
+        registry.resolve(bound_b.bindings["instance"])
+    with pytest.raises(ContractError, match="bindings"):
+        BoundDagPlan.from_json(bound_b.to_json(), registry=registry)
+    assert registry.resolve(bound_a.bindings["instance"]) is first
+
+
+def test_backend_binding_rejects_missing_or_wrong_operator():
+    plan, registry = fixture(backend="absent")
+    with pytest.raises(ContractError, match="unresolved Backend"):
+        registry.bind_plan(plan)
+    wrong = CopyAdapter()
+    wrong.spec = replace(CopyAdapter.spec, operators=("other@1",))
+    registry.register_backend("absent", wrong)
+    with pytest.raises(ContractError, match="compatible adapter"):
+        registry.bind_plan(plan)
+    with pytest.raises(ContractError, match="duplicate"):
+        registry.register_backend("absent", wrong)
+
+
+def test_two_instances_resolve_different_backends_in_one_plan():
+    port = PortSpec(("rgb_image",))
+    definition = PipelineDefinition(
+        "pair",
+        "1",
+        {"image": port},
+        {
+            name: {
+                "operator": "copy@1",
+                "adapter": "copy@1",
+                "backend": backend,
+                "inputs": {"image": "pipeline.inputs.image"},
+            }
+            for name, backend in (("left", "a"), ("right", "b"))
+        },
+    )
+    registry = AdapterRegistry()
+    a, b = CopyAdapter(), CopyAdapter()
+    b.spec = replace(CopyAdapter.spec, defaults={"count": 4})
+    registry.register_backend("a", a)
+    registry.register_backend("b", b)
+    plan = registry.bind_plan(
+        compile_pipeline(
+            definition,
+            {"copy@1": OperatorSpec("copy", "1", {"image": port}, {"image": port})},
+            require_explicit_joins=True,
+        )
+    )
+    assert plan.bindings["left"].backend == "a"
+    assert plan.bindings["right"].backend == "b"
+    assert plan.bindings["left"].parameters["count"] == 2
+    assert plan.bindings["right"].parameters["count"] == 4
+    assert BoundDagPlan.from_json(plan.to_json(), registry=registry) == plan

@@ -224,6 +224,7 @@ class BoundAdapter:
     spec_digest: str
     implementation_digest: str
     parameters: Mapping[str, Any]
+    backend: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "spec", freeze(self.spec))
@@ -236,6 +237,7 @@ class BoundAdapter:
             "spec_digest": self.spec_digest,
             "implementation_digest": self.implementation_digest,
             "parameters": thaw(self.parameters),
+            **({"backend": self.backend} if self.backend is not None else {}),
         }
 
 
@@ -298,8 +300,28 @@ class AdapterRegistry:
         """Describe registered capabilities without invoking an adapter."""
         return [self._adapters[key].spec.to_dict() for key in sorted(self._adapters)]
 
+    def backend_catalog(self) -> list[dict[str, Any]]:
+        return [
+            {"backend": backend, "adapter": key, **adapter.spec.to_dict()}
+            for (backend, key), adapter in sorted(self._backend_adapters.items())
+        ]
+
     def __init__(self) -> None:
         self._adapters: dict[str, NodeAdapter] = {}
+        self._backend_adapters: dict[tuple[str, str], NodeAdapter] = {}
+
+    def register_backend(self, backend: str, adapter: NodeAdapter) -> None:
+        """Register a trusted, identity-pinned implementation for an explicit node binding."""
+        if not isinstance(backend, str) or not backend.strip():
+            raise ContractError("backend name must be nonempty text")
+        spec = adapter.spec
+        if not isinstance(spec, AdapterSpec) or not callable(getattr(adapter, "execute", None)):
+            raise ContractError("adapter requires AdapterSpec and execute")
+        key = (backend, spec.key)
+        if key in self._backend_adapters:
+            raise ContractError(f"duplicate backend adapter: {backend}/{spec.key}")
+        adapter_implementation_digest(adapter)
+        self._backend_adapters[key] = adapter
 
     def register(self, adapter: NodeAdapter) -> None:
         spec = adapter.spec
@@ -311,7 +333,11 @@ class AdapterRegistry:
         self._adapters[spec.key] = adapter
 
     def resolve(self, binding: BoundAdapter) -> NodeAdapter:
-        adapter = self._adapters.get(binding.adapter)
+        adapter = (
+            self._backend_adapters.get((binding.backend, binding.adapter))
+            if binding.backend is not None
+            else self._adapters.get(binding.adapter)
+        )
         if adapter is None:
             raise ContractError(f"missing adapter: {binding.adapter}")
         spec = adapter.spec.to_dict()
@@ -331,11 +357,20 @@ class AdapterRegistry:
             raise ContractError("DAG execution requires explicit join relation compilation")
         bindings: dict[str, BoundAdapter] = {}
         for node in plan.nodes:
-            if node.backend is not None:
-                raise ContractError(f"unresolved Backend not supported in A2: {node.backend}")
+            candidates = (
+                [
+                    adapter
+                    for (backend, _), adapter in self._backend_adapters.items()
+                    if backend == node.backend
+                ]
+                if node.backend is not None
+                else list(self._adapters.values())
+            )
+            if node.backend is not None and not candidates:
+                raise ContractError(f"unresolved Backend: {node.backend}")
             choices = [
                 a
-                for a in self._adapters.values()
+                for a in candidates
                 if node.operator in a.spec.operators
                 and (node.adapter is None or a.spec.key == node.adapter)
             ]
@@ -349,6 +384,7 @@ class AdapterRegistry:
                 digest(spec),
                 adapter_implementation_digest(adapter),
                 adapter.spec.normalize_parameters(node.parameters),
+                node.backend,
             )
         provisional = BoundDagPlan("", plan, bindings)
         body = provisional.to_dict()

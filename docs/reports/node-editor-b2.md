@@ -42,3 +42,7 @@
 内嵌实际组件 CPU 验收已完成：运行 `dag_1e516e8674e84f6d85a209bec43cfa52`，通过真实 iframe 页面预览、填写 `Codex embedded CPU smoke (not user approval)` 并提交，三个节点各一次 attempt、一个 committed 决定回执；最终发布成功，完整证据闭包通过，浏览器脚本错误为 0。收起后固定运行图读取成功。使用 Fake Backend，无新增 GPU 推理；不与真实单图质量结论混同。可移植复现脚本位于 `frontend/smoke/`，说明见使用指南。
 
 收口验证：9 项 Python 编辑器测试、9 项 Vitest、7 项 Playwright、TypeScript/Vite、Ruff 和 mypy（85 个源码文件）通过。可移植内嵌 smoke 在已有历史记录的服务再次运行成功（`dag_b9e01fd7949d45aab472667fa49f8294`）；脚本以创建响应的精确 run ID 核验成功、三节点各一次 attempt 与单一决定回执，不以列表第一项替代本次结果。未重复声明全仓测试通过。
+
+逐节点本地 profile 首片：AdapterRegistry 允许同一 Adapter key 按显式 Backend 名注册多个实现；绑定新增可选 backend 字段，旧无显式绑定计划的序列化保持不变。编辑器加载配置中的全部 profiles，`--profile` 为默认绑定；下拉目录按 Operator/Adapter 过滤，切换配置清除旧 profile_digest 覆盖，参数表单和契约面板读取对应 schema。
+
+验证：53 项 Adapter/Engine/编辑器 Python 测试、8 项 Playwright、TypeScript/Vite、Ruff、mypy 通过。新增双实例执行回归证明各自调用对应实现，provenance adapter_identity 中固定 Backend 名，重启恢复不增加调用次数；缺少原 Backend 时拒绝恢复且不改写原节点证据。当前为 CPU 实现隔离验收，尚未进行同图两种真实模型组合运行。未声称完整 B2 完成。

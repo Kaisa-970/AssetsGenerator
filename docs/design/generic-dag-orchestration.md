@@ -615,3 +615,7 @@ Milestone A 前允许独立的纯前端技术 spike，但它不得触发真实�
 > 同一套后端编译和调度代码能够执行一张带扇出、汇合和人工等待的图；进程在人工等待或分支失败后重启，仍能证明已完成输出未变，只重试必要节点，并拒绝语义不成立的汇合。
 
 该验收通过后，React Flow 才接入生产运行。这样画布展示的是实际执行事实，而不是与真实 Workflow 并行维护的演示状态。
+
+## 实现补充：本地节点 Backend 绑定
+
+编辑器本地 profile 目录映射为 `(backend_name, adapter_key)` 的受信实现。节点显式 `backend` 必须匹配兼容的注册项；省略时沿用默认 AdapterRegistry 项。BoundAdapter 仅在显式绑定时序列化 backend 名，参数 schema/defaults 固定该 profile 的身份摘要；provenance 的 adapter_identity 保留完整绑定。此目录不复制 Operator 端口，不接受浏览器提交可执行代码或模型路径。当前范围仅本地 profiles，远程服务按 Milestone C 单独实施。

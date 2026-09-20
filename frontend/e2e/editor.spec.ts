@@ -516,3 +516,94 @@ test("fixed run graph displays persisted plan instead of edited draft", async ({
   await expect(draftNode).toBeVisible();
   await expect(page.getByLabel("管线名称")).toHaveValue("changed_draft");
 });
+
+test("node backend selection uses installed schema and clears stale identity", async ({
+  page,
+}) => {
+  let saved: any;
+  const adapter = {
+    name: "local",
+    version: "1",
+    operators: ["generate@1"],
+    defaults: { profile_digest: "old" },
+    parameter_schema: {
+      type: "object",
+      properties: { profile_digest: { type: "string", enum: ["old"] } },
+    },
+  };
+  await page.route("**/api/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === "/api/compile")
+      saved = route.request().postDataJSON().pipeline;
+    await route.fulfill({
+      json:
+        path === "/api/catalog"
+          ? {
+              operators: {
+                "generate@1": {
+                  name: "generate",
+                  version: "1",
+                  inputs: {},
+                  outputs: {},
+                },
+              },
+              adapters: [adapter],
+              backends: [
+                {
+                  ...adapter,
+                  backend: "other",
+                  adapter: "local@1",
+                  defaults: { profile_digest: "new" },
+                  parameter_schema: {
+                    type: "object",
+                    properties: {
+                      profile_digest: { type: "string", enum: ["new"] },
+                    },
+                  },
+                },
+              ],
+              templates: [
+                {
+                  id: "pair",
+                  label: "pair",
+                  pipeline: {
+                    pipeline: "pair",
+                    version: "1",
+                    inputs: {},
+                    nodes: {
+                      left: {
+                        operator: "generate@1",
+                        adapter: "local@1",
+                        inputs: {},
+                        parameters: { profile_digest: "old", seed: 42 },
+                      },
+                      right: {
+                        operator: "generate@1",
+                        adapter: "local@1",
+                        inputs: {},
+                        parameters: { profile_digest: "old" },
+                      },
+                    },
+                  },
+                },
+              ],
+            }
+          : path === "/api/compile"
+            ? { ok: true }
+            : { drafts: [] },
+    });
+  });
+  await page.goto("/");
+  page.on("dialog", (d) => d.accept());
+  await page.getByRole("button", { name: "pair", exact: true }).click();
+  await page.locator('.react-flow__node[data-id="left"]').click();
+  await page.getByLabel("节点 Backend", { exact: true }).selectOption("other");
+  await expect(
+    page.getByLabel("参数 profile_digest", { exact: true }),
+  ).toContainText("new");
+  await page.getByRole("button", { name: "编译校验", exact: true }).click();
+  await expect.poll(() => saved?.nodes.left.backend).toBe("other");
+  expect(saved.nodes.left.parameters).toEqual({ seed: 42 });
+  expect(saved.nodes.right.parameters).toEqual({ profile_digest: "old" });
+  expect(saved.nodes.right.backend).toBeUndefined();
+});

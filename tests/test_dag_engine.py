@@ -591,3 +591,53 @@ def test_unused_input_corruption_blocks_run_not_arbitrary_node(tmp_path):
         assert extra.artifact_id in repo.load(run.run_id).dag.unassigned_evidence_blocks
         blob.write_bytes(data)
         assert engine.recover(run.run_id).status == "succeeded"
+
+
+def test_explicit_backend_instances_execute_and_restore_with_provenance(tmp_path):
+    store, _, _, _, source = setup(tmp_path)
+    left, right = CopyAdapter(), CopyAdapter()
+    registry = AdapterRegistry()
+    registry.register_backend("left-profile", left)
+    registry.register_backend("right-profile", right)
+    port = PortSpec(("rgb_image",))
+    plan = registry.bind_plan(
+        compile_pipeline(
+            PipelineDefinition(
+                "profiles",
+                "1",
+                {"image": port},
+                {
+                    name: {
+                        "operator": "copy@1",
+                        "adapter": "copy@1",
+                        "backend": profile,
+                        "inputs": {"image": "pipeline.inputs.image"},
+                    }
+                    for name, profile in (("left", "left-profile"), ("right", "right-profile"))
+                },
+            ),
+            {"copy@1": OperatorSpec("copy", "1", {"image": port}, {"image": port})},
+            require_explicit_joins=True,
+        )
+    )
+    with DagRepository(store, tmp_path / "profiles") as repo:
+        engine = DagEngine(repo, registry)
+        run = engine.drain(engine.create(plan, {"image": source}).run_id)
+        assert run.status == "succeeded"
+        assert [name for name, _ in left.calls] == ["left"]
+        assert [name for name, _ in right.calls] == ["right"]
+        for name in ("left", "right"):
+            attempt = run.dag.node_states[name].current()
+            record = store.read_structured(attempt.provenance["image"][0])
+            assert record["node_id"] == name
+            assert record["parameters"]["adapter_identity"]["backend"] == f"{name}-profile"
+    with DagRepository(store, tmp_path / "profiles") as repo:
+        restored = DagEngine(repo, registry).drain(run.run_id)
+        assert restored.status == "succeeded"
+        assert len(left.calls) == len(right.calls) == 1
+        assert restored.dag.node_states == run.dag.node_states
+        missing = AdapterRegistry()
+        missing.register_backend("left-profile", left)
+        with pytest.raises(ContractError, match="unresolved Backend"):
+            DagEngine(repo, missing).recover(run.run_id)
+        assert repo.load(run.run_id).dag.node_states == run.dag.node_states

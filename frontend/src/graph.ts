@@ -43,6 +43,7 @@ export type Catalog = {
   execution_profile?: string;
   operators: Record<string, Operator>;
   adapters: Adapter[];
+  backends?: (Adapter & { backend: string; adapter: string })[];
   templates: { id: string; label: string; pipeline: Pipeline }[];
 };
 export const inputId = (name: string) => `input:${name}`;

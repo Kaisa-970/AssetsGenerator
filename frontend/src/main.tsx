@@ -274,6 +274,11 @@ function App() {
   const adapters = node
     ? catalog.adapters.filter((a) => a.operators.includes(node.operator))
     : [];
+  const selectedAdapter = node?.backend
+    ? catalog.backends?.find(
+        (b) => b.backend === node.backend && b.adapter === node.adapter,
+      )
+    : adapters.find((a) => `${a.name}@${a.version}` === node?.adapter);
   return (
     <div className="app">
       <header>
@@ -660,29 +665,62 @@ function App() {
                         </select>
                       </label>
                       <label>
-                        Backend 绑定（编译前未验证）
-                        <input
-                          placeholder="可选，Backend registry 名称"
+                        Backend 配置
+                        <select
+                          aria-label="节点 Backend"
                           value={node.backend || ""}
                           onChange={(e) =>
-                            update({
-                              ...pipeline,
-                              nodes: {
-                                ...pipeline.nodes,
-                                [selected]: {
-                                  ...node,
-                                  backend: e.target.value || undefined,
+                            update((previous) => {
+                              const parameters = {
+                                ...previous.nodes[selected].parameters,
+                              };
+                              // The previous identity must not masquerade as the newly selected profile.
+                              delete parameters.profile_digest;
+                              return {
+                                ...previous,
+                                nodes: {
+                                  ...previous.nodes,
+                                  [selected]: {
+                                    ...previous.nodes[selected],
+                                    backend: e.target.value || undefined,
+                                    parameters,
+                                  },
                                 },
-                              },
+                              };
                             })
                           }
-                        />
+                        >
+                          <option value="">服务默认实现</option>
+                          {(catalog.backends || [])
+                            .filter(
+                              (b) =>
+                                b.operators.includes(node.operator) &&
+                                (!node.adapter || b.adapter === node.adapter),
+                            )
+                            .map((b) => (
+                              <option
+                                key={`${b.backend}:${b.adapter}`}
+                                value={b.backend}
+                              >
+                                {b.backend}
+                              </option>
+                            ))}
+                          {node.backend &&
+                            !(catalog.backends || []).some(
+                              (b) =>
+                                b.backend === node.backend &&
+                                b.operators.includes(node.operator) &&
+                                (!node.adapter || b.adapter === node.adapter),
+                            ) && (
+                              <option value={node.backend}>
+                                {node.backend}（未安装或不兼容）
+                              </option>
+                            )}
+                        </select>
                       </label>
                       <ParameterForm
                         key={`${selected}:${node.adapter || ""}`}
-                        adapter={adapters.find(
-                          (a) => `${a.name}@${a.version}` === node.adapter,
-                        )}
+                        adapter={selectedAdapter}
                         parameters={node.parameters || {}}
                         onChange={(value) =>
                           update((previous) => ({
@@ -734,9 +772,7 @@ function App() {
                         <summary>参数契约</summary>
                         <pre>
                           {JSON.stringify(
-                            adapters.find(
-                              (a) => `${a.name}@${a.version}` === node.adapter,
-                            )?.parameter_schema || {},
+                            selectedAdapter?.parameter_schema || {},
                             null,
                             2,
                           )}

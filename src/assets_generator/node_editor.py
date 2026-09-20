@@ -59,6 +59,7 @@ class DraftEditor:
         return {
             "operators": {k: to_primitive(v) for k, v in self.specs.items()},
             "adapters": self.adapters.catalog() if self.adapters else [],
+            "backends": self.adapters.backend_catalog() if self.adapters else [],
             "templates": self.templates,
             "execution_enabled": self.execution is not None,
             "execution_profile": self.execution_profile,
@@ -319,6 +320,9 @@ def serve_editor(
                 DagImageBuildAdapter(profiles[profile]),
             ):
                 registry.register(adapter)
+            for name, configured in profiles.items():
+                registry.register_backend(name, DagProposalAdapter(configured))
+                registry.register_backend(name, DagImageBuildAdapter(configured))
             repository = DagRepository(LocalArtifactStore(store), directory / "runtime")
             stack.enter_context(repository)
             execution = NodeEditorExecution(
