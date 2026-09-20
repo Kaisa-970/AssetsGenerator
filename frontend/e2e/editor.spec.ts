@@ -1463,3 +1463,65 @@ test("image outputs preview on demand and report errors without dispatch", async
   await expect(image).toBeHidden();
   expect(mutations).toBe(0);
 });
+
+test("compile diagnostics locate known nodes without changing the graph", async ({
+  page,
+}) => {
+  const graph = {
+    pipeline: "diagnostic",
+    version: "1",
+    inputs: {},
+    nodes: { broken: { operator: "copy@1", inputs: {} } },
+  };
+  const compiled: unknown[] = [];
+  await page.route("**/api/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === "/api/compile")
+      compiled.push(route.request().postDataJSON().pipeline);
+    await route.fulfill({
+      json:
+        path === "/api/catalog"
+          ? {
+              operators: {
+                "copy@1": {
+                  name: "copy",
+                  version: "1",
+                  inputs: {},
+                  outputs: {},
+                },
+              },
+              adapters: [],
+              templates: [
+                { id: "diagnostic", label: "diagnostic", pipeline: graph },
+              ],
+            }
+          : path === "/api/compile"
+            ? {
+                ok: false,
+                diagnostics: [
+                  {
+                    message: "broken.image is missing",
+                    node_id: "broken",
+                    port: "image",
+                  },
+                  { message: "global configuration error" },
+                  { message: "unknown location", node_id: "absent" },
+                ],
+              }
+            : { drafts: [] },
+    });
+  });
+  await page.goto("/");
+  page.on("dialog", (d) => d.accept());
+  await page.getByRole("button", { name: "diagnostic", exact: true }).click();
+  await page.getByRole("button", { name: "编译校验", exact: true }).click();
+  await expect(page.getByRole("alert")).toHaveCount(3);
+  await expect(page.getByRole("button", { name: /定位节点/ })).toHaveCount(1);
+  await page
+    .getByRole("button", { name: "定位节点 · broken", exact: true })
+    .click();
+  await expect(page.getByLabel("实例 ID")).toHaveValue("broken");
+  await page.getByRole("button", { name: "编译校验", exact: true }).click();
+  await expect.poll(() => compiled.length).toBe(2);
+  expect(compiled[0]).toEqual(compiled[1]);
+});

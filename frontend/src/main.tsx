@@ -549,6 +549,40 @@ function App() {
               <p>
                 编译反馈为后端权威结果。静态契约通过不代表模型推理成功。修改图后需要重新编译；启动运行时后端再次校验。
               </p>
+              {(
+                (
+                  result as
+                    | {
+                        diagnostics?: {
+                          message: string;
+                          node_id?: string;
+                          port?: string;
+                        }[];
+                      }
+                    | undefined
+                )?.diagnostics || []
+              ).map((item, index) => (
+                <div key={index} className="run-node">
+                  <p role="alert">{item.message}</p>
+                  {item.port && <span>端口：{item.port}</span>}
+                  {item.node_id &&
+                    Object.hasOwn(pipeline.nodes, item.node_id) && (
+                      <button
+                        onClick={() => {
+                          setSelected(item.node_id);
+                          setTab("inspector");
+                          void flow.fitView({
+                            nodes: [{ id: item.node_id! }],
+                            padding: 0.5,
+                            maxZoom: 1,
+                          });
+                        }}
+                      >
+                        定位节点 · {item.node_id}
+                      </button>
+                    )}
+                </div>
+              ))}
               <pre>
                 {result
                   ? JSON.stringify(result, null, 2)
