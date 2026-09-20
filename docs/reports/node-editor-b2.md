@@ -84,3 +84,7 @@ GLB 独立回读：70740 顶点、96610 三角面、2292388 字节；Store 中�
 浏览器多视图导入：复用单图字节上传接口，新增小 JSON 组包接口 `/api/inputs/observations`，接受 2–32 个不同 RGB ArtifactRef。Core 通过 make_observation_bundle 验证内容和摘要，按输入顺序生成稳定 view ID，再保存不可变 ObservationBundle；无模型推理、相机估计、mask/depth 填充或隐式颜色转换。前端逐张上传显示进度及文件列表，成功组包后填入运行引用；失败清除当前输入。部分成功的图片可留在 Store，不声称批量事务回滚。
 
 验证：editor/execution 19 项 Python 测试通过，覆盖精确引用/顺序、稳定身份、反序身份变化、无运行产生、重复/数量限制、损坏 Blob、RGBA 拒绝和 HTTP 路由。前端 12 项 Playwright 通过，新增实际上传请求序列与组包引用/刷新重试检查（响应由测试模拟）；Ruff、mypy 通过。本轮未新增真实 GPU 验收。
+
+GLB 交互预览首版：固定 npm Three.js 0.169.0，保留原下载链接，新增与 run/node/output 绑定的只读弹窗，自动包围盒取景、OrbitControls、坐标轴和中性光照。验证 GLB 头/长度及资源 URI，拒绝外部和 data URI；关闭会取消请求/动画及释放渲染资源，晚到解析结果直接释放。预览不写运行、不派发模型。
+
+本轮 14 项 Vitest 通过（含 5 项 GLB 资源边界），已有 12 项 Playwright 通过，随后新增小型真实编码 GLB 的浏览器预览用例单独通过，未把两轮相加声称单次 13 项。TypeScript/Vite 构建通过。尚未验收真实发布 GLB、内嵌纹理视觉结果、加载中关闭/换运行及 WebGL 不可用路径；不据此关闭完整 B2。当前渲染代码随首屏打包，Vite 提示主 chunk 较大，后续应按需加载优化。

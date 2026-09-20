@@ -1,3 +1,4 @@
+import { GlbPreview } from "./GlbPreview";
 import { RunGraph } from "./RunGraph";
 import { useEffect, useRef, useState } from "react";
 import type { Pipeline } from "./graph";
@@ -90,6 +91,11 @@ export function ExecutionPanel({
   executionReason?: string;
 }) {
   const [creation, setCreation] = useState(restoreCreation);
+  const [preview, setPreview] = useState<{
+    runId: string;
+    nodeId: string;
+    url: string;
+  }>();
   const [showReview, setShowReview] = useState(false);
   const [showGraph, setShowGraph] = useState(false);
   const [imagePath, setImagePath] = useState("");
@@ -127,6 +133,7 @@ export function ExecutionPanel({
     void refreshRuns().catch((error) => setMessage(String(error)));
   }, []);
   const choose = (id: string) => {
+    setPreview(undefined);
     setShowGraph(false);
     setShowReview(false);
     selectedRef.current = id;
@@ -512,6 +519,22 @@ export function ExecutionPanel({
           {!!envelope.outputs?.length && (
             <div className="run-node">
               <strong>已发布输出</strong>
+              {envelope.outputs
+                .filter((output) => output.port === "glb")
+                .map((output) => (
+                  <button
+                    key={`preview:${output.node_id}`}
+                    onClick={() =>
+                      setPreview({
+                        runId: run.run_id,
+                        nodeId: output.node_id,
+                        url: output.url,
+                      })
+                    }
+                  >
+                    预览模型 · {output.node_id}
+                  </button>
+                ))}
               {envelope.outputs.map((output) => (
                 <a
                   key={`${output.node_id}:${output.port}`}
@@ -624,6 +647,9 @@ export function ExecutionPanel({
             referrerPolicy="no-referrer"
           />
         </div>
+      )}
+      {preview && (
+        <GlbPreview {...preview} onClose={() => setPreview(undefined)} />
       )}
       {message && <p role="status">{message}</p>}
     </section>

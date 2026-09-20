@@ -917,3 +917,81 @@ test("multi-view creation preserves observation reference across reload retry", 
   expect(requests).toHaveLength(2);
   expect(requests[1]).toEqual(requests[0]);
 });
+
+test("published GLB preview loads geometry and closes without mutation", async ({
+  page,
+}) => {
+  const positions = new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]);
+  const document = {
+    asset: { version: "2.0" },
+    scene: 0,
+    scenes: [{ nodes: [0] }],
+    nodes: [{ mesh: 0 }],
+    meshes: [{ primitives: [{ attributes: { POSITION: 0 }, mode: 4 }] }],
+    buffers: [{ byteLength: 36 }],
+    bufferViews: [{ buffer: 0, byteOffset: 0, byteLength: 36 }],
+    accessors: [
+      {
+        bufferView: 0,
+        componentType: 5126,
+        count: 3,
+        type: "VEC3",
+        min: [0, 0, 0],
+        max: [1, 1, 0],
+      },
+    ],
+  };
+  const text = JSON.stringify(document);
+  const json = Buffer.from(text.padEnd(Math.ceil(text.length / 4) * 4));
+  const glb = Buffer.alloc(28 + json.length + 36);
+  [0x46546c67, 2, glb.length, json.length, 0x4e4f534a].forEach((v, i) =>
+    glb.writeUInt32LE(v, i * 4),
+  );
+  json.copy(glb, 20);
+  glb.writeUInt32LE(36, 20 + json.length);
+  glb.writeUInt32LE(0x004e4942, 24 + json.length);
+  Buffer.from(positions.buffer).copy(glb, 28 + json.length);
+  let mutations = 0;
+  const output = "/api/runs/dag_preview/outputs/generate/glb";
+  await page.route("**/api/**", async (route) => {
+    if (route.request().method() !== "GET") mutations++;
+    const path = new URL(route.request().url()).pathname;
+    if (path === output)
+      return route.fulfill({ body: glb, contentType: "model/gltf-binary" });
+    await route.fulfill({
+      json:
+        path === "/api/catalog"
+          ? {
+              operators: {},
+              adapters: [],
+              templates: [],
+              execution_enabled: true,
+            }
+          : path === "/api/drafts"
+            ? { drafts: [] }
+            : path === "/api/runs"
+              ? { runs: [{ run_id: "dag_preview", status: "succeeded" }] }
+              : {
+                  run: {
+                    run_id: "dag_preview",
+                    status: "succeeded",
+                    dag: { revision: 1, node_states: {} },
+                  },
+                  outputs: [{ node_id: "generate", port: "glb", url: output }],
+                },
+    });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "运行", exact: true }).click();
+  await page.getByLabel("选择运行").selectOption("dag_preview");
+  await page
+    .getByRole("button", { name: "预览模型 · generate", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "模型预览", exact: true });
+  await expect(dialog.getByRole("status")).toContainText("模型已加载");
+  await expect(dialog.locator("canvas")).toBeVisible();
+  await dialog.getByRole("button", { name: "重置视角" }).click();
+  await dialog.getByRole("button", { name: "关闭模型预览" }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(mutations).toBe(0);
+});

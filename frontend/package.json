@@ -13,7 +13,8 @@
     "@xyflow/react": "^12.8.0",
     "js-yaml": "^4.1.0",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "three": "0.169.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",
@@ -21,6 +22,7 @@
     "@types/node": "^26.6.2",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
+    "@types/three": "0.169.0",
     "@vitejs/plugin-react": "^4.5.0",
     "prettier": "^3.9.8",
     "typescript": "^5.8.0",

@@ -130,3 +130,9 @@ PYTHONPATH=src <MAIN_CHECKOUT>/.venv/bin/python -m assets_generator.cli node-edi
 编译与启动共用输入适用性检查：仅支持单个 `image` RGB 或 `observations` ObservationBundle 输入，均须接收标量 ArtifactRef。启动再次验证观测内容、证据闭包和绑定；幂等键、固定计划、输出读取及恢复与单图一致。可在运行面板直接选择 2–32 张 RGB PNG/JPEG/WebP 照片，每张最多 20 MiB；按浏览器选择顺序分配 view_000 等 ID，并显示文件列表。先逐张上传，再校验组包，只有点击启动才执行模型。拒绝重复 Artifact 和非 RGB 图片，不隐式转换，也不补相机、mask 或深度。失败时清除当前输入，可重新选择；之前成功上传的不可变图片可能留在 Store，重传相同字节会复用身份。仍可手填已有 ObservationBundle ID。真实画布 DA3/Open3D 的已有引用路径已完成 GPU smoke，批量上传接真实模型尚未重复验收。
 
 真实服务启动后，可用 `frontend/smoke/multi-view.cjs <BROWSER_CONFIG>.json` 验收画布路径。配置包含 `url`（不含尾斜杠）、`observations`（Store 中现有观测包 Artifact ID）和 `root`（已存在的仓库外证据目录）。脚本通过 UI 启动，等待发布，核对精确输入与每节点一次 attempt，读取各输出并截图固定运行图。此命令会实际调用所配置模型，GPU 验收请串行执行。
+
+## 模型预览
+
+发布后点击“预览模型 · 节点名”，可在工作台旋转、缩放、平移模型或重置视角。面板显示固定 run ID，不跟随画布草稿变化；关闭或切换运行会释放渲染资源。读取仍经过服务端证据校验，不会提交决定或触发模型。保留 GLB 下载入口。
+
+首版使用随应用打包的 Three.js，支持自包含 GLB、内嵌 bufferView 纹理和顶点颜色；拒绝外部/data URI，预览大小上限 128 MiB。无法创建 WebGL 或解析失败时显示错误。真实发布资产外观与更多资源清理边界仍在验收中。
