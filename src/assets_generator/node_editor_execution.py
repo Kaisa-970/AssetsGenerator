@@ -77,7 +77,9 @@ class NodeEditorExecution:
         engine.repository._ready()
         self.engine = engine
         self.specs = specs if specs is not None else load_default_operator_specs()
-        self.relations = relations or engine.relations
+        if relations is not None and relations is not engine.relations:
+            raise ContractError("editor execution must share the engine relation registry")
+        self.relations = engine.relations
         self._lock = threading.RLock()
         self._worker: threading.Thread | None = None
         self._active_run: str | None = None

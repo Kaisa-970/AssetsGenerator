@@ -1,8 +1,9 @@
+import pytest
 from PIL import Image
 from test_node_editor_execution import wait
 
 from assets_generator.artifact_store import LocalArtifactStore
-from assets_generator.contracts import OperatorSpec, PortSpec, RelationSpec
+from assets_generator.contracts import ContractError, OperatorSpec, PortSpec, RelationSpec
 from assets_generator.dag_adapters import AdapterRegistry, AdapterSpec, NodeExecutionResult
 from assets_generator.dag_engine import DagEngine
 from assets_generator.dag_persistence import DagRepository
@@ -90,3 +91,22 @@ def test_custom_relation_compiles_runs_and_recovers_through_editor(tmp_path):
         assert recovered.status == "succeeded"
         assert adapter.calls == 1
         assert len(recovered.dag.node_states["join"].attempts) == 1
+
+
+def test_editor_rejects_separate_relation_registry_before_creating_work(tmp_path):
+    store = LocalArtifactStore(tmp_path / "store")
+    with DagRepository(store, tmp_path / "runtime") as repo:
+        engine_relations = RelationValidatorRegistry()
+        separate_relations = RelationValidatorRegistry()
+        # Matching current contents do not prevent future independent mutation.
+        engine_relations.register(SameInput())
+        separate_relations.register(SameInput())
+        engine = DagEngine(repo, AdapterRegistry(), engine_relations)
+        with pytest.raises(ContractError, match="share the engine relation registry"):
+            NodeEditorExecution(engine, relations=separate_relations)
+        service = NodeEditorExecution(engine, relations=engine_relations)
+        try:
+            assert service.relations is engine.relations
+            assert service.list_runs() == []
+        finally:
+            service.close()

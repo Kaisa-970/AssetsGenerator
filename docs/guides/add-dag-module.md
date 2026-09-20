@@ -63,7 +63,8 @@ Python 启动代码中注册，不支持任意动态插件发现。
 
 执行模式下 DraftEditor 直接使用 NodeEditorExecution 的 OperatorSpec 和关系注册表；
 额外传入的 Operator 文件若与执行服务不一致，启动时拒绝。自定义启动代码仍应让
-NodeEditorExecution 与 DagEngine 使用一致的关系注册表。静态编译支持的图不一定满足当前运行输入入口；
+NodeEditorExecution 与 DagEngine 共享同一个关系注册表实例；构造时传入另一份
+注册表会被拒绝，即使当时内容相同，以免后续独立注册导致漂移。静态编译支持的图不一定满足当前运行输入入口；
 编辑器当前支持单图 image 或 observations 入口，开发者不能以目录可见替代执行验收。
 新增关系应先登记到执行服务使用的注册表，画布编译随后复用该注册表。
 
