@@ -135,3 +135,15 @@ manual 模式不加载模板：在画布修改输入契约、添加节点和连�
 实际输入/输出 ArtifactRef、provenance 引用、参数/绑定摘要与时间。这里展示
 保存的记录，不读取 Blob、不隐式修复或重跑；输出文件读取仍经原输出入口校验。
 CPU 浏览器脚本会对照实际 attempt 检查这些字段，并验证查看前后运行内容不变。
+
+验证服务进程重启（已完成运行）：
+
+```bash
+node frontend/smoke/cpu-image-recover.cjs http://127.0.0.1:8770 capture <RUN_ID> /tmp/cpu-before-restart.json
+# Ctrl+C 关闭服务，再用相同 --directory 启动；新端口如有变化，替换下一条地址。
+node frontend/smoke/cpu-image-recover.cjs http://127.0.0.1:8770 recover /tmp/cpu-before-restart.json
+```
+
+capture 只读取成功运行并写入新的本地快照文件，拒绝覆盖已有文件。recover 通过
+浏览器对原 run_id 执行一次显式恢复，比较计划、输入、完整节点状态与输出引用，
+并重新预览图片；不创建新运行。这不覆盖计算过程中崩溃或 GPU 中断。
