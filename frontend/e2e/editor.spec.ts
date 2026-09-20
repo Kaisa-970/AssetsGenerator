@@ -693,10 +693,17 @@ test("node backend selection uses installed schema and clears stale identity", a
   await page.locator('.react-flow__node[data-id="left"]').click();
   await expect(page.getByRole("alert")).toContainText("stale-deployment");
   await expect(page.getByRole("alert")).toContainText('当前要求："old"');
-  await page.getByRole("button", { name: "使用当前部署值 · profile_digest", exact: true }).click();
+  await page
+    .getByRole("button", {
+      name: "使用当前部署值 · profile_digest",
+      exact: true,
+    })
+    .click();
   await expect(page.getByRole("alert")).toHaveCount(0);
   await page.getByRole("button", { name: "编译校验", exact: true }).click();
-  await expect.poll(() => saved?.nodes.left.parameters.profile_digest).toBe("old");
+  await expect
+    .poll(() => saved?.nodes.left.parameters.profile_digest)
+    .toBe("old");
   await page.getByRole("button", { name: "配置", exact: true }).click();
   expect(saved.nodes.right.parameters).toEqual({ profile_digest: "old" });
   await page.locator('.react-flow__node[data-id="left"]').click();
@@ -1230,13 +1237,11 @@ test("RGBA canvas upload uses the explicit endpoint and preserves returned refer
     "accept",
     "image/png",
   );
-  await page
-    .getByLabel("上传运行图片")
-    .setInputFiles({
-      name: "prepared.png",
-      mimeType: "image/png",
-      buffer: Buffer.from("rgba transport fixture"),
-    });
+  await page.getByLabel("上传运行图片").setInputFiles({
+    name: "prepared.png",
+    mimeType: "image/png",
+    buffer: Buffer.from("rgba transport fixture"),
+  });
   await expect(
     page.getByText("图片已上传；点击启动新运行才会执行模型。"),
   ).toBeVisible();
@@ -1316,4 +1321,82 @@ test("loading a saved run configuration only changes the draft", async ({
     .click();
   await expect(page.locator('input[value="original_run"]')).toBeVisible();
   expect(writes).toBe(0);
+});
+
+test("image outputs preview on demand and report errors without dispatch", async ({
+  page,
+}) => {
+  let reads = 0;
+  let mutations = 0;
+  let fail = false;
+  const output = "/api/runs/dag_images/outputs/transform/image";
+  const png = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=",
+    "base64",
+  );
+  await page.route("**/api/**", async (route) => {
+    if (route.request().method() !== "GET") mutations++;
+    const path = new URL(route.request().url()).pathname;
+    if (path === output) {
+      reads++;
+      return route.fulfill(
+        fail
+          ? { status: 400, json: { error: "invalid evidence" } }
+          : { body: png, contentType: "image/png" },
+      );
+    }
+    await route.fulfill({
+      json:
+        path === "/api/catalog"
+          ? {
+              operators: {},
+              adapters: [],
+              templates: [],
+              execution_enabled: true,
+            }
+          : path === "/api/drafts"
+            ? { drafts: [] }
+            : path === "/api/runs"
+              ? { runs: [{ run_id: "dag_images", status: "succeeded" }] }
+              : {
+                  run: {
+                    run_id: "dag_images",
+                    status: "succeeded",
+                    dag: { revision: 1, node_states: {} },
+                  },
+                  outputs: [
+                    {
+                      node_id: "transform",
+                      port: "image",
+                      kind: "rgba_image",
+                      url: output,
+                    },
+                  ],
+                },
+    });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "运行", exact: true }).click();
+  await page.getByLabel("选择运行").selectOption("dag_images");
+  const open = page.getByRole("button", {
+    name: "预览图片 · transform · image",
+    exact: true,
+  });
+  await expect(open).toBeVisible();
+  expect(reads).toBe(0);
+  await open.click();
+  const image = page.getByRole("img", { name: "节点 transform 的 image 输出" });
+  await expect(image).toBeVisible();
+  expect(
+    await image.evaluate((element: HTMLImageElement) => element.naturalWidth),
+  ).toBe(1);
+  await page
+    .getByRole("button", { name: "收起图片 · transform · image", exact: true })
+    .click();
+  await expect(image).toHaveCount(0);
+  fail = true;
+  await open.click();
+  await expect(page.getByRole("alert")).toContainText("图片读取失败");
+  await expect(image).toBeHidden();
+  expect(mutations).toBe(0);
 });

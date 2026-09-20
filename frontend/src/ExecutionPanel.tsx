@@ -1,4 +1,5 @@
 import { remoteStatusMessage } from "./remoteStatus";
+import { ImageOutput } from "./ImageOutput";
 import { RunGraph } from "./RunGraph";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import type { Pipeline } from "./graph";
@@ -591,6 +592,19 @@ export function ExecutionPanel({
                   >
                     下载发布包 · {output.node_id}
                   </a>
+                ))}
+              {envelope.outputs
+                .filter((output) =>
+                  ["rgb_image", "rgba_image"].includes(output.kind || ""),
+                )
+                .map((output) => (
+                  <ImageOutput
+                    key={`${run.run_id}:${output.node_id}:${output.port}:${output.url}`}
+                    runId={run.run_id}
+                    nodeId={output.node_id}
+                    port={output.port}
+                    url={output.url}
+                  />
                 ))}
               {envelope.outputs.map((output) => (
                 <a

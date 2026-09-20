@@ -142,3 +142,11 @@ PYTHONPATH=src <MAIN_CHECKOUT>/.venv/bin/python -m assets_generator.cli node-edi
 切换节点 Backend 时，编辑器会清除旧、新 Adapter schema 中单值枚举的显式覆盖
 （包括远程 endpoint、service_id、backend_digest），由新配置重新提供固定值。
 seed 等可调参数保留；后端仍重新绑定并校验全部参数，切换不会改写已有运行。
+
+## 图片节点输出预览
+
+RGB/RGBA 节点完成后，运行面板提供“预览图片 · 节点 · 端口”。可同时展开多个
+节点比较处理结果；透明区域显示棋盘背景，面板保留固定运行 ID。
+仅在展开时读取输出，每次重新展开都通过后端证据校验，读取失败显示错误。
+收起或切换运行会取消读取并释放图片资源；预览不会执行模型、恢复运行或提交决定，
+原始输出链接仍保留。

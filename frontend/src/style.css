@@ -458,3 +458,15 @@ footer {
   min-height: 300px;
   border: 0;
 }
+
+.image-output img {
+  display: block;
+  max-width: 100%;
+  max-height: 480px;
+  object-fit: contain;
+  background: repeating-conic-gradient(#e2e7ec 0% 25%, #fff 0% 50%) 0 / 20px
+    20px;
+}
+.image-output img[hidden] {
+  display: none;
+}
