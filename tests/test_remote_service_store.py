@@ -85,3 +85,72 @@ def test_invalid_terminal_rolls_back_and_success_is_immutable(tmp_path):
             store.get_blob(sha256_bytes(b"original"))
     finally:
         store.close()
+
+
+@pytest.mark.parametrize("damage", ["missing", "length", "duplicate", "unknown_field"])
+def test_success_requires_verified_output_blobs(tmp_path, damage):
+    req = request()
+    store = RemoteServiceStore(tmp_path / "service.sqlite", req.identity)
+    data = b"output bytes"
+    descriptor = {
+        "output_id": "image",
+        "blob_digest": sha256_bytes(data),
+        "byte_length": len(data),
+        "media_type": "image/png",
+    }
+    try:
+        store.submit(req)
+        store.transition(req, expected="queued", state="running")
+        if damage != "missing":
+            store.put_blob(data, sha256_bytes(data))
+        if damage == "length":
+            descriptor["byte_length"] += 1
+        if damage == "unknown_field":
+            descriptor["url"] = "https://example.invalid/image"
+        outputs = [descriptor, descriptor] if damage == "duplicate" else [descriptor]
+        with pytest.raises(ValueError):
+            store.transition(
+                req, expected="running", state="succeeded", result={"outputs": outputs}
+            )
+        assert store.lookup(req).state == "running"
+    finally:
+        store.close()
+
+
+def test_published_output_download_after_reopen_and_corruption(tmp_path):
+    req = request()
+    path = tmp_path / "service.sqlite"
+    data = b"output bytes"
+    digest = sha256_bytes(data)
+    store = RemoteServiceStore(path, req.identity)
+    store.submit(req)
+    store.transition(req, expected="queued", state="running")
+    store.put_blob(data, digest)
+    store.transition(
+        req,
+        expected="running",
+        state="succeeded",
+        result={
+            "outputs": [
+                {
+                    "output_id": "image",
+                    "blob_digest": digest,
+                    "byte_length": len(data),
+                    "media_type": "image/png",
+                }
+            ]
+        },
+    )
+    store.close()
+    store = RemoteServiceStore(path, req.identity)
+    try:
+        descriptor, downloaded = store.download(req, "image")
+        assert downloaded == data
+        assert descriptor.blob_digest == digest
+        with pytest.raises(ValueError):
+            store.download(req, "other")
+        store.db.execute("UPDATE blobs SET body=? WHERE digest=?", (b"corrupt", digest))
+        with pytest.raises(ValueError, match="missing/corrupt"):
+            store.download(req, "image")
+    finally:
+        store.close()

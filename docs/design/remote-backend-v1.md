@@ -192,3 +192,9 @@ RemoteNodeAdapter.input_blobs 显式选择待上传的直接输入 ArtifactRef�
 重开数据库不重置 running，不自动执行排队或运行中作业；服务监督器仍需明确处理进程身份与中断。此层不提供 HTTP、认证、容量管理或模型执行，成功结果描述尚未绑定服务端输出 Blob，不能单凭该存储层宣称远程模型服务可用。当前数据库重开测试也不等同真实服务 SIGKILL 或掉电验收。
 
 本轮服务存储、协议和 HTTP 合跑 45 项通过；Ruff lint/format（189 文件）、mypy（95 源文件）通过。包含数据库重开、双连接并发认领、同键冲突、服务身份变化、无效终态事务回滚和 Blob 摘要拒绝。无 GPU 或真实远程模型验证。
+
+### 服务端成功发布与下载校验
+
+RemoteServiceStore 在 running→succeeded 的事务内解析完整 outputs 描述列表，逐项核对服务端已保存 Blob 的摘要和长度；缺失 Blob、长度不符、重复 output_id 或任意额外 URL 字段均拒绝，事务回滚为 running。download 只按固定成功描述读取，并再次验证 Blob，不接受调用方提供存储路径。空 outputs 保留为协议允许的空结果；具体 Operator 是否允许由导入契约决定。
+
+服务存储/协议合跑 29 项通过，覆盖数据库重开后下载、发布拒绝回滚及数据库内容损坏后的下载拒绝；Ruff/mypy 通过。此层仅保证传输内容，不将 MIME 字符串当格式验证，图像/GLB 语义仍由 Core 导入端处理。HTTP 服务及真实模型仍未接入。

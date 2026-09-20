@@ -8,7 +8,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from .remote_protocol import RemoteIdentity, RemoteJob, RemoteRequest, _identifier
+from .remote_protocol import RemoteIdentity, RemoteJob, RemoteOutput, RemoteRequest, _identifier
 from .serialization import canonical_json_bytes, sha256_bytes
 
 
@@ -158,6 +158,8 @@ class RemoteServiceStore:
                 wire = self._wire(request)
                 wire.update(state=state, result=result, error=error)
                 job = RemoteJob.parse(wire, request)
+                if job.state == "succeeded":
+                    self._validate_outputs(job)
                 self.db.execute(
                     "UPDATE jobs SET job=? WHERE key=?",
                     (canonical_json_bytes(wire), request.submission_key),
@@ -167,3 +169,27 @@ class RemoteServiceStore:
             except BaseException:
                 self.db.execute("ROLLBACK")
                 raise
+
+    def _validate_outputs(self, job: RemoteJob) -> None:
+        raw = json.loads(job.result_json or b"{}")
+        if set(raw) != {"outputs"} or not isinstance(raw["outputs"], list):
+            raise ValueError("service success requires output descriptors")
+        for item in raw["outputs"]:
+            if not isinstance(item, dict) or not isinstance(item.get("output_id"), str):
+                raise ValueError("invalid service output descriptor")
+            output = RemoteOutput.from_job(job, item["output_id"])
+            data = self.get_blob(output.blob_digest)
+            if len(data) != output.byte_length:
+                raise ValueError("service output length mismatch")
+
+    def download(self, request: RemoteRequest, output_id: str) -> tuple[RemoteOutput, bytes]:
+        """Serve only the bytes named by the immutable successful job result."""
+        with self._lock:
+            job = self.lookup(request)
+            if job is None:
+                raise ValueError("service job missing")
+            output = RemoteOutput.from_job(job, output_id)
+            data = self.get_blob(output.blob_digest)
+            if len(data) != output.byte_length:
+                raise ValueError("service output length mismatch")
+            return output, data
