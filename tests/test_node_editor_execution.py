@@ -697,3 +697,32 @@ def test_multi_input_refs_bind_every_pipeline_input_and_are_idempotent(tmp_path)
                 service.start(graph, input_refs={"image": refs[0]})
         finally:
             service.close()
+
+
+def test_upload_mask_accepts_binary_png_and_rejects_invalid_values(tmp_path):
+    import io
+
+    import pytest
+    from PIL import Image
+
+    from assets_generator.artifact_store import LocalArtifactStore
+    from assets_generator.contracts import ContractError
+    from assets_generator.dag_adapters import AdapterRegistry
+    from assets_generator.dag_engine import DagEngine
+    from assets_generator.dag_persistence import DagRepository
+    from assets_generator.node_editor_execution import NodeEditorExecution
+
+    with DagRepository(LocalArtifactStore(tmp_path / "store"), tmp_path / "runtime") as repo:
+        service = NodeEditorExecution(DagEngine(repo, AdapterRegistry()))
+        try:
+            data = io.BytesIO()
+            Image.frombytes("L", (2, 2), bytes([255, 0, 0, 255])).save(data, format="PNG")
+            result = service.upload_mask(data.getvalue())
+            ref = result["mask_ref"]
+            assert repo.store.get_manifest(ref["artifact_id"]).identity.kind == "binary_mask"
+            bad = io.BytesIO()
+            Image.frombytes("L", (2, 2), bytes([0, 0, 0, 0])).save(bad, format="PNG")
+            with pytest.raises(ContractError, match="foreground"):
+                service.upload_mask(bad.getvalue())
+        finally:
+            service.close()

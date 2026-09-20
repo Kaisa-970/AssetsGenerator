@@ -225,3 +225,17 @@ OperatorSpec 校验 kind、schema、carrier、digest 和证据完整性，再固
 这是后端 API 契约，当前运行面板仍只展示单图或 ObservationBundle 的专用表单。
 在前端加入任意多输入表单前，应为每个支持的输入 kind 提供上传/Artifact 选择器
 和关系校验提示，不能把输入 JSON 文本框当作用户体验。
+
+## RGB 与二值 mask 组合
+
+编辑器现在提供 `apply_binary_mask@1` CPU 节点。它接收两个命名输入：`rgb_image`
+和 `binary_mask`，输出 `rgba_image`。在多输入管线中，运行面板会为图片和 mask
+分别显示上传控件；mask 上传只接受单帧灰度 PNG，像素必须是 0/255 且至少有一个
+前景像素。也可以填入已经导入的 Artifact ID。
+
+`examples/remote-mask-shape.yaml` 展示了完整连接：
+
+`RGB + binary mask → RGBA → remote shape → canonicalize → QA → publish`
+
+远程 shape 仍必须通过启动配置注入可信 profile；画布只保存节点绑定和参数，不保存
+模型路径或未校验的服务地址。

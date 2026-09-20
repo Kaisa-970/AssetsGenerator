@@ -362,6 +362,43 @@ class NodeEditorExecution:
             )
         return {"image_ref": to_primitive(ref)}
 
+    def upload_mask(self, data: bytes) -> dict[str, Any]:
+        """Import a strict binary PNG mask without creating a run."""
+        if not 0 < len(data) <= 20 * 1024 * 1024:
+            raise ContractError("mask upload must be at most 20 MiB")
+        try:
+            decoded = Image.open(io.BytesIO(data))
+        except Image.DecompressionBombError as error:
+            raise ContractError("mask upload must be at most 25 megapixels") from error
+        with decoded as mask:
+            if mask.format != "PNG" or mask.width * mask.height > 25_000_000:
+                raise ContractError("mask upload must be a PNG of at most 25 megapixels")
+            if getattr(mask, "n_frames", 1) != 1:
+                raise ContractError("mask upload must be a single frame")
+            mask.load()
+            if mask.mode not in {"1", "L"}:
+                raise ContractError("mask upload must be a grayscale PNG")
+            values = set(mask.convert("L").tobytes())
+            if not values <= {0, 255} or 255 not in values:
+                raise ContractError("mask upload must contain only 0/255 values and foreground")
+            width, height = mask.size
+        with self._lock:
+            if self._closed:
+                raise ContractError("editor execution service is closing")
+            ref = self.engine.store.persist_bytes(
+                data,
+                kind="binary_mask",
+                schema_name="png",
+                schema_version="1.0",
+                identity_metadata={
+                    "media_type": "image/png",
+                    "channel_layout": "L",
+                    "width": width,
+                    "height": height,
+                },
+            )
+        return {"mask_ref": to_primitive(ref)}
+
     def import_observations(self, images: list[dict[str, Any]]) -> dict[str, Any]:
         """Assemble explicit ordered RGB references, without estimating cameras."""
         from .models import ObservationView

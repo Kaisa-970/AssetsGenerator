@@ -582,3 +582,42 @@ def test_http_input_refs_requires_complete_port_mapping(tmp_path):
             server.server_close()
             thread.join()
             execution.close()
+
+
+def test_http_mask_upload_returns_binary_mask_reference(tmp_path):
+    import io
+    from http.client import HTTPConnection
+
+    from PIL import Image
+
+    from assets_generator.artifact_store import LocalArtifactStore
+    from assets_generator.dag_adapters import AdapterRegistry
+    from assets_generator.dag_engine import DagEngine
+    from assets_generator.dag_persistence import DagRepository
+    from assets_generator.node_editor import DraftEditor, create_editor_server
+    from assets_generator.node_editor_execution import NodeEditorExecution
+
+    with DagRepository(LocalArtifactStore(tmp_path / "store"), tmp_path / "runtime") as repo:
+        execution = NodeEditorExecution(DagEngine(repo, AdapterRegistry()))
+        server = create_editor_server(DraftEditor(tmp_path / "drafts", execution=execution), 0)
+        thread = threading.Thread(target=server.serve_forever)
+        thread.start()
+        try:
+            data = io.BytesIO()
+            Image.frombytes("L", (2, 2), bytes([255, 0, 0, 255])).save(data, format="PNG")
+            conn = HTTPConnection("127.0.0.1", server.server_port)
+            conn.request(
+                "POST",
+                "/api/inputs/mask",
+                data.getvalue(),
+                {"Content-Type": "application/octet-stream"},
+            )
+            response = conn.getresponse()
+            assert response.status == 201
+            body = json.loads(response.read())
+            assert body["mask_ref"]["artifact_id"].startswith("sha256:")
+            conn.close()
+        finally:
+            server.shutdown()
+            thread.join()
+            execution.close()

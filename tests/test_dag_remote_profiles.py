@@ -91,6 +91,7 @@ def test_remote_only_editor_starts_without_model_environment(tmp_path, monkeypat
             "asset_export",
             "encode_png",
             "resize_image",
+            "apply_binary_mask",
         }
         raw = yaml.safe_load(Path("pipelines/remote_shape_asset_v1.yaml").read_text())
         compiled = editor.compile(raw)

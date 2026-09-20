@@ -1,0 +1,40 @@
+# RGB + binary mask -> RGBA -> trusted remote shape -> canonical asset release.
+pipeline: remote_mask_shape_v1
+version: '1'
+inputs:
+  image: {kind: rgb_image, carriers: [artifact_ref]}
+  mask: {kind: binary_mask, carriers: [artifact_ref], schema_name: png, schema_version: '1.0'}
+nodes:
+  composite:
+    operator: apply_binary_mask@1
+    inputs:
+      image: pipeline.inputs.image
+      mask: pipeline.inputs.mask
+  shape:
+    operator: shape_generation@1
+    adapter: remote_shape@1
+    inputs: {image: composite.outputs.rgba}
+  canonical:
+    operator: canonicalize@1
+    adapter: canonicalize_shape@1
+    inputs:
+      mesh: shape.outputs.mesh
+      native_frame: shape.outputs.native_frame
+  quality:
+    operator: geometry_validation@1
+    adapter: geometry_validation@1
+    inputs:
+      mesh: canonical.outputs.mesh
+      source_mesh: shape.outputs.mesh
+  assemble:
+    operator: shape_asset_assembly@1
+    adapter: shape_asset_assembly@1
+    inputs:
+      mesh: canonical.outputs.mesh
+      image: composite.outputs.rgba
+      spatial: canonical.outputs.spatial_info
+      quality: quality.outputs.report
+  publish:
+    operator: asset_export@1
+    adapter: asset_export@1
+    inputs: {asset: assemble.outputs.asset}

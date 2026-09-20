@@ -264,7 +264,15 @@ export function ExecutionPanel({
   const uploadInputArtifact = async (name: string, file?: File) => {
     if (!file || uploadPending.current) return;
     const kind = pipeline.inputs[name]?.kind;
-    if (kind !== "rgb_image" && kind !== "rgba_image") {
+    const endpoint =
+      kind === "binary_mask"
+        ? "/api/inputs/mask"
+        : kind === "rgba_image"
+          ? "/api/inputs/rgba"
+          : kind === "rgb_image"
+            ? "/api/inputs/image"
+            : undefined;
+    if (!endpoint) {
       setUploadMessage(
         `输入 ${name} 暂不支持浏览器上传，请填写已有 Artifact ID。`,
       );
@@ -273,18 +281,16 @@ export function ExecutionPanel({
     uploadPending.current = true;
     setUploading(true);
     try {
-      const response = await fetch(
-        kind === "rgba_image" ? "/api/inputs/rgba" : "/api/inputs/image",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/octet-stream" },
-          body: file,
-        },
-      );
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/octet-stream" },
+        body: file,
+      });
       const value = await response.json();
-      if (!response.ok || typeof value.image_ref?.artifact_id !== "string")
+      const reference = value.image_ref || value.mask_ref;
+      if (!response.ok || typeof reference?.artifact_id !== "string")
         throw Error(value.error || "服务未返回有效 Artifact 引用");
-      setInputArtifact(name, value.image_ref.artifact_id);
+      setInputArtifact(name, reference.artifact_id);
       setUploadMessage(`输入 ${name} 已上传并绑定。`);
     } catch (error) {
       setUploadMessage(`输入 ${name} 上传失败：${String(error)}`);
@@ -383,10 +389,14 @@ export function ExecutionPanel({
               <div className="run-node" key={name}>
                 <strong>{name}</strong> ·{" "}
                 {port.kind || port.kinds?.join(" | ") || "未声明类型"}
-                {(port.kind === "rgb_image" || port.kind === "rgba_image") && (
+                {(port.kind === "rgb_image" ||
+                  port.kind === "rgba_image" ||
+                  port.kind === "binary_mask") && (
                   <input
                     type="file"
-                    accept="image/*"
+                    accept={
+                      port.kind === "binary_mask" ? "image/png" : "image/*"
+                    }
                     aria-label={`上传输入 ${name}`}
                     disabled={pending || uploading}
                     onChange={(e) => {
