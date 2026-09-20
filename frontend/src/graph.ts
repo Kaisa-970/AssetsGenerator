@@ -288,3 +288,21 @@ export function selectBackend(
   delete parameters.profile_digest;
   return { ...node, backend: backend || undefined, parameters };
 }
+
+/** Duplicate applied configuration and upstream bindings, never downstream edges. */
+export function duplicateNode(
+  p: Pipeline,
+  source: string,
+): { pipeline: Pipeline; id: string } {
+  if (!Object.hasOwn(p.nodes, source)) throw Error("找不到可复制的节点");
+  let index = 1;
+  let id = `${source}_copy`;
+  while (Object.hasOwn(p.nodes, id)) id = `${source}_copy_${++index}`;
+  return {
+    id,
+    pipeline: {
+      ...p,
+      nodes: { ...p.nodes, [id]: structuredClone(p.nodes[source]) },
+    },
+  };
+}

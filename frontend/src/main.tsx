@@ -34,6 +34,7 @@ import {
   bind,
   removeNodes,
   renameNode,
+  duplicateNode,
   validateDocument,
   selectBackend,
 } from "./graph";
@@ -825,6 +826,33 @@ function App() {
                         应用输入契约
                       </button>
                     </>
+                  )}
+                  {node && (
+                    <button
+                      onClick={() => {
+                        const copied = duplicateNode(
+                          pipelineRef.current,
+                          selected,
+                        );
+                        const position = nodes.find(
+                          (item) => item.id === selected,
+                        )?.position || { x: 0, y: 0 };
+                        update(copied.pipeline);
+                        setLayout((previous) => ({
+                          ...previous,
+                          [copied.id]: {
+                            x: position.x + 80,
+                            y: position.y + 100,
+                          },
+                        }));
+                        setSelected(copied.id);
+                        setMessage(
+                          "已复制已应用配置及上游连接；下游连接未变，尚未执行。",
+                        );
+                      }}
+                    >
+                      复制节点配置
+                    </button>
                   )}
                   <button
                     className="danger"

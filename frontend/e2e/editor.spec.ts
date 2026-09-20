@@ -568,6 +568,22 @@ test("parameter form sends typed values and preserves other instances", async ({
   expect(submitted.nodes.first.parameters.options).toEqual({
     label: "example",
   });
+  await page.getByRole("button", { name: "配置", exact: true }).click();
+  await page.getByRole("button", { name: "复制节点配置", exact: true }).click();
+  await expect(
+    page.locator('.react-flow__node[data-id="first_copy"]'),
+  ).toBeVisible();
+  await expect(page.getByLabel("参数 seed", { exact: true })).toHaveValue("99");
+  await page.getByLabel("参数 seed", { exact: true }).fill("123");
+  await page.getByLabel("参数 seed", { exact: true }).press("Tab");
+  await page.getByRole("button", { name: "编译校验", exact: true }).click();
+  await expect
+    .poll(() => submitted.nodes.first_copy?.parameters.seed)
+    .toBe(123);
+  expect(submitted.nodes.first.parameters.seed).toBe(99);
+  expect(submitted.nodes.first_copy.parameters.options).toEqual({
+    label: "example",
+  });
 });
 
 test("fixed run graph displays persisted plan instead of edited draft", async ({

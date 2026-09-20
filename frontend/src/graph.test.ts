@@ -1,3 +1,4 @@
+import { duplicateNode } from "./graph";
 import { describe, it, expect } from "vitest";
 import { load, dump } from "js-yaml";
 import {
@@ -194,4 +195,35 @@ it("clears fixed remote bindings when switching profiles or returning to default
     selectBackend({ ...node, backend: "uninstalled" }, "second", catalog)
       .parameters,
   ).toEqual({ seed: 7, pipeline_type: "512" });
+});
+
+it("duplicate preserves configured upstreams but has independent nested values", () => {
+  const pipeline: Pipeline = {
+    pipeline: "copy",
+    version: "1",
+    inputs: {},
+    nodes: {
+      source: {
+        operator: "op@1",
+        adapter: "local@1",
+        backend: "installed",
+        inputs: { image: "upstream.outputs.image?" },
+        parameters: { options: { seed: 7 } },
+      },
+      source_copy: { operator: "op@1", inputs: {} },
+      consumer: { operator: "op@1", inputs: { image: "source.outputs.image" } },
+    },
+  };
+  const result = duplicateNode(pipeline, "source");
+  expect(result.id).toBe("source_copy_2");
+  expect(result.pipeline.nodes[result.id]).toEqual(pipeline.nodes.source);
+  expect(result.pipeline.nodes.consumer.inputs.image).toBe(
+    "source.outputs.image",
+  );
+  (
+    result.pipeline.nodes[result.id].parameters!.options as { seed: number }
+  ).seed = 99;
+  expect(pipeline.nodes.source.parameters!.options).toEqual({ seed: 7 });
+  expect(pipeline.nodes[result.id]).toBeUndefined();
+  expect(() => duplicateNode(pipeline, "missing")).toThrow();
 });
