@@ -152,6 +152,12 @@ class DagEngine:
                 values[name] = copy.deepcopy(source[binding.port])
             elif not binding.optional:
                 raise ContractError(f"required binding unavailable: {binding.reference}")
+        for name, contract in node.operator_contract["inputs"].items():
+            if name not in values and contract.get("cardinality", "one") in {
+                "zero_or_more",
+                "many",
+            }:
+                values[name] = []
         return values
 
     def _input_digest(

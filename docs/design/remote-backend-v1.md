@@ -313,3 +313,9 @@ TRELLIS.2 已完成单个远程 shape DAG 节点的真实 GPU smoke，含完成�
 真实 profile factory 为 ShapeServiceHandler 注入输出身份校验：Backend 响应的 backend 和 model_digest 必须匹配加载时核验的 shape_identity。资源前后检查不能替代响应核对；响应缺失或串到其他模型时，禁止输出封装和成功发布。CPU 通用 handler 可不配置此钩子，真实 profile 路径强制提供。
 
 profile/handler/DAG shape 合跑 6 项通过，覆盖缺失身份、Backend 不符和模型摘要不符；Ruff/mypy（104 文件）通过。本轮只读取既有真实 smoke 响应，没有重新推理，不将新增校验声称为已重新做 GPU 验收。
+
+## 远程 shape 后续坐标转换
+
+新增 CanonicalizeAdapter 调用既有 canonicalize_glb，固定规则版本、阈值、tie-break、原点/尺度规则及 spatial/operators 源码摘要到 Adapter 参数身份。当前只支持空 components，不开放组件映射变换。canonicalize Operator 增加 native_mesh_frame relation，验证 mesh 元数据与 NativeFrame 一致；同时绑定非空 components 的复杂汇合仍未开放。仓库与打包 YAML 同步更新。
+
+修正 DAG 未绑定 zero_or_more/many 端口的执行缺省：依据 OperatorSpec 生成空列表，不把缺省 None 送入集合端口。远程 shape 联调现在继续运行 canonicalize，并校验 +Z 输出及 provenance 中的固定规则参数。相关远程 shape/relations/spatial/engine/workflow/compiled plan 合跑 136 项通过，Ruff/mypy（105 文件）通过；本轮未重新运行真实模型。修改 Operator 契约会使旧固定计划拒绝按新契约重新绑定，未提供历史计划迁移；此前真实 smoke 报告仍对应原代码基线。

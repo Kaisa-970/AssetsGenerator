@@ -51,6 +51,9 @@ operators:
 
   - name: canonicalize
     version: 1
+    relations:
+      - validator: native_mesh_frame@1
+        inputs: [mesh, native_frame]
     inputs:
       mesh: {kind: triangle_mesh, carriers: [artifact_ref], requires_frame: true, requires_unit: true}
       native_frame: {kind: backend_native_frame, carriers: [structured]}

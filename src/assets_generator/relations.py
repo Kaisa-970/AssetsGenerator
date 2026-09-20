@@ -204,4 +204,28 @@ class IndependentInputsValidator:
 def default_relation_registry() -> RelationValidatorRegistry:
     registry = RelationValidatorRegistry()
     registry.register(IndependentInputsValidator())
+    registry.register(NativeMeshFrameValidator())
     return registry
+
+
+class NativeMeshFrameValidator:
+    spec = RelationValidatorSpec(
+        "native_mesh_frame", "1", sha256_bytes(Path(__file__).read_bytes())
+    )
+
+    def validate_static(self, context: StaticRelationContext) -> None:
+        if set(context.inputs) != {"mesh", "native_frame"}:
+            raise ContractError("native mesh relation requires mesh and native_frame")
+
+    def validate_runtime(self, context: RuntimeRelationContext) -> None:
+        from .models import ArtifactRef, BackendNativeFrame, StructuredValue
+        from .spatial import validate_mesh_native_frame
+
+        mesh = context.values.get("mesh")
+        frame = context.values.get("native_frame")
+        if not isinstance(mesh, ArtifactRef) or not isinstance(frame, StructuredValue):
+            raise ContractError("native mesh relation requires mesh and structured frame")
+        validate_mesh_native_frame(
+            context.store.get_manifest(mesh.artifact_id).identity.identity_metadata,
+            BackendNativeFrame(**frame.value),
+        )

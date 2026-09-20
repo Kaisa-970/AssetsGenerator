@@ -8,6 +8,7 @@ from test_remote_shape_service import Backend
 from assets_generator.artifact_store import LocalArtifactStore
 from assets_generator.contracts import PortSpec
 from assets_generator.dag_adapters import AdapterRegistry
+from assets_generator.dag_canonicalize import CanonicalizeAdapter
 from assets_generator.dag_engine import DagEngine
 from assets_generator.dag_persistence import DagRepository
 from assets_generator.dag_remote_shape import RemoteShapeAdapter
@@ -35,6 +36,7 @@ def test_existing_shape_operator_runs_through_durable_service(tmp_path):
     with serve(tmp_path / "service.sqlite") as (service, client, _):
         registry = AdapterRegistry()
         registry.register(RemoteShapeAdapter(client.endpoint, identity))
+        registry.register(CanonicalizeAdapter())
         plan = registry.bind_plan(
             compile_pipeline(
                 PipelineDefinition(
@@ -46,7 +48,15 @@ def test_existing_shape_operator_runs_through_durable_service(tmp_path):
                             "operator": "shape_generation@1",
                             "adapter": "remote_shape@1",
                             "inputs": {"image": "pipeline.inputs.image"},
-                        }
+                        },
+                        "canonical": {
+                            "operator": "canonicalize@1",
+                            "adapter": "canonicalize_shape@1",
+                            "inputs": {
+                                "mesh": "shape.outputs.mesh",
+                                "native_frame": "shape.outputs.native_frame",
+                            },
+                        },
                     },
                 ),
                 load_default_operator_specs(),
@@ -63,6 +73,10 @@ def test_existing_shape_operator_runs_through_durable_service(tmp_path):
             assert execute_service_job(service, req, handler).state == "succeeded"
             completed = engine.drain(run.run_id)
             assert completed.status == "succeeded"
+            canonical = completed.dag.node_states["canonical"].current()
+            assert canonical.outputs["canonical_frame"].value["up_axis"] == "+Z"
+            record = store.read_structured(canonical.provenance["mesh"][0])
+            assert record["parameters"]["node_parameters"]["rule_version"] == "phase1-v1"
             result = completed.dag.node_states["shape"].current()
             assert set(result.outputs) == {"mesh", "material", "native_frame"}
             assert result.outputs["native_frame"].value["frame_id"] == "native"
