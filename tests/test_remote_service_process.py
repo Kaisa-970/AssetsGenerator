@@ -227,3 +227,82 @@ def test_abandon_without_process_evidence_is_refused(tmp_path):
         assert store.lookup(owner).state == "running"
     finally:
         store.close()
+
+
+def _orphaned_service_executor(path, ready, release):
+    owner = request()
+    store = RemoteServiceStore(path, owner.identity)
+    from assets_generator.remote_service_worker import execute_service_job
+
+    def handler(req, service):
+        script = (
+            "import pathlib,time; "
+            f"pathlib.Path({str(ready)!r}).touch(); "
+            f"release=pathlib.Path({str(release)!r}); deadline=time.monotonic()+20\n"
+            "while not release.exists() and time.monotonic()<deadline: time.sleep(0.05)\n"
+        )
+        ServiceProcessWorker(service, req).run(
+            ProcessJobRequest([sys.executable, "-c", script], path.parent, 30, "orphan")
+        )
+        return {}
+
+    execute_service_job(store, owner, handler)
+
+
+def test_killed_executor_keeps_live_backend_gated_until_verified_exit(tmp_path):
+    import multiprocessing
+    import time
+
+    from assets_generator.remote_service_worker import execute_service_job
+
+    path = tmp_path / "service.sqlite"
+    ready, release = tmp_path / "ready", tmp_path / "release"
+    owner = request()
+    store = RemoteServiceStore(path, owner.identity)
+    store.submit(owner)
+    store.close()
+    process = multiprocessing.get_context("spawn").Process(
+        target=_orphaned_service_executor, args=(path, ready, release)
+    )
+    process.start()
+    reopened = None
+    try:
+        deadline = time.monotonic() + 15
+        while not ready.exists():
+            assert process.is_alive(), "executor exited before Backend started"
+            assert time.monotonic() < deadline, "Backend did not start"
+            time.sleep(0.05)
+        process.kill()
+        process.join(10)
+        assert process.exitcode is not None and process.exitcode < 0
+        reopened = RemoteServiceStore(path, owner.identity)
+        original = reopened.worker_record(owner)
+        assert json.loads(original)["launch_phase"] == "release_authorized"
+        assert reopened.observe_worker(owner).result == "alive"
+        assert reopened.submit(owner).state == "running"
+        with pytest.raises(ValueError, match="alive or unknown"):
+            reopened.abandon_exited_job(owner)
+        other = RemoteRequest.create(owner.identity, "next-job", {})
+        reopened.submit(other)
+        with pytest.raises(ValueError):
+            execute_service_job(reopened, other, lambda *_: pytest.fail("must not execute"))
+        assert reopened.lookup(other).state == "queued"
+        assert reopened.worker_record(owner) == original
+        release.touch()
+        deadline = time.monotonic() + 15
+        while reopened.observe_worker(owner).result != "exited":
+            assert time.monotonic() < deadline, "original Backend group did not exit"
+            time.sleep(0.05)
+        assert reopened.lookup(owner).state == "running"
+        assert reopened.worker_record(owner) == original  # No invented exit code or result.
+        abandoned = reopened.abandon_exited_job(owner)
+        assert abandoned.state == "failed"
+        assert json.loads(abandoned.error_json)["code"] == "SERVICE_RESULT_ABANDONED"
+        assert execute_service_job(reopened, other, lambda *_: {}).state == "succeeded"
+    finally:
+        release.touch()
+        if process.is_alive():
+            process.kill()
+        process.join(10)
+        if reopened is not None:
+            reopened.close()

@@ -376,3 +376,15 @@ quality 和 spatial：检查同运行生成→规范化→QA provenance 链，�
 CPU 测试使用真实本地 HTTP/SQLite 服务与独立 Python 测试 Backend，验证五节点各一次
 attempt、GLB 可回读、Release 证据闭包以及服务关闭后的恢复；拒绝另一图片、另一运行或
 错误 bounds。该证据不替代真实模型全链验收。此前真实 smoke 只覆盖 remote shape 边界。
+
+## 执行器退出但 Backend 仍存活的回归
+
+`test_killed_executor_keeps_live_backend_gated_until_verified_exit` 使用真实独立
+CPU 子进程，等待 Backend 开始后 SIGKILL 执行器，并重新打开服务数据库。
+验证原进程组仍为 alive、原请求仍 running、不能 abandon、新作业保持 queued
+且不调用 handler。释放原 Backend 后探测到 exited，仍不伪造成功或退出码；
+仅在显式 abandon-exited 后允许下一作业执行。测试子进程有自身截止时间，
+避免断言失败时留下无限运行进程。
+
+相关进程、执行器和队列测试合跑 17 项通过。这补齐实际孤儿子进程的 CPU
+恢复回归，不等同于真实 TRELLIS.2 推理中断验收，后者仍待执行。
