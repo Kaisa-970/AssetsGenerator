@@ -275,3 +275,13 @@ SAM/TRELLIS.2 均未在本次执行，不能作为真实模型全链证据。
 
 这是发布清单文件包，不是完整 Artifact Store 备份；未列入清单的引用 Blob 和
 运行快照不自动复制，因此不能声称 ZIP 可独立复盘完整证据闭包。
+
+浏览器下载验收可复用 `node frontend/smoke/download-release.cjs <CONFIG>`。
+配置包含 `url`、`run_id` 和仓库外 `root`；运行须已有成功的 AssetRelease。
+脚本点击下载、检查无取消及建议文件名、保存 ZIP，再与同一路由响应逐字节比较，
+并核对运行记录不变且没有修改请求。输出文件已存在时拒绝覆盖。
+
+2026-09-21 已对真实编辑器 HTTP 服务完成 CPU 发布下载：ZIP 包含 11 个文件，
+CRC 与 release 清单一致。证据位于 `<DATASET_ROOT>/archive-browser-cpu-v1/` 的
+server.py/log、config.json、download-verified.json 和 downloaded-release.zip。
+这验证真实浏览器下载，不是模型质量验证；测试服务检查后已关闭。
