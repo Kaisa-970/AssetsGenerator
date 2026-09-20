@@ -597,3 +597,45 @@ def test_snapshot_cannot_label_pre_completion_read_idle(tmp_path, monkeypatch, h
             service._review = None
             service._worker = None
             service.close()
+
+
+def test_path_and_upload_share_identity_and_validation(tmp_path, monkeypatch):
+    from PIL import Image
+
+    store, _, profile = fixture_engine(tmp_path)
+    registry, _ = image_plan(profile)
+    with DagRepository(store, tmp_path / "dag") as repo:
+        engine = DagEngine(repo, registry)
+        service = NodeEditorExecution(engine)
+        dispatched = []
+        monkeypatch.setattr(engine, "drain", lambda run_id: dispatched.append(run_id))
+        try:
+            path = tmp_path / "fixture/scene.png"
+            uploaded = service.upload_image(path.read_bytes())
+            result = service.start(raw(), str(path))
+            run_id = result["run"]["run_id"]
+            wait(service, run_id)
+            assert (
+                repo.load(run_id).dag.named_actual_inputs["image"].artifact_id
+                == (uploaded["image_ref"]["artifact_id"])
+            )
+            before = store.find_artifacts("rgb_image")
+            truncated = tmp_path / "truncated.png"
+            data = path.read_bytes()
+            truncated.write_bytes(data[: len(data) // 2])
+            with pytest.raises(OSError):
+                service.start(raw(), str(truncated))
+            unsupported = tmp_path / "image.bmp"
+            Image.new("RGB", (2, 2)).save(unsupported)
+            with pytest.raises(ContractError, match="PNG, JPEG or WebP"):
+                service.start(raw(), str(unsupported))
+            oversized = tmp_path / "oversized.png"
+            with oversized.open("wb") as stream:
+                stream.truncate(20 * 1024 * 1024 + 1)
+            with pytest.raises(ContractError, match="20 MiB"):
+                service.start(raw(), str(oversized))
+            assert store.find_artifacts("rgb_image") == before
+            assert dispatched == [run_id]
+            assert len(service.list_runs()) == 1
+        finally:
+            service.close()

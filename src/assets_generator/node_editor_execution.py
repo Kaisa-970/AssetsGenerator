@@ -28,7 +28,6 @@ from .relations import RelationValidatorRegistry
 from .serialization import cache_key, canonical_json_bytes, read_json, to_primitive
 from .workbench_http import OutputPayload
 from .workbench_persistence import CreationReceipt
-from .workflow import _import_image
 
 
 def validate_editor_inputs(plan: CompiledPlan) -> str:
@@ -416,14 +415,14 @@ class NodeEditorExecution:
                 if not isinstance(image_path, str) or not image_path.strip():
                     raise ContractError("image path is required")
                 source_path = Path(image_path).expanduser()
-                if tuple(contract["kinds"]) == ("rgba_image",):
-                    if source_path.stat().st_size > 20 * 1024 * 1024:
-                        raise ContractError("image upload must be at most 20 MiB")
-                    image = ArtifactRef(
-                        **self.upload_image(source_path.read_bytes(), rgba=True)["image_ref"]
-                    )
-                else:
-                    image = _import_image(self.engine.store, source_path, "rgb_image")
+                if source_path.stat().st_size > 20 * 1024 * 1024:
+                    raise ContractError("image upload must be at most 20 MiB")
+                image = ArtifactRef(
+                    **self.upload_image(
+                        source_path.read_bytes(),
+                        rgba=tuple(contract["kinds"]) == ("rgba_image",),
+                    )["image_ref"]
+                )
             if name == "observations":
                 from .observations import observation_bundle_from_artifact
 
