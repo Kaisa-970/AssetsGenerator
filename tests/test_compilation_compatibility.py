@@ -1,5 +1,6 @@
 """New compiler contracts must not invalidate persisted legacy workbench plans."""
 
+from dataclasses import replace
 from types import MappingProxyType
 
 from assets_generator.backend_registry import resolve_plan_contract_digest
@@ -22,8 +23,13 @@ def test_legacy_operator_serialization_has_no_empty_relation_field():
     }
 
 
-def test_existing_packaged_plan_identities_remain_readable():
+def test_legacy_contract_serialization_preserves_historical_identities():
+    # Reconstruct the pre-modular-release contract, rather than claiming that
+    # new operators and a new canonicalization relation leave its identity unchanged.
     specs = load_default_operator_specs()
+    for key in ("geometry_validation@1", "shape_asset_assembly@1", "asset_export@1"):
+        del specs[key]
+    specs["canonicalize@1"] = replace(specs["canonicalize@1"], relations=())
     assert cache_key(specs) == (
         "sha256:c993705a16829ee2cfe25a83582fb5a2d8e43d61f66cd09e07d90da5b2a9dccf"
     )
@@ -39,3 +45,22 @@ def test_frozen_mapping_serializes_like_existing_dicts():
     frozen = MappingProxyType({"node": MappingProxyType({"parameters": (1, 2)})})
     ordinary = {"node": {"parameters": [1, 2]}}
     assert canonical_json_bytes(frozen) == canonical_json_bytes(ordinary)
+
+
+def test_canonicalization_relation_changes_plan_identity_but_unrelated_operators_do_not():
+    specs = load_default_operator_specs()
+    for pipeline in (load_default_pipeline(), load_multi_view_pipeline()):
+        current = resolve_plan_contract_digest(pipeline, specs)
+        without_new_operators = {
+            key: value
+            for key, value in specs.items()
+            if key
+            not in {
+                "geometry_validation@1",
+                "shape_asset_assembly@1",
+                "asset_export@1",
+            }
+        }
+        assert resolve_plan_contract_digest(pipeline, without_new_operators) == current
+        previous = {**specs, "canonicalize@1": replace(specs["canonicalize@1"], relations=())}
+        assert resolve_plan_contract_digest(pipeline, previous) != current
