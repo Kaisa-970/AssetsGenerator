@@ -135,3 +135,5 @@
 - [双服务比较管线的 CPU 浏览器验收](reports/shape-compare-browser-cpu.md)
 
 - [双真实 Shape Backend 浏览器全链验收](reports/dual-shape-browser-real.md)
+
+- [HTTP 监听进程 SIGKILL 回归](reports/http-listener-crash-cpu.md)
