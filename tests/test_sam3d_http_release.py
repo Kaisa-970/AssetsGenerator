@@ -24,6 +24,7 @@ from assets_generator.pipeline import compile_pipeline, load_default_operator_sp
 from assets_generator.remote_service_http import create_remote_server
 from assets_generator.sam3d_bridge import Sam3DBridge
 from assets_generator.sam3d_http import Sam3DClient, Sam3DUnknown
+from assets_generator.sam3d_service_loop import run_loop
 from assets_generator.sam3d_service_store import Sam3DServiceStore
 from assets_generator.serialization import canonical_json_bytes
 
@@ -192,7 +193,28 @@ def test_http_masked_shape_release_and_restart(bridge_setup, tmp_path, drop_resp
                 "sha256": sha256_bytes(substitute.files["evidence.json"]),
                 "byte_length": len(substitute.files["evidence.json"]),
             }
-            assert bridge.recover(reopened, request, store).state == "succeeded"
+            # The opt-in worker collects the original job automatically, including
+            # the lost submission acknowledgement, without an explicit recover call.
+            stop = threading.Event()
+            messages = []
+
+            def report(message):
+                messages.append(json.loads(message))
+                if messages[-1]["state"] == "succeeded":
+                    stop.set()
+
+            worker = threading.Thread(
+                target=run_loop,
+                args=(reopened, bridge, store),
+                kwargs={"stop": stop, "interval": 0.1, "report": report},
+            )
+            worker.start()
+            worker.join(timeout=10)
+            stop.set()
+            worker.join(timeout=5)
+            assert not worker.is_alive()
+            assert messages[-1]["state"] == "succeeded"
+            assert reopened.lookup(request).state == "succeeded"
             with DagRepository(store, repo_path) as repo:
                 engine = DagEngine(repo, registry)
                 completed = engine.recover(run.run_id)

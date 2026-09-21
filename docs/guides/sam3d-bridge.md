@@ -48,3 +48,29 @@ assembly 显式消费服务证据和实际 mask，并核对它们来自同一次
 导入核对服务证据、请求参数、Backend、网格及实际 mask，防止两条输入或结果错配。
 已完成 CPU 替身完整 HTTP DAG、一次真实浏览器/GPU 发布及完成后恢复。
 兼容服务仍需显式 execute-next / recover；监听和画布轮询不会自动派发上游推理。
+
+## 受控后台执行（work）
+
+兼容服务新增独立 `work` 动作，与 `serve` 使用相同 deployment、endpoint、directory。
+例如在已初始化的目录运行：
+
+```bash
+PYTHONPATH=src python -m assets_generator.sam3d_service_cli work \
+  --deployment "$RUN_ROOT/deployment.json" \
+  --endpoint http://172.16.89.51:7861 \
+  --directory "$RUN_ROOT/bridge" --poll-interval 5
+```
+
+凭据仍取 SAM3D_API_KEY 私有环境变量，不作为参数传入。明确启动 work 表示允许处理
+该服务队列；它不创建作业，不修改既有任务参数。serve 仍仅监听。
+同目录只允许一个 work 进程；SQLite 事务领取仍是最终授权依据。
+
+循环先遍历所有任务页寻找 running 作业，只查询该原键；全部完成后才领取下一条 queued。
+已明确拒绝或输入非法的任务进入 failed，后续任务可继续。未知响应、409 冲突、未找到或
+过期结果不释放原 claim，不自动重发 POST；可以继续按键查询。证据损坏等错误会退出 worker，
+保留数据库等待检查。日志只输出白名单状态，不输出原始异常或 Key。
+Ctrl+C/SIGTERM 请求停止；正在进行的有界 HTTP 调用结束后退出，不取消上游任务。
+重启 work 先恢复原 running 任务；不能删除数据库或 lock 文件来绕过未知状态。
+
+此循环自动完成**服务侧提交与结果收取**。画布 GET 轮询仍只读，当前仍需“恢复 / 继续此运行”
+导入已收取结果并执行后续 Core 节点；这一步尚未实现点击一次自动完成整个 DAG。

@@ -153,3 +153,19 @@ validation.json、canvas.png、completed-browser.png、visual.glb，以及 bridg
 这证明此次输入、部署和默认参数下的真实单次发布，以及完成后恢复；不证明代表性质量、
 烘焙纹理质量、真实网络提交响应丢失、推理中 SIGKILL 或远端容器重启恢复。
 本次未修改实现，未重复运行测试套件；上一提交 CPU 136 项结果仍见前节。
+
+## 受控后台循环首版
+
+验收文档已提交 d981038。新增独立 work CLI 和 sam3d_service_loop，默认 5 秒间隔，
+显式启动才处理服务队列；serve 和画布 GET 行为不变。多页检查优先恢复原 running 作业，
+unknown 不释放队列，缺失证据退出；fcntl 非阻塞锁限制同目录并行 worker。
+停止事件不发新请求，不取消上游模型，信号处理结束后保留原状态供重启恢复。
+
+本步沿用原 Backend/结果身份，未改变模型参数、传输格式、结果导入或 provenance 算法。
+新增测试覆盖丢响应重开、未知阻塞后续任务、缺失证据停止、旧 running 跨分页、停止以及
+第二 worker 排他。既有双 HTTP CPU 完整资产链改用循环收取完成结果，仍验证纹理/颜色、
+证据、单次提交和恢复。尚未对新循环做真实 GPU 或进程 SIGKILL 验收。
+画布侧仍须显式继续 DAG，不宣称一键全自动。
+
+最终相关测试合跑 **73 passed（28.49 秒）**，修改文件 Ruff lint/format、mypy（142 文件）、
+CLI --help、git diff --check 通过。未运行全仓测试/build；新增循环尚未提交、未启动线上常驻 worker。

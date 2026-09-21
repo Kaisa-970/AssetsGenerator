@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
+import signal
 from pathlib import Path
+from threading import Event
 
 from .artifact_store import LocalArtifactStore
 from .remote_protocol import decode_remote_json
@@ -19,7 +22,7 @@ from .serialization import to_primitive
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "action", choices=("identity", "init", "serve", "list", "execute-next", "recover")
+        "action", choices=("identity", "init", "serve", "list", "execute-next", "recover", "work")
     )
     parser.add_argument("--deployment", type=Path, required=True)
     parser.add_argument("--endpoint", required=True)
@@ -28,13 +31,16 @@ def main() -> int:
     parser.add_argument("--directory", type=Path)
     parser.add_argument("--key")
     parser.add_argument("--port", type=int, default=8772)
+    parser.add_argument("--poll-interval", type=float, default=5)
     args = parser.parse_args()
+    if not math.isfinite(args.poll_interval) or not 0.1 <= args.poll_interval <= 60:
+        parser.error("poll interval must be finite and in 0.1..60")
     deployment = decode_remote_json(args.deployment.read_bytes())
     if not isinstance(deployment, dict):
         parser.error("deployment must be the reviewed capabilities.deployment object")
     # Offline actions never use this placeholder to make an HTTP request.
     secret = os.environ.get(args.key_env)
-    if args.action in {"execute-next", "recover"} and not secret:
+    if args.action in {"execute-next", "recover", "work"} and not secret:
         parser.error("API key environment variable is absent")
     bridge = Sam3DBridge(Sam3DClient(args.endpoint, secret or "offline-unused"), deployment)
     identity = bridge.identity(args.service_id)
@@ -75,6 +81,36 @@ def main() -> int:
             return 0
         # Scratch conversion only. Authoritative output bytes live atomically in SQLite.
         artifacts = LocalArtifactStore(args.directory / "staging")
+        if args.action == "work":
+            # One cooperating CLI loop per database. The SQLite claim remains the
+            # authority even if an explicit execute-next races with this worker.
+            import fcntl
+
+            from .sam3d_service_loop import run_loop
+
+            with (args.directory / "worker.lock").open("a") as lock:
+                try:
+                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    raise ValueError("SAM3D worker already running for this directory") from None
+                stop = Event()
+                previous = {
+                    sig: signal.signal(sig, lambda *_: stop.set())
+                    for sig in (signal.SIGINT, signal.SIGTERM)
+                }
+                try:
+                    run_loop(
+                        owner,
+                        bridge,
+                        artifacts,
+                        stop=stop,
+                        interval=args.poll_interval,
+                        report=lambda value: print(value, flush=True),
+                    )
+                finally:
+                    for sig, handler in previous.items():
+                        signal.signal(sig, handler)
+            return 0
         if args.action == "execute-next":
             job = bridge.start_next(owner, artifacts)
         else:
