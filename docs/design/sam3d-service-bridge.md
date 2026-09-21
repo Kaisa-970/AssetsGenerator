@@ -1,7 +1,7 @@
 # SAM3D 服务接入与统一协议边界
 
 状态：部署服务已升级至 REST 1.1，增加耐久幂等、按键查询、能力声明和结果证据。
-独立 HTTP 客户端及耐久兼容执行器已有实现；尚未注册 DAG 节点，也未完成真实推理。
+独立 HTTP 客户端、耐久兼容执行器和双输入 DAG 节点已有实现；完整资产链通过 CPU 替身 HTTP 验证，尚未完成浏览器和真实推理验收。
 开发入口见 [兼容服务指南](../guides/sam3d-bridge.md)。
 以下对“当前 API 未声明”的描述是升级前分析；部署变化见 [部署记录](../reports/sam3d-protocol-deployment.md)。
 目标服务为用户提供的 SAM3D REST API v1，页面使用 Gradio 4.44.1。
@@ -15,9 +15,9 @@
 
 首版采用 image + binary mask → SAM3D → GLB。暂不接提示点、分割 UI 或 Gaussian PLY。
 SAM3D 的 image/mask 保留独立精确引用，空间与尺寸关系由显式 relation validator 检查。
-计划新增 `masked_shape_generation@1`，不修改现有 RGBA `shape_generation@1` 的端口。
+已新增 `masked_shape_generation@1`，不修改现有 RGBA `shape_generation@1` 的端口。
 其输出复用 mesh、PBRMaterial、BackendNativeFrame；下游复用 canonicalize/QA/assemble/export。
-这属于待实现契约，当前 OperatorSpec 尚未添加。
+另有 masked_shape_asset_assembly@1 显式消费服务证据和实际 mask，核对其与 mesh 的同次生成来源。
 
 ## 统一协议复用与服务能力
 
@@ -74,4 +74,4 @@ SAM3D 的 image/mask 保留独立精确引用，空间与尺寸关系由显式 r
 当前已完成客户端、服务端升级及外层兼容服务首版。授权、回执和终态证据与外层作业同库保存；
 结果摘要、实际 mask、参数、部署和空间声明通过校验后，输出字节与成功状态原子发布。
 Key 不进入身份或证据；模型语义前向未验证，空间明确为相对尺度。
-DAG 节点、中文表单及真实推理验收尚未完成。
+DAG 节点及完整发布模板已实现；中文表单操作及真实推理验收尚未完成。

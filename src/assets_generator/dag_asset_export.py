@@ -142,7 +142,8 @@ class AssetExportAdapter:
             record = store.read_structured(reference)
             if (
                 record.get("run_id") == context.run_id
-                and record.get("operator") == "shape_asset_assembly"
+                and record.get("operator")
+                in {"shape_asset_assembly", "masked_shape_asset_assembly"}
                 and record.get("output_artifact_id") == asset_ref.artifact_id
             ):
                 from .dag_persistence import DagRepository

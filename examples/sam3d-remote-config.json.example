@@ -1,0 +1,12 @@
+{
+  "default_profile": "sam3d",
+  "profiles": {
+    "sam3d": {
+      "operator": "masked_shape_generation@1",
+      "endpoint": "http://127.0.0.1:8772",
+      "service_id": "sam3d-bridge",
+      "backend_digest": "REPLACE_WITH_BRIDGE_IDENTITY_DIGEST",
+      "upstream_digest": "REPLACE_WITH_DEPLOYMENT_BACKEND_DIGEST"
+    }
+  }
+}

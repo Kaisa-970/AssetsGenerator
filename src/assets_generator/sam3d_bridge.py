@@ -64,6 +64,52 @@ class Sam3DBridge:
         if owner.identity != self.identity(owner.identity.service_id):
             raise ValueError("SAM3D compatibility implementation/profile identity mismatch")
         payload = json.loads(request.payload_json)
+        if "input_blobs" in payload:
+            if set(payload) != {
+                "operation",
+                "image_digest",
+                "mask_digest",
+                "parameters",
+                "backend_digest",
+                "input_blobs",
+                "input_digest",
+                "binding_digest",
+            }:
+                raise ValueError("SAM3D DAG payload fields differ")
+            uploads = payload["input_blobs"]
+            if not isinstance(uploads, dict) or set(uploads) != {"image", "mask"}:
+                raise ValueError("SAM3D DAG requires image and mask uploads")
+            for name, kind in (("image", "rgb_image"), ("mask", "binary_mask")):
+                descriptor = uploads[name]
+                if not isinstance(descriptor, dict) or set(descriptor) != {
+                    "artifact_id",
+                    "identity",
+                }:
+                    raise ValueError("invalid SAM3D upload descriptor")
+                identity = descriptor["identity"]
+                if not isinstance(identity, dict) or set(identity) != {
+                    "kind",
+                    "schema_name",
+                    "schema_version",
+                    "blob_digest",
+                    "identity_metadata",
+                }:
+                    raise ValueError("invalid SAM3D upload identity")
+                if (
+                    identity["kind"] != kind
+                    or identity["schema_version"] != "1.0"
+                    or identity["blob_digest"] != payload[name + "_digest"]
+                    or sha256_bytes(canonical_json_bytes(identity)) != descriptor["artifact_id"]
+                    or (name == "mask" and identity["schema_name"] != "png")
+                ):
+                    raise ValueError("SAM3D upload identity mismatch")
+            for name in ("input_digest", "binding_digest"):
+                RemoteIdentity("digest-check", payload[name])
+            payload = {
+                key: value
+                for key, value in payload.items()
+                if key not in {"input_blobs", "input_digest", "binding_digest"}
+            }
         if set(payload) != {
             "operation",
             "image_digest",

@@ -308,6 +308,7 @@ class ShapeAssetInputsValidator:
         if set(context.inputs) not in (
             {"mesh", "image", "quality", "spatial"},
             {"mesh", "image", "quality", "spatial", "observations"},
+            {"mesh", "image", "quality", "spatial", "sam3d_evidence", "actual_mask"},
         ):
             raise ContractError("shape asset relation requires mesh, image, quality and spatial")
 

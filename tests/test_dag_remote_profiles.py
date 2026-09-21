@@ -331,3 +331,28 @@ def test_remote_comparison_template_compiles_two_independent_releases():
     assert plan.bindings["second_shape"].parameters["service_id"] == "second"
     assert graph["nodes"]["first_publish"]["inputs"]["asset"] == "first_assemble.outputs.asset"
     assert graph["nodes"]["second_publish"]["inputs"]["asset"] == "second_assemble.outputs.asset"
+
+
+def test_masked_shape_profile_compiles_two_input_node(tmp_path):
+    config = {
+        "default_profile": "sam3d",
+        "profiles": {
+            "sam3d": {
+                "operator": "masked_shape_generation@1",
+                "endpoint": "http://127.0.0.1:8772",
+                "service_id": "sam3d-bridge",
+                "backend_digest": "sha256:" + "a" * 64,
+                "upstream_digest": "sha256:" + "b" * 64,
+            }
+        },
+    }
+    registry = AdapterRegistry()
+    register_remote_shape_profiles(registry, config)
+    raw = yaml.safe_load(Path("pipelines/sam3d_masked_shape_v1.yaml").read_text())
+    plan = registry.bind_plan(
+        compile_pipeline(
+            _pipeline_from_raw(raw), load_default_operator_specs(), require_explicit_joins=True
+        )
+    )
+    assert plan.bindings["shape"].parameters["upstream_digest"] == "sha256:" + "b" * 64
+    assert DraftEditor(tmp_path, adapters=registry).compile(raw)["ok"]

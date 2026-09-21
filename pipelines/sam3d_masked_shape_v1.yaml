@@ -1,0 +1,39 @@
+pipeline: sam3d_masked_shape_v1
+version: 1
+inputs:
+  image: {kind: rgb_image, carriers: [artifact_ref]}
+  mask: {kind: binary_mask, carriers: [artifact_ref], schema_name: png, schema_version: "1.0"}
+nodes:
+  shape:
+    operator: masked_shape_generation@1
+    backend: sam3d
+    inputs:
+      image: pipeline.inputs.image
+      mask: pipeline.inputs.mask
+  canonical:
+    operator: canonicalize@1
+    adapter: canonicalize_shape@1
+    inputs:
+      mesh: shape.outputs.mesh
+      native_frame: shape.outputs.native_frame
+  quality:
+    operator: geometry_validation@1
+    adapter: geometry_validation@1
+    inputs:
+      mesh: canonical.outputs.mesh
+      source_mesh: shape.outputs.mesh
+  assemble:
+    operator: masked_shape_asset_assembly@1
+    adapter: masked_shape_asset_assembly@1
+    inputs:
+      mesh: canonical.outputs.mesh
+      image: pipeline.inputs.image
+      spatial: canonical.outputs.spatial_info
+      quality: quality.outputs.report
+      sam3d_evidence: shape.outputs.sam3d_evidence
+      actual_mask: shape.outputs.actual_mask
+  publish:
+    operator: asset_export@1
+    adapter: asset_export@1
+    inputs:
+      asset: assemble.outputs.asset

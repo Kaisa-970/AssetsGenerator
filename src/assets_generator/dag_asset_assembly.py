@@ -128,6 +128,36 @@ def validate_shape_asset_inputs(
             )
             if native not in q.get("derived_from_artifact_ids", []):
                 continue
+            if "sam3d_evidence" in inputs or "actual_mask" in inputs:
+                evidence, mask = inputs.get("sam3d_evidence"), inputs.get("actual_mask")
+                if not isinstance(evidence, ArtifactRef) or not isinstance(mask, ArtifactRef):
+                    raise ContractError("masked assembly requires evidence and actual mask")
+                if not store.verify_digest(evidence) or not store.verify_digest(mask):
+                    raise ContractError("masked assembly evidence missing or corrupt")
+                for generation in records:
+                    if (
+                        generation.get("operator") != "masked_shape_generation"
+                        or generation.get("output_artifact_id") != native
+                        or image.artifact_id not in generation.get("derived_from_artifact_ids", [])
+                        or generation.get("run_id") != c.get("run_id")
+                        or c.get("run_id") != q.get("run_id")
+                    ):
+                        continue
+                    # Both evidence outputs must belong to this exact generation attempt.
+                    if all(
+                        any(
+                            record.get("operator") == "masked_shape_generation"
+                            and record.get("output_artifact_id") == reference.artifact_id
+                            and all(
+                                record.get(key) == generation.get(key)
+                                for key in ("run_id", "node_id", "attempt")
+                            )
+                            for record in records
+                        )
+                        for reference in (evidence, mask)
+                    ):
+                        return
+                continue
             if any(
                 r.get("operator") == "shape_generation"
                 and r.get("output_artifact_id") == native
@@ -189,3 +219,15 @@ class ShapeAssetAssemblyAdapter:
             StructuredValue("asset_definition", "AssetDefinition", "1.0", to_primitive(asset))
         )
         return NodeExecutionResult({"asset": reference})
+
+
+class MaskedShapeAssetAssemblyAdapter(ShapeAssetAssemblyAdapter):
+    @property
+    def spec(self) -> AdapterSpec:
+        from dataclasses import replace
+
+        return replace(
+            super().spec,
+            name="masked_shape_asset_assembly",
+            operators=("masked_shape_asset_assembly@1",),
+        )

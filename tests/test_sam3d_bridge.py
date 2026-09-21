@@ -445,3 +445,75 @@ def test_explicit_rejection_releases_queue_but_conflict_does_not(setup, monkeypa
     assert owner.lookup(third).state == "running"
     with pytest.raises(ValueError, match="blocked"):
         bridge.start_next(owner, artifacts)
+
+
+@pytest.mark.parametrize("tamper", [False, True])
+def test_dag_upload_envelope_checks_exact_artifact_identity(setup, tamper):
+    owner, request, client, bridge, artifacts = setup
+    payload = json.loads(request.payload_json)
+    uploads = {}
+    for name, kind in (("image", "rgb_image"), ("mask", "binary_mask")):
+        identity = {
+            "kind": kind,
+            "schema_name": "png",
+            "schema_version": "1.0",
+            "blob_digest": payload[name + "_digest"],
+            "identity_metadata": {},
+        }
+        uploads[name] = {
+            "artifact_id": sha256_bytes(canonical_json_bytes(identity)),
+            "identity": identity,
+        }
+    if tamper:
+        uploads["mask"]["identity"]["blob_digest"] = payload["image_digest"]
+    payload.update(
+        input_blobs=uploads, input_digest="sha256:" + "c" * 64, binding_digest="sha256:" + "d" * 64
+    )
+    owner.db.execute("DELETE FROM jobs")
+    dag_request = RemoteRequest.create(owner.identity, "dag-inputs", payload)
+    owner.submit(dag_request)
+    result = bridge.start_next(owner, artifacts)
+    assert result.state == ("failed" if tamper else "running")
+    assert client.posts == (0 if tamper else 1)
+
+
+def test_masked_adapter_import_preserves_explicit_evidence(setup):
+    from assets_generator.dag_adapters import NodeExecutionContext
+    from assets_generator.dag_remote_masked_shape import RemoteMaskedShapeAdapter
+    from assets_generator.pipeline import load_default_operator_specs
+
+    owner, request, client, bridge, artifacts = setup
+    adapter = RemoteMaskedShapeAdapter(
+        "http://127.0.0.1:8772", owner.identity, bridge.backend_digest
+    )
+    inputs = {}
+    payload = json.loads(request.payload_json)
+    for name, kind in (("image", "rgb_image"), ("mask", "binary_mask")):
+        inputs[name] = artifacts.persist_bytes(
+            owner.get_blob(payload[name + "_digest"]),
+            kind=kind,
+            schema_name="png",
+            schema_version="1.0",
+            identity_metadata={"media_type": "image/png"},
+        )
+    context = NodeExecutionContext("run", "shape", inputs, adapter.spec.defaults, artifacts)
+    assert adapter.prepare_payload(context)["parameters"]["seed"] == 42
+    bridge.start_next(owner, artifacts)
+    client.complete()
+    job = bridge.recover(owner, request, artifacts)
+    blobs = {
+        item["output_id"]: owner.get_blob(item["blob_digest"])
+        for item in json.loads(job.result_json)["outputs"]
+    }
+    result = adapter.import_result(context, job, blobs)
+    assert set(result.outputs) == {
+        "mesh",
+        "material",
+        "native_frame",
+        "sam3d_evidence",
+        "actual_mask",
+    }
+    assert "masked_shape_generation@1" in load_default_operator_specs()
+    blobs["actual_mask"] = png("L", 0)
+    with pytest.raises(ValueError, match="file mismatch"):
+        adapter.import_result(context, job, blobs)

@@ -73,6 +73,21 @@ operators:
       native_frame: {kind: backend_native_frame, carriers: [structured], schema_name: BackendNativeFrame, schema_version: "1.0"}
       components: {kind: component_provenance, cardinality: one_or_more, carriers: [structured], schema_name: ComponentProvenance, schema_version: "1.0"}
 
+  - name: masked_shape_generation
+    version: 1
+    relations:
+      - validator: matched_image_mask@1
+        inputs: [image, mask]
+    inputs:
+      image: {kind: rgb_image, carriers: [artifact_ref]}
+      mask: {kind: binary_mask, carriers: [artifact_ref], schema_name: png, schema_version: "1.0"}
+    outputs:
+      mesh: {kind: triangle_mesh, carriers: [artifact_ref], requires_frame: true, requires_unit: true}
+      material: {kind: pbr_material, carriers: [structured], schema_name: PBRMaterial, schema_version: "1.0"}
+      native_frame: {kind: backend_native_frame, carriers: [structured]}
+      sam3d_evidence: {kind: remote_job_result, carriers: [artifact_ref], schema_name: Sam3DResult, schema_version: "1.0"}
+      actual_mask: {kind: binary_mask, carriers: [artifact_ref], schema_name: png, schema_version: "1.0"}
+
   - name: shape_generation
     version: 1
     inputs:
@@ -267,6 +282,21 @@ operators:
       quality: {kind: quality_report, carriers: [artifact_ref], schema_name: QualityReport, schema_version: "1.0"}
       spatial: {kind: asset_spatial_info, carriers: [structured]}
       observations: {kind: observation_bundle, cardinality: zero_or_one, carriers: [artifact_ref], schema_name: ObservationBundle, schema_version: "1.0"}
+    outputs:
+      asset: {kind: asset_definition, carriers: [artifact_ref], schema_name: AssetDefinition, schema_version: "1.0"}
+
+  - name: masked_shape_asset_assembly
+    version: 1
+    relations:
+      - validator: shape_asset_inputs@1
+        inputs: [mesh, image, quality, spatial, sam3d_evidence, actual_mask]
+    inputs:
+      mesh: {kind: triangle_mesh, carriers: [artifact_ref], requires_frame: true, requires_unit: true}
+      image: {kind: rgb_image, carriers: [artifact_ref]}
+      quality: {kind: quality_report, carriers: [artifact_ref], schema_name: QualityReport, schema_version: "1.0"}
+      spatial: {kind: asset_spatial_info, carriers: [structured]}
+      sam3d_evidence: {kind: remote_job_result, carriers: [artifact_ref], schema_name: Sam3DResult, schema_version: "1.0"}
+      actual_mask: {kind: binary_mask, carriers: [artifact_ref], schema_name: png, schema_version: "1.0"}
     outputs:
       asset: {kind: asset_definition, carriers: [artifact_ref], schema_name: AssetDefinition, schema_version: "1.0"}
 

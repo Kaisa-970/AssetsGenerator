@@ -97,3 +97,31 @@ GLB 要求自包含、有限非空几何。保留原 GLB 字节及顶点颜色�
 修正后相关测试合跑 **91 passed（23.00 秒）**，修改文件 Ruff lint/format、
 mypy（140 文件）通过；新增非法任务后继续执行、领取/授权事务中断回滚、明确拒绝后继续、
 409 冲突保持阻塞回归。未新增真实推理验收。
+
+### 后续双输入节点开发（提交 28daea1 之后）
+
+已新增双输入 OperatorSpec、远程适配器、启动配置注册和最小 YAML 示例。
+DAG 的 input_blobs/input_digest/binding_digest 封装在服务边界核对；不更改 DAG engine。
+本步 SAM3D bridge + remote profiles + 既有 remote shape 测试 **35 passed（10.87 秒）**，
+Ruff、mypy（141 文件）、git diff --check 通过。尚未进行完整 HTTP DAG、画布或 GPU 验收，
+也没有将最小输出图表述为完整发布流程。本步改动保留未提交以便继续验收。
+
+### 完整资产链 CPU HTTP 验收
+
+`pipelines/sam3d_masked_shape_v1.yaml` 现包含生成、canonicalize、geometry QA、
+masked_shape_asset_assembly、asset_export。新增 assembly 契约显式消费 sam3d_evidence
+与 actual_mask；必须有同 run/node/attempt 的生成 provenance，不能替换成其他证据。
+Release 沿已有 assembly provenance 引用两份证据，保留原单图 RGBA assembly 契约。
+
+可复现命令：`PYTHONPATH=src python -m pytest -q tests/test_sam3d_http_release.py`。
+测试启动两个真实回环 HTTP listener：外层统一作业服务和 SAM3D REST CPU 替身；
+使用真实客户端 multipart、按键查询、文件下载、SQLite 重开及 DAG repository 重开。
+四种组合覆盖正常/丢失 POST 响应，以及顶点颜色/内嵌纹理。每次上游仅收到一次 POST，
+所有节点仅一次 attempt；完成后恢复状态一致。检查 Release 中 assembly provenance 的
+证据引用、错配证据拒绝、GLB 外观保留、原始网格字节不变，以及不对称网格经记录的
+canonical 矩阵和单次导出坐标变换后的顶点一致。重开的是控制器/数据库；不声称验证了
+真实 SAM3D 容器重启或 GPU 推理中断，也不声称这是 SIGKILL 测试。
+
+最终相关链路与 HTTP 协议合跑 **136 passed（40.52 秒）**，mypy（141 文件）、
+修改文件 Ruff lint/format、git diff --check 通过。未运行全仓测试或 build。
+浏览器操作与真实 SAM3D GPU 验收仍待进行；本轮未提交。

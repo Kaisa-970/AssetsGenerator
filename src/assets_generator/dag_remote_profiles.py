@@ -3,10 +3,12 @@
 from typing import Any
 
 from .dag_adapters import AdapterRegistry
-from .dag_asset_assembly import ShapeAssetAssemblyAdapter
+from .dag_asset_assembly import MaskedShapeAssetAssemblyAdapter, ShapeAssetAssemblyAdapter
 from .dag_asset_export import AssetExportAdapter
 from .dag_canonicalize import CanonicalizeAdapter
 from .dag_geometry_validation import GeometryValidationAdapter
+from .dag_remote_adapter import RemoteNodeAdapter
+from .dag_remote_masked_shape import RemoteMaskedShapeAdapter
 from .dag_remote_shape import RemoteShapeAdapter
 from .dag_selection_prepare import SelectionPrepareAdapter
 from .remote_protocol import RemoteIdentity
@@ -24,21 +26,27 @@ def register_remote_shape_profiles(registry: AdapterRegistry, raw: dict[str, Any
         or default not in profiles
     ):
         raise ValueError("remote default_profile must name a configured service")
-    adapters = {}
+    adapters: dict[str, RemoteNodeAdapter] = {}
     for name, configured in profiles.items():
         if not isinstance(name, str) or not name.strip():
             raise ValueError("remote profile requires a nonempty name")
-        if not isinstance(configured, dict) or set(configured) != {
-            "endpoint",
-            "service_id",
-            "backend_digest",
-        }:
-            raise ValueError("remote profile requires endpoint, service_id and backend_digest")
+        if not isinstance(configured, dict):
+            raise ValueError("remote profile must be an object")
+        masked = configured.get("operator") == "masked_shape_generation@1"
+        fields = {"endpoint", "service_id", "backend_digest"}
+        if masked:
+            fields |= {"operator", "upstream_digest"}
+        if set(configured) != fields:
+            raise ValueError("remote profile fields differ from selected operator")
         if not all(isinstance(value, str) for value in configured.values()):
             raise ValueError("remote profile fields must be strings")
-        adapters[name] = RemoteShapeAdapter(
-            configured["endpoint"],
-            RemoteIdentity(configured["service_id"], configured["backend_digest"]),
+        identity = RemoteIdentity(configured["service_id"], configured["backend_digest"])
+        adapters[name] = (
+            RemoteMaskedShapeAdapter(
+                configured["endpoint"], identity, configured["upstream_digest"]
+            )
+            if masked
+            else RemoteShapeAdapter(configured["endpoint"], identity)
         )
     registry.register(adapters[default])
     for name, adapter in adapters.items():
@@ -51,3 +59,6 @@ def register_remote_shape_profiles(registry: AdapterRegistry, raw: dict[str, Any
         AssetExportAdapter(),
     ):
         registry.register(core)
+
+    if any(isinstance(adapter, RemoteMaskedShapeAdapter) for adapter in adapters.values()):
+        registry.register(MaskedShapeAssetAssemblyAdapter())
