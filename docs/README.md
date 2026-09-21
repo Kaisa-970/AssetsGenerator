@@ -6,6 +6,7 @@
 
 ## 架构与契约 · design
 
+- [SAM3 文字遮罩接入首版](guides/sam3-text-segmentation.md)
 - [SAM3D 兼容服务开发指南](guides/sam3d-bridge.md)
 - [SAM3D 服务兼容层与统一协议](design/sam3d-service-bridge.md)
 

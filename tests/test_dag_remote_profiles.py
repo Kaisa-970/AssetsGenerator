@@ -109,7 +109,6 @@ def test_editor_rgba_upload_start_and_empty_foreground_rejection(tmp_path):
     import io
 
     from PIL import Image
-    from test_node_editor_execution import wait
     from test_remote_http import request
     from test_remote_service_http import serve
 
@@ -143,7 +142,15 @@ def test_editor_rgba_upload_start_and_empty_foreground_rejection(tmp_path):
                 Image.new("RGBA", (2, 2), (255, 0, 0, 100)).save(buffer, format="PNG")
                 uploaded = execution.upload_image(buffer.getvalue(), rgba=True)
                 run = execution.start(graph, image_ref=uploaded["image_ref"])
-                state = wait(execution, run["run"]["run_id"])
+                import time
+
+                deadline = time.monotonic() + 10
+                while True:
+                    state = execution.snapshot(run["run"]["run_id"])
+                    if state["run"]["dag"]["node_states"]["shape"]["status"] == "running":
+                        break
+                    assert time.monotonic() < deadline
+                    time.sleep(0.05)
                 assert state["run"]["dag"]["node_states"]["shape"]["status"] == "running"
                 assert (
                     repo.store.blob_path(ArtifactRef(**uploaded["image_ref"])).read_bytes()

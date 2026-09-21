@@ -1,0 +1,12 @@
+pipeline: extract_masked_image_v1
+version: 1
+inputs:
+  image: {kind: rgb_image, carriers: [artifact_ref]}
+  mask: {kind: binary_mask, carriers: [artifact_ref], schema_name: png, schema_version: "1.0"}
+nodes:
+  extract:
+    operator: apply_binary_mask@1
+    adapter: apply_binary_mask@1
+    inputs:
+      image: pipeline.inputs.image
+      mask: pipeline.inputs.mask

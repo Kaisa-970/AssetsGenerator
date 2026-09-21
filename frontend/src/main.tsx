@@ -295,11 +295,11 @@ function App() {
         : catalog.adapters
       ).filter((a) => a.operators.includes(node.operator))
     : [];
-  const selectedAdapter = node?.backend
-    ? catalog.backends?.find(
-        (b) => b.backend === node.backend && b.adapter === node.adapter,
-      )
-    : adapters.find((a) => `${a.name}@${a.version}` === node?.adapter);
+  const selectedAdapter = node?.adapter
+    ? adapters.find((a) => `${a.name}@${a.version}` === node.adapter)
+    : adapters.length === 1
+      ? adapters[0]
+      : undefined;
   return (
     <div className="app">
       <header>

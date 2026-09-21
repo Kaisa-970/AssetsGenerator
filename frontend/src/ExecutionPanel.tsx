@@ -409,8 +409,8 @@ export function ExecutionPanel({
       {multiInput ? (
         <div>
           <p>
-            此管线有多个命名输入。每个输入必须绑定一个 Artifact ID；RGB/RGBA
-            图片可直接上传，其他类型请使用已导入引用。
+            为每个输入上传文件，或从下方历史运行选择“用作输入”。 支持 RGB/RGBA
+            图片和二值 PNG 遮罩。
           </p>
           {Object.entries(pipeline.inputs).map(([name, port]) => {
             const artifactId = String(inputRefs[name]?.artifact_id || "");
@@ -748,6 +748,11 @@ export function ExecutionPanel({
           >
             恢复 / 继续此运行
           </button>
+          {run.status === "succeeded" && !envelope.outputs?.length && (
+            <p>
+              运行已完成，暂无可预览图片；分割可能未找到符合提示词和阈值的候选。
+            </p>
+          )}
           {!!envelope.outputs?.length && (
             <div className="run-node">
               <strong>可查看的节点输出</strong>
@@ -784,7 +789,9 @@ export function ExecutionPanel({
                 ))}
               {envelope.outputs
                 .filter((output) =>
-                  ["rgb_image", "rgba_image"].includes(output.kind || ""),
+                  ["rgb_image", "rgba_image", "binary_mask"].includes(
+                    output.kind || "",
+                  ),
                 )
                 .map((output) => (
                   <ImageOutput
@@ -830,10 +837,21 @@ export function ExecutionPanel({
                             )
                               throw Error("输出引用与目标输入契约不匹配");
                             if (multiInput) {
-                              setInputArtifact(
-                                name,
-                                source.reference.artifact_id,
-                              );
+                              setInputRefs((old) => ({
+                                ...old,
+                                [name]: {
+                                  ...source.reference,
+                                  ...(output.port.includes("~")
+                                    ? {
+                                        source: {
+                                          run_id: source.source_run_id,
+                                          node_id: source.node_id,
+                                          port: source.port,
+                                        },
+                                      }
+                                    : {}),
+                                },
+                              }));
                             } else {
                               setReusedImage({
                                 artifact_id: source.reference.artifact_id,

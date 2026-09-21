@@ -2570,3 +2570,68 @@ test("changing selected run clears historical input bindings", async ({
     page.getByRole("button", { name: "启动新运行", exact: true }),
   ).toBeDisabled();
 });
+
+test("backend-only node exposes the unique adapter parameter form", async ({
+  page,
+}) => {
+  page.on("dialog", (dialog) => dialog.accept());
+  let compiled: any;
+  const pipeline = {
+    pipeline: "mask_only",
+    version: "1",
+    inputs: {},
+    nodes: {
+      segment: {
+        operator: "text_segmentation@1",
+        backend: "sam3",
+        parameters: { prompt: "chair" },
+        inputs: {},
+      },
+    },
+  };
+  await page.route("**/api/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    let body: any = {};
+    if (path === "/api/catalog")
+      body = {
+        operators: {
+          "text_segmentation@1": {
+            name: "text_segmentation",
+            version: "1",
+            inputs: {},
+            outputs: {},
+          },
+        },
+        adapters: [],
+        backends: [
+          {
+            name: "remote_text_segmentation",
+            version: "1",
+            adapter: "remote_text_segmentation@1",
+            backend: "sam3",
+            operators: ["text_segmentation@1"],
+            parameter_schema: { properties: { prompt: { type: "string" } } },
+          },
+        ],
+        templates: [{ id: "mask_only", label: "mask_only", pipeline }],
+      };
+    else if (path === "/api/drafts") body = { drafts: [] };
+    else if (path === "/api/compile") {
+      compiled = route.request().postDataJSON().pipeline;
+      body = { valid: true };
+    }
+    await route.fulfill({ json: body });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "mask_only", exact: true }).click();
+  await page
+    .locator(".react-flow__node")
+    .filter({ hasText: "text_segmentation@1" })
+    .click();
+  await page.getByLabel("参数 prompt", { exact: true }).fill("robot");
+  await page.getByLabel("参数 prompt", { exact: true }).blur();
+  await page.getByRole("button", { name: "编译校验", exact: true }).click();
+  await expect
+    .poll(() => compiled?.nodes.segment.parameters.prompt)
+    .toBe("robot");
+});

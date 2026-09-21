@@ -96,9 +96,11 @@ class DagRepository(WorkbenchRepository):
 
     def _children(self, ref: ArtifactRef) -> list[ArtifactRef]:
         manifest = self.store.get_manifest(ref.artifact_id)
+        binding = manifest.identity.identity_metadata.get("selection_binding")
+        metadata_children = [ArtifactRef(**binding)] if binding is not None else []
         if manifest.identity.identity_metadata.get("media_type") != "application/json":
-            return []
-        return _references(
+            return metadata_children
+        return metadata_children + _references(
             json.loads(self.store.blob_path(ref).read_bytes()),
             schema_name=manifest.identity.schema_name,
         )

@@ -1,0 +1,11 @@
+pipeline: sam3_text_masks_v1
+version: 1
+inputs:
+  image: {kind: rgb_image, carriers: [artifact_ref]}
+nodes:
+  segment:
+    operator: text_segmentation@1
+    backend: sam3
+    parameters: {prompt: chair, confidence: 0.5}
+    inputs:
+      image: pipeline.inputs.image

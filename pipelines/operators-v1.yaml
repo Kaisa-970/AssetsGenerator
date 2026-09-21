@@ -389,3 +389,17 @@ operators:
       rgba: {kind: rgba_image, carriers: [artifact_ref]}
       observations: {kind: observation_bundle, carriers: [artifact_ref], schema_name: ObservationBundle, schema_version: "1.0"}
       verification: {kind: quality_evidence, carriers: [artifact_ref], schema_name: SelectionImportVerification, schema_version: "1.0"}
+
+  - name: text_segmentation
+    version: 1
+    inputs:
+      image: {kind: rgb_image, carriers: [artifact_ref]}
+    outputs:
+      candidates: {kind: remote_job_result, carriers: [artifact_ref], schema_name: TextMaskCandidates, schema_version: "1.0"}
+
+  - name: select_text_mask
+    version: 1
+    inputs:
+      candidates: {kind: remote_job_result, carriers: [artifact_ref], schema_name: TextMaskCandidates, schema_version: "1.0"}
+    outputs:
+      mask: {kind: binary_mask, carriers: [artifact_ref], schema_name: png, schema_version: "1.0"}

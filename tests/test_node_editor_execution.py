@@ -818,3 +818,83 @@ def test_close_interrupts_remote_wait_without_retry(tmp_path, monkeypatch):
         assert entered.wait(2)
         service.close()
         assert not service._worker.is_alive()
+
+
+def test_candidate_outputs_are_viewable_reusable_and_closure_checked(tmp_path, monkeypatch):
+    import io
+    from types import SimpleNamespace
+
+    from PIL import Image
+
+    from assets_generator.models import StructuredValue
+
+    store, _, profile = fixture_engine(tmp_path)
+    registry, _ = image_plan(profile)
+    with DagRepository(store, tmp_path / "dag") as repo:
+        service = NodeEditorExecution(DagEngine(repo, registry))
+        buffer = io.BytesIO()
+        Image.new("L", (4, 4), 255).save(buffer, format="PNG")
+        mask = store.persist_bytes(
+            buffer.getvalue(),
+            kind="binary_mask",
+            schema_name="png",
+            schema_version="1.0",
+            identity_metadata={"media_type": "image/png"},
+        )
+        image_data = io.BytesIO()
+        Image.new("RGB", (4, 4), "red").save(image_data, format="PNG")
+        image = store.persist_bytes(
+            image_data.getvalue(), kind="rgb_image", schema_name="png", schema_version="1.0"
+        )
+        bundle = store.persist_structured(
+            StructuredValue(
+                "remote_job_result",
+                "TextMaskCandidates",
+                "1.0",
+                {
+                    "image": {"artifact_id": image.artifact_id},
+                    "candidates": [{"mask": {"artifact_id": mask.artifact_id}}],
+                },
+            )
+        )
+        state = SimpleNamespace(
+            status="succeeded",
+            node_id="segment",
+            current=lambda: SimpleNamespace(outputs={"candidates": bundle}),
+        )
+        run = SimpleNamespace(
+            run_id="dag_test", dag=SimpleNamespace(node_states={"segment": state})
+        )
+        monkeypatch.setattr(service, "_owned", lambda _: None)
+        monkeypatch.setattr(repo, "load", lambda _: run)
+        entries = service._output_entries(run)
+        assert entries[0]["port"] == "candidates~0"
+        assert service.output("dag_test", "segment", "candidates~0").data == buffer.getvalue()
+        assert (
+            service.output_reference("dag_test", "segment", "candidates~0")["reference"][
+                "artifact_id"
+            ]
+            == mask.artifact_id
+        )
+        with pytest.raises(ValueError, match="out of range"):
+            service.output("dag_test", "segment", "candidates~1")
+        selected = {
+            "artifact_id": mask.artifact_id,
+            "source": {"run_id": "dag_test", "node_id": "segment", "port": "candidates~0"},
+        }
+        with pytest.raises(ValueError, match="original image"):
+            service._bind_candidate_input(selected, {"image": mask})
+        bound = service._bind_candidate_input(selected, {"image": image})
+        repo.verify_reference_closure(bound)
+        binding = store.get_manifest(bound.artifact_id).identity.identity_metadata[
+            "selection_binding"
+        ]
+        from assets_generator.models import ArtifactRef
+
+        assert store.read_structured(ArtifactRef(**binding))["source"] == selected["source"]
+        store.blob_path(mask).unlink()
+        with pytest.raises(ValueError):
+            repo.verify_reference_closure(bound)
+        with pytest.raises(ValueError):
+            service.output("dag_test", "segment", "candidates~0")
+        service.close()

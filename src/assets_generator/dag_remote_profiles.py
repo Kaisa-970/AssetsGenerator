@@ -11,6 +11,7 @@ from .dag_remote_adapter import RemoteNodeAdapter
 from .dag_remote_masked_shape import RemoteMaskedShapeAdapter
 from .dag_remote_shape import RemoteShapeAdapter
 from .dag_selection_prepare import SelectionPrepareAdapter
+from .dag_text_segmentation import RemoteTextSegmentationAdapter, SelectTextMaskAdapter
 from .remote_protocol import RemoteIdentity
 
 
@@ -32,8 +33,11 @@ def register_remote_shape_profiles(registry: AdapterRegistry, raw: dict[str, Any
             raise ValueError("remote profile requires a nonempty name")
         if not isinstance(configured, dict):
             raise ValueError("remote profile must be an object")
+        text_segment = configured.get("operator") == "text_segmentation@1"
         masked = configured.get("operator") == "masked_shape_generation@1"
         fields = {"endpoint", "service_id", "backend_digest"}
+        if text_segment:
+            fields.add("operator")
         if masked:
             fields |= {"operator", "upstream_digest"}
         if set(configured) != fields:
@@ -41,6 +45,9 @@ def register_remote_shape_profiles(registry: AdapterRegistry, raw: dict[str, Any
         if not all(isinstance(value, str) for value in configured.values()):
             raise ValueError("remote profile fields must be strings")
         identity = RemoteIdentity(configured["service_id"], configured["backend_digest"])
+        if text_segment:
+            adapters[name] = RemoteTextSegmentationAdapter(configured["endpoint"], identity)
+            continue
         adapters[name] = (
             RemoteMaskedShapeAdapter(
                 configured["endpoint"], identity, configured["upstream_digest"]
@@ -62,3 +69,6 @@ def register_remote_shape_profiles(registry: AdapterRegistry, raw: dict[str, Any
 
     if any(isinstance(adapter, RemoteMaskedShapeAdapter) for adapter in adapters.values()):
         registry.register(MaskedShapeAssetAssemblyAdapter())
+
+    if any(isinstance(adapter, RemoteTextSegmentationAdapter) for adapter in adapters.values()):
+        registry.register(SelectTextMaskAdapter())

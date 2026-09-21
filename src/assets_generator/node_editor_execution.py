@@ -22,7 +22,7 @@ from .compiled_plan import CompiledPlan, thaw
 from .contracts import ContractError, OperatorSpec, validate_port_value
 from .dag_engine import DagEngine
 from .dag_review import DagMaskReviewService, create_dag_review_server
-from .models import ArtifactRef, PortValue
+from .models import ArtifactRef, PortValue, StructuredValue
 from .pipeline import _pipeline_from_raw, _port_spec, compile_pipeline, load_default_operator_specs
 from .relations import RelationValidatorRegistry
 from .serialization import cache_key, canonical_json_bytes, read_json, to_primitive
@@ -174,6 +174,7 @@ class NodeEditorExecution:
             "quality_report",
             "rgb_image",
             "rgba_image",
+            "binary_mask",
         }
 
     def _run_busy(self, run_id: str) -> bool:
@@ -199,22 +200,81 @@ class NodeEditorExecution:
         review = self._review
         return {
             "run": to_primitive(run),
-            "outputs": [
-                {
-                    "node_id": state.node_id,
-                    "port": port,
-                    "kind": self.engine.store.get_manifest(ref.artifact_id).identity.kind,
-                    "url": f"/api/runs/{run_id}/outputs/{state.node_id}/{port}",
-                }
-                for state in run.dag.node_states.values()
-                if state.status == "succeeded"
-                for port, ref in state.current().outputs.items()
-                if isinstance(ref, ArtifactRef) and self._viewable_output(ref)
-            ],
+            "outputs": self._output_entries(run),
             "busy": busy_before or self._run_busy(run_id),
             "error": self._errors.get(run_id)
             or (review[0]._error if review and review[0].run_id == run_id else None),
         }
+
+    def _output_entries(self, run: Any) -> list[dict[str, str]]:
+        entries = []
+        for state in run.dag.node_states.values():
+            if state.status != "succeeded":
+                continue
+            for port, ref in state.current().outputs.items():
+                if not isinstance(ref, ArtifactRef):
+                    continue
+                identity = self.engine.store.get_manifest(ref.artifact_id).identity
+                if self._viewable_output(ref):
+                    entries.append(
+                        {
+                            "node_id": state.node_id,
+                            "port": port,
+                            "kind": identity.kind,
+                            "url": f"/api/runs/{run.run_id}/outputs/{state.node_id}/{port}",
+                        }
+                    )
+                elif (identity.kind, identity.schema_name, identity.schema_version) == (
+                    "remote_job_result",
+                    "TextMaskCandidates",
+                    "1.0",
+                ):
+                    # Resolve only references owned by this node's candidate bundle.
+                    self.engine.repository.verify_reference_closure(ref)
+                    items = self.engine.store.read_structured(ref)["candidates"]
+                    for index in range(len(items)):
+                        child_port = f"{port}~{index}"
+                        entries.append(
+                            {
+                                "node_id": state.node_id,
+                                "port": child_port,
+                                "kind": "binary_mask",
+                                "url": (
+                                    f"/api/runs/{run.run_id}/outputs/{state.node_id}/{child_port}"
+                                ),
+                            }
+                        )
+        return entries
+
+    def _resolve_output(self, state: Any, port: str) -> ArtifactRef:
+        if port in state.current().outputs:
+            ref = state.current().outputs[port]
+        elif "~" in port:
+            parent, raw_index = port.rsplit("~", 1)
+            if not raw_index.isdecimal() or str(int(raw_index)) != raw_index:
+                raise ContractError("invalid candidate index")
+            bundle = state.current().outputs.get(parent)
+            if not isinstance(bundle, ArtifactRef):
+                raise ContractError("candidate bundle missing")
+            self.engine.repository.verify_reference_closure(bundle)
+            identity = self.engine.store.get_manifest(bundle.artifact_id).identity
+            if (identity.kind, identity.schema_name, identity.schema_version) != (
+                "remote_job_result",
+                "TextMaskCandidates",
+                "1.0",
+            ):
+                raise ContractError("unsupported candidate bundle")
+            items = self.engine.store.read_structured(bundle)["candidates"]
+            if int(raw_index) >= len(items):
+                raise ContractError("candidate index out of range")
+            ref = ArtifactRef(**items[int(raw_index)]["mask"])
+            if self.engine.store.get_manifest(ref.artifact_id).identity.kind != "binary_mask":
+                raise ContractError("candidate is not a mask")
+        else:
+            raise ContractError("output port missing")
+        if not isinstance(ref, ArtifactRef):
+            raise ContractError("output requires an ArtifactRef")
+        return ref
 
     def output_reference(self, run_id: str, node_id: str, port: str) -> dict[str, Any]:
         """Verify an owned output before offering its exact identity for a new run."""
@@ -222,7 +282,7 @@ class NodeEditorExecution:
         run = self.engine.repository.load(run_id)
         if run.dag is None or run.dag.node_states[node_id].status != "succeeded":
             raise ContractError("output reference requires a successful node")
-        reference = run.dag.node_states[node_id].current().outputs[port]
+        reference = self._resolve_output(run.dag.node_states[node_id], port)
         if not isinstance(reference, ArtifactRef):
             raise ContractError("output reference requires a scalar ArtifactRef")
         self.engine.repository.verify_reference_closure(reference)
@@ -237,6 +297,53 @@ class NodeEditorExecution:
             "schema_version": identity.schema_version,
         }
 
+    def _bind_candidate_input(self, value: dict[str, Any], inputs: dict[str, Any]) -> ArtifactRef:
+        source = value["source"]
+        if not isinstance(source, dict) or set(source) != {"run_id", "node_id", "port"}:
+            raise ContractError("invalid candidate source")
+        resolved = self.output_reference(source["run_id"], source["node_id"], source["port"])
+        if (
+            resolved["reference"] != {"artifact_id": value["artifact_id"]}
+            or "~" not in source["port"]
+        ):
+            raise ContractError("candidate source does not match mask")
+        run = self.engine.repository.load(source["run_id"])
+        if run.dag is None:
+            raise ContractError("candidate run missing DAG")
+        parent = source["port"].rsplit("~", 1)[0]
+        bundle = run.dag.node_states[source["node_id"]].current().outputs[parent]
+        if not isinstance(bundle, ArtifactRef):
+            raise ContractError("candidate bundle missing")
+        raw = self.engine.store.read_structured(bundle)
+        image = ArtifactRef(**raw["image"])
+        if inputs.get("image") != image:
+            raise ContractError("candidate mask must be used with its original image")
+        mask = ArtifactRef(value["artifact_id"])
+        binding = self.engine.store.persist_structured(
+            StructuredValue(
+                "quality_evidence",
+                "TextMaskSelection",
+                "1.0",
+                {
+                    "source": source,
+                    "bundle": to_primitive(bundle),
+                    "mask": to_primitive(mask),
+                    "image": to_primitive(image),
+                },
+            )
+        )
+        identity = self.engine.store.get_manifest(mask.artifact_id).identity
+        return self.engine.store.persist_bytes(
+            self.engine.store.blob_path(mask).read_bytes(),
+            kind=identity.kind,
+            schema_name=identity.schema_name,
+            schema_version=identity.schema_version,
+            identity_metadata={
+                **identity.identity_metadata,
+                "selection_binding": to_primitive(binding),
+            },
+        )
+
     def output(self, run_id: str, node_id: str, port: str) -> OutputPayload:
         self._owned(run_id)
         run = self.engine.repository.load(run_id)
@@ -245,7 +352,7 @@ class NodeEditorExecution:
         state = run.dag.node_states[node_id]
         if state.status != "succeeded":
             raise ContractError("output requires a successful node")
-        ref = state.current().outputs[port]
+        ref = self._resolve_output(state, port)
         if not isinstance(ref, ArtifactRef) or not self._viewable_output(ref):
             raise ContractError("unsupported output artifact kind")
         self.engine.repository.verify_reference_closure(ref)
@@ -530,11 +637,17 @@ class NodeEditorExecution:
                         "multi-input run requires one ArtifactRef for every pipeline input"
                     )
                 if any(
-                    not isinstance(value, dict) or set(value) != {"artifact_id"}
+                    not isinstance(value, dict)
+                    or set(value) not in ({"artifact_id"}, {"artifact_id", "source"})
                     for value in input_refs.values()
                 ):
                     raise ContractError("multi-input inputs must be ArtifactRef objects")
-                actual_inputs = {key: ArtifactRef(**value) for key, value in input_refs.items()}
+                actual_inputs = {
+                    key: ArtifactRef(value["artifact_id"]) for key, value in input_refs.items()
+                }
+                for key, supplied in input_refs.items():
+                    if "source" in supplied:
+                        actual_inputs[key] = self._bind_candidate_input(supplied, actual_inputs)
             else:
                 name = validate_editor_execution(plan.static_plan)
                 if sum(v is not None for v in (image_path, image_ref, observations_ref)) != 1:
