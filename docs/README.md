@@ -4,6 +4,12 @@
 
 [远程 shape 服务实验入口](guides/remote-shape-service.md) · [TRELLIS.2 远程真实 smoke](reports/remote-shape-real-smoke.md) · [五节点资产链真实 smoke](reports/remote-asset-chain-real-smoke.md)
 
+## 产品与交互 · product
+
+规定界面面向人的行为：主路径、状态词汇、绝不允许出现的状态。不是系统契约，也不是操作步骤。
+
+- [节点编辑器交互设计 v1（设计提案，尚未实现）](product/node-editor-ux.md)
+
 ## 架构与契约 · design
 
 - [SAM3 文字遮罩接入首版](guides/sam3-text-segmentation.md)
@@ -135,7 +141,7 @@
 - [2026-09-16：Phase 4 TripoSR GPU 验证与回归运行](reports/phase4-triposr-validation-v1.md)
 - [2026-09-16：Phase 6 多视图 Core 基线验证](reports/phase6-core-baseline-v1.md)
 
-契约文档定义规则；指南描述操作；报告记录指定数据和配置下的事实与限制。
+契约文档定义规则；产品文档定义体验的应然；指南描述操作；报告记录指定数据和配置下的事实与限制。
 新增或移动文档时维护此索引及引用链接，具体归档规则见 [AGENTS.md](../AGENTS.md)。
 
 - [SAM-only 编辑器真实环境启动核验](reports/sam-only-editor-startup.md)

@@ -21,6 +21,7 @@
 - `docs/design/artifact-store.md`：持久化、寻址、原子提交和缓存。
 - `docs/design/evaluation.md`：QA 和 benchmark。
 - `docs/planning/roadmap.md`：阶段范围和实现顺序。
+- `docs/product/node-editor-ux.md`：节点编辑器面向人的行为规范、状态词汇与禁止出现的界面状态。改动编辑器界面前必读。
 
 专项文档优先于架构总览；修改契约时同步修正相关高层表述。文档分类和导航规则见 `docs/README.md`。
 
@@ -51,7 +52,7 @@ python3 -m build
 ```
 
 - 未实际执行的检查不得声称通过；真实模型或 GPU 验证未运行时应明确说明。
-- 文档放入 `docs/design/`、`docs/planning/`、`docs/guides/` 或 `docs/reports/`；移动文档时更新索引和引用。报告必须区分事实、观察和计划，并以 `<DATASET_ROOT>` 等占位符引用仓库外证据。
+- 文档放入 `docs/design/`、`docs/planning/`、`docs/guides/`、`docs/reports/` 或 `docs/product/`；移动文档时更新索引和引用。报告必须区分事实、观察和计划，并以 `<DATASET_ROOT>` 等占位符引用仓库外证据。`docs/product/` 存放面向人的行为规范（导航、主路径、状态词汇、禁止出现的界面状态），它规定体验的应然，不是系统契约或操作步骤的复述；实现界面功能前先读它。
 
 ## Git
 
