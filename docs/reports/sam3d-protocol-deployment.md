@@ -169,3 +169,26 @@ unknown 不释放队列，缺失证据退出；fcntl 非阻塞锁限制同目录
 
 最终相关测试合跑 **73 passed（28.49 秒）**，修改文件 Ruff lint/format、mypy（142 文件）、
 CLI --help、git diff --check 通过。未运行全仓测试/build；新增循环尚未提交、未启动线上常驻 worker。
+
+## 画布自动继续与真实单击启动验收
+
+后台循环已提交 d49e301。NodeEditorExecution 的显式 start/resume/retry 后台命令现在
+等待已绑定 remote attempt 的结果，每 2 秒沿既有 drain/recovery 路径推进。GET 只读，
+服务启动不扫描并派发历史运行；人工等待、失败、interrupted/recovery_blocked 停止继续。
+关闭服务通过事件停止等待，不新建 attempt、不取消远程作业。未修改 DAG engine 协议。
+
+在原验收目录启动 work 并重启本次 8787 editor 后，真实 Chromium 加载模板、编译、上传
+image/mask、仅点击一次启动。新运行 `dag_5215fb68a145460f9f77adbe751f34f0` 的五节点
+自动 succeeded，各一个 attempt；没有 execute-next/recover 或手动点击继续。
+输出 351,064 顶点、702,152 三角面，vertex visual，Release 证据闭包与两份生成证据通过。
+浏览器模型预览显示“模型已加载”。输入及部署同前次，数目略有差异不作为确定性保证。
+证据在同目录 auto-start.json、auto-latest.json、auto-validation.json、auto-visual.glb、
+auto-canvas.png、auto-completed-browser.png。操作为自动化验收，不是用户质量批准。
+
+启动 work 还消费了此目录原有 queued 作业 dag_4cd89f5a988f65db9beda85f76b866d0edbb6162af27c5645e19821c622fff3c，
+随后才处理本次新运行；因此不能说该服务目录本轮仅有一次新增推理。新运行本身各节点一次 attempt。
+本次验收没有主动破坏网络、SIGKILL 或重启远端服务。serve/work/editor 保持启动供用户查看。
+
+自动继续/关闭/人工边界及服务循环、HTTP 完整链测试合跑 **33 passed（23.52 秒）**；
+修改文件 Ruff lint/format、mypy（142 文件）、git diff --check 通过。未跑全仓测试/build。
+画布自动继续实现与本次验收文档尚未提交。

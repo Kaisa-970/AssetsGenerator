@@ -72,5 +72,9 @@ PYTHONPATH=src python -m assets_generator.sam3d_service_cli work \
 Ctrl+C/SIGTERM 请求停止；正在进行的有界 HTTP 调用结束后退出，不取消上游任务。
 重启 work 先恢复原 running 任务；不能删除数据库或 lock 文件来绕过未知状态。
 
-此循环自动完成**服务侧提交与结果收取**。画布 GET 轮询仍只读，当前仍需“恢复 / 继续此运行”
-导入已收取结果并执行后续 Core 节点；这一步尚未实现点击一次自动完成整个 DAG。
+此循环自动完成服务侧提交与结果收取。画布明确启动/恢复命令现在会在后台等待远程结果，
+并继续后续 Core 节点；GET 轮询仍只读。人工等待、失败、interrupted 或 recovery_blocked 会停止
+自动继续。页面服务重启不会自动重开历史运行，须明确点击恢复；关闭会停止等待，不取消远端任务。
+
+在 serve、work、node-editor 均已启动且使用匹配配置时，上传 image 与 mask，点击一次启动，
+即可自动生成并发布。该路径已用真实 SAM3D 验证；这不包含服务部署的自动启动或故障自愈。

@@ -106,6 +106,7 @@ class NodeEditorExecution:
         self._active_run: str | None = None
         self._errors: dict[str, str] = {}
         self._closed = False
+        self._stop_execution = threading.Event()
         self._review: tuple[DagMaskReviewService, ThreadingHTTPServer, threading.Thread] | None = (
             None
         )
@@ -352,6 +353,28 @@ class NodeEditorExecution:
         def execute() -> None:
             try:
                 command()
+                # Only an explicitly dispatched command owns this continuation.
+                # Read-only snapshots and server startup never create this loop.
+                while not self._stop_execution.is_set():
+                    run = repository.load(run_id)
+                    if run.dag is None or run.status in {"succeeded", "failed"}:
+                        break
+                    states = list(run.dag.node_states.values())
+                    if any(
+                        state.status
+                        in {"waiting_for_input", "recovery_blocked", "interrupted", "failed"}
+                        for state in states
+                    ):
+                        break
+                    remote_pending = any(
+                        state.status == "running"
+                        and state.attempts
+                        and state.current().remote_binding is not None
+                        for state in states
+                    )
+                    if not remote_pending or self._stop_execution.wait(2):
+                        break
+                    self.engine.drain(run_id)
             except Exception as error:
                 self._errors[run_id] = f"{type(error).__name__}: {error}"
 
@@ -703,6 +726,7 @@ class NodeEditorExecution:
     def close(self) -> None:
         with self._lock:
             self._closed = True
+            self._stop_execution.set()
             self._stop_review(wait=True)
             if self._worker:
                 self._worker.join()

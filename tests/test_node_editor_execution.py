@@ -739,3 +739,82 @@ def test_upload_mask_accepts_binary_png_and_rejects_invalid_values(tmp_path):
                 service.upload_mask(bad.getvalue())
         finally:
             service.close()
+
+
+def test_authorized_command_continues_remote_wait_without_snapshot_dispatch(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    store, _, profile = fixture_engine(tmp_path)
+    registry, _ = image_plan(profile)
+    with DagRepository(store, tmp_path / "dag") as repo:
+        service = NodeEditorExecution(DagEngine(repo, registry))
+        running = SimpleNamespace(
+            status="running", attempts=[1], current=lambda: SimpleNamespace(remote_binding=object())
+        )
+        run = SimpleNamespace(status="running", dag=SimpleNamespace(node_states={"shape": running}))
+        monkeypatch.setattr(repo, "load", lambda _: run)
+        calls = []
+
+        def drain(_):
+            calls.append(1)
+            run.status = "succeeded"
+
+        monkeypatch.setattr(service.engine, "drain", drain)
+        try:
+            service._dispatch("dag_test", lambda: None)
+            service._worker.join(timeout=5)
+            assert calls == [1]
+            assert not service._worker.is_alive()
+        finally:
+            service.close()
+
+
+@pytest.mark.parametrize(
+    "state", ["waiting_for_input", "recovery_blocked", "interrupted", "failed"]
+)
+def test_automatic_remote_wait_stops_at_human_and_failure_boundaries(tmp_path, monkeypatch, state):
+    from types import SimpleNamespace
+
+    store, _, profile = fixture_engine(tmp_path)
+    registry, _ = image_plan(profile)
+    with DagRepository(store, tmp_path / "dag") as repo:
+        service = NodeEditorExecution(DagEngine(repo, registry))
+        blocked = SimpleNamespace(status=state)
+        run = SimpleNamespace(
+            status="running", dag=SimpleNamespace(node_states={"blocked": blocked})
+        )
+        monkeypatch.setattr(repo, "load", lambda _: run)
+        monkeypatch.setattr(service.engine, "drain", lambda _: pytest.fail("must not continue"))
+        try:
+            service._dispatch("dag_test", lambda: None)
+            service._worker.join(timeout=2)
+            assert not service._worker.is_alive()
+        finally:
+            service.close()
+
+
+def test_close_interrupts_remote_wait_without_retry(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    store, _, profile = fixture_engine(tmp_path)
+    registry, _ = image_plan(profile)
+    with DagRepository(store, tmp_path / "dag") as repo:
+        service = NodeEditorExecution(DagEngine(repo, registry))
+        entered = threading.Event()
+        state = SimpleNamespace(
+            status="running", attempts=[1], current=lambda: SimpleNamespace(remote_binding=object())
+        )
+        run = SimpleNamespace(status="running", dag=SimpleNamespace(node_states={"shape": state}))
+
+        def load(_):
+            entered.set()
+            return run
+
+        monkeypatch.setattr(repo, "load", load)
+        monkeypatch.setattr(
+            service.engine, "drain", lambda _: pytest.fail("must not retry on close")
+        )
+        service._dispatch("dag_test", lambda: None)
+        assert entered.wait(2)
+        service.close()
+        assert not service._worker.is_alive()
