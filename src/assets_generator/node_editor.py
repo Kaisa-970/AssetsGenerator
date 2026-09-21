@@ -296,7 +296,10 @@ def create_editor_server(editor: DraftEditor, port: int = 8767) -> ThreadingHTTP
                         raise ValueError("observations import requires images")
                     self.respond(201, editor.execution.import_observations(body["images"]))
                 elif self.command == "POST" and path == "/api/runs" and editor.execution:
-                    if not isinstance(body, dict) or set(body) - {"idempotency_key"} not in (
+                    if not isinstance(body, dict) or set(body) - {
+                        "idempotency_key",
+                        "reuse_source",
+                    } not in (
                         {"pipeline", "image_path"},
                         {"pipeline", "image_ref"},
                         {"pipeline", "observations_ref"},
@@ -308,6 +311,8 @@ def create_editor_server(editor: DraftEditor, port: int = 8767) -> ThreadingHTTP
                         if not isinstance(body["idempotency_key"], str):
                             raise ValueError("idempotency_key must be text")
                         options["idempotency_key"] = body["idempotency_key"]
+                    if "reuse_source" in body:
+                        options["reuse_source"] = body["reuse_source"]
                     if "input_refs" in body:
                         value = editor.execution.start(
                             body["pipeline"], input_refs=body["input_refs"], **options

@@ -39,7 +39,16 @@ class DagAttempt:
 
     remote_result: ArtifactRef | None = field(default=None, metadata={"omit_none": True})
 
+    reused_from: ArtifactRef | None = field(default=None, metadata={"omit_none": True})
+
     def __post_init__(self) -> None:
+        if self.reused_from is not None and (
+            self.status not in {"succeeded", "failed", "interrupted"}
+            or self.remote_binding is not None
+            or self.child_registration is not None
+            or self.decision is not None
+        ):
+            raise ValueError("reused attempt must be successful without new execution ownership")
         if self.remote_result is not None and self.remote_binding is None:
             raise ValueError("remote result requires remote binding")
         if type(self.attempt) is not int or self.attempt < 1:

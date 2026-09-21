@@ -194,12 +194,19 @@ class NodeEditorExecution:
         # A worker can publish its final snapshot and exit while this read is in
         # flight. Never label the earlier snapshot idle; let the next poll reload.
         busy_before = self._run_busy(run_id)
-        run = self.engine.repository.load(run_id)
+        for _ in range(3):
+            snapshot_ref = read_json(self.engine.store.root / "runs" / f"{run_id}.json")
+            run = self.engine.repository.load(run_id)
+            if snapshot_ref == read_json(self.engine.store.root / "runs" / f"{run_id}.json"):
+                break
+        else:
+            raise ContractError("run changed during snapshot read; refresh")
         if run.dag is None:
             raise ContractError("not a DAG run")
         review = self._review
         return {
             "run": to_primitive(run),
+            "snapshot_ref": snapshot_ref,
             "outputs": self._output_entries(run),
             "busy": busy_before or self._run_busy(run_id),
             "error": self._errors.get(run_id)
@@ -604,6 +611,7 @@ class NodeEditorExecution:
         observations_ref: dict[str, Any] | None = None,
         input_refs: dict[str, dict[str, Any]] | None = None,
         idempotency_key: str | None = None,
+        reuse_source: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         with self._lock:
             if idempotency_key is not None and (
@@ -710,6 +718,16 @@ class NodeEditorExecution:
                         prepared.load()
                         if prepared.getchannel("A").getextrema()[1] == 0:
                             raise ContractError("prepared RGBA input contains no foreground")
+            reuse_ref = None
+            if reuse_source is not None:
+                if not isinstance(reuse_source, dict) or set(reuse_source) != {"artifact_id"}:
+                    raise ContractError("reuse source must be an immutable snapshot reference")
+                reuse_ref = ArtifactRef(**reuse_source)
+                self.engine.repository.verify_reference_closure(reuse_ref)
+                source = self.engine.store.read_structured(reuse_ref)
+                self._owned(source["run_id"])
+                if source.get("dag") is None:
+                    raise ContractError("reuse source must contain DAG state")
             run_id = None
             marker = None
             repository = self.engine.repository
@@ -719,7 +737,13 @@ class NodeEditorExecution:
                 receipt = repository.reserve_creation(
                     CreationReceipt(
                         "node-editor:" + idempotency_key,
-                        cache_key({"plan": plan.to_dict(), "inputs": to_primitive(actual_inputs)}),
+                        cache_key(
+                            {
+                                "plan": plan.to_dict(),
+                                "inputs": to_primitive(actual_inputs),
+                                **({"reuse_source": to_primitive(reuse_ref)} if reuse_ref else {}),
+                            }
+                        ),
                         f"dag_{uuid.uuid4().hex}",
                     )
                 )
@@ -748,7 +772,12 @@ class NodeEditorExecution:
                     raise ContractError("created run index is missing; refusing to recreate it")
             self._idle()
             self._stop_review()
-            run = self.engine.create(plan, actual_inputs, run_id=run_id)
+            run = self.engine.create(
+                plan,
+                actual_inputs,
+                run_id=run_id,
+                **({"reuse_source": reuse_ref} if reuse_ref else {}),
+            )
             if marker is not None:
                 repository._mutate(
                     lambda: repository.io.write(

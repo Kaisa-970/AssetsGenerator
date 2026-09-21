@@ -2750,3 +2750,44 @@ test("run to selection omits downstream and node preview stays visible in config
     page.getByRole("region", { name: "选中节点预览" }),
   ).toBeVisible();
 });
+
+test("reuse fixes the selected immutable snapshot in the creation request", async ({
+  page,
+}) => {
+  let submitted: any;
+  const source = { artifact_id: "sha256:" + "a".repeat(64) };
+  const image = { artifact_id: "sha256:" + "b".repeat(64) };
+  const run = {
+    run_id: "source",
+    status: "succeeded",
+    dag: { revision: 1, named_actual_inputs: { image }, node_states: {} },
+  };
+  await page.route("**/api/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    let body: any = {};
+    if (path === "/api/catalog")
+      body = {
+        execution_enabled: true,
+        operators: {},
+        adapters: [],
+        templates: [],
+      };
+    else if (path === "/api/drafts") body = { drafts: [] };
+    else if (path === "/api/runs" && route.request().method() === "POST") {
+      submitted = route.request().postDataJSON();
+      body = { run: { ...run, run_id: "new" } };
+    } else if (path === "/api/runs")
+      body = { runs: [{ run_id: "source", status: "succeeded" }] };
+    else body = { run, snapshot_ref: source, outputs: [] };
+    await route.fulfill({ json: body });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "运行", exact: true }).click();
+  await page.getByLabel("选择运行").selectOption("source");
+  await page
+    .getByRole("button", { name: "使用所选运行的原图", exact: true })
+    .click();
+  await page.getByRole("button", { name: "启动新运行", exact: true }).click();
+  await expect.poll(() => submitted?.reuse_source).toEqual(source);
+  expect(submitted.image_ref).toEqual(image);
+});

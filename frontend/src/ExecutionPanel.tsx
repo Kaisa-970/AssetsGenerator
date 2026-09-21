@@ -14,6 +14,7 @@ type NodeState = {
   recovery_blocked_reason?: string | null;
   dispatch_block_reason?: string | null;
   attempts?: {
+    reused_from?: { artifact_id: string };
     resolved_inputs?: Record<string, unknown>;
     outputs?: Record<string, unknown>;
     provenance?: Record<string, unknown>;
@@ -36,6 +37,7 @@ type Run = {
   status: string;
   dag?: {
     plan_id?: string;
+    named_actual_inputs?: Record<string, { artifact_id: string }>;
     revision: number;
     invalid_evidence?: Record<string, string>;
     unassigned_evidence_blocks?: Record<string, string>;
@@ -43,6 +45,7 @@ type Run = {
   };
 };
 type Envelope = {
+  snapshot_ref?: { artifact_id: string };
   run: Run;
   busy?: boolean;
   error?: string | null;
@@ -61,6 +64,7 @@ async function request(path: string, body?: unknown, signal?: AbortSignal) {
   return value;
 }
 type CreationRequest = {
+  reuse_source?: { artifact_id: string };
   pipeline: Pipeline;
   idempotency_key: string;
   image_path?: string;
@@ -129,6 +133,7 @@ export function ExecutionPanel({
   previewHost?: HTMLElement | null;
   onLoadDraft: (pipeline: Pipeline) => void;
 }) {
+  const [reuseResults, setReuseResults] = useState(true);
   const [previewPort, setPreviewPort] = useState("");
   const [runToSelection, setRunToSelection] = useState(false);
   const targetPlan = useMemo(() => {
@@ -249,8 +254,6 @@ export function ExecutionPanel({
     setSelected(id);
     setEnvelope(undefined);
     setReview(undefined);
-    setInputRefs({});
-    setReusedImage(undefined);
     setMessage("");
   };
   const accept = (value: Envelope) => {
@@ -325,6 +328,81 @@ export function ExecutionPanel({
   };
   const unresolvedCreation = !!creation.request || !!creation.error;
   const run = envelope?.run;
+  const reuseStates = run?.dag?.node_states;
+  const [nodeFreshness, setNodeFreshness] = useState<Record<string, string>>(
+    {},
+  );
+  const sourcePlan = useRef<{ runId: string; plan: any } | undefined>(
+    undefined,
+  );
+  useEffect(() => {
+    if (!selected || !reuseResults) {
+      setNodeFreshness({});
+      return;
+    }
+    const controller = new AbortController();
+    setNodeFreshness({});
+    const timer = setTimeout(() => {
+      void (async () => {
+        const old =
+          sourcePlan.current?.runId === selected
+            ? sourcePlan.current.plan
+            : await request(
+                `/api/runs/${encodeURIComponent(selected)}/plan`,
+                undefined,
+                controller.signal,
+              );
+        sourcePlan.current = { runId: selected, plan: old };
+        const compiled = await request(
+          "/api/compile",
+          { pipeline: effectivePipeline },
+          controller.signal,
+        );
+        if (controller.signal.aborted) return;
+        const stable = (v: any): string =>
+          JSON.stringify(v, (_k, x) =>
+            x && typeof x === "object" && !Array.isArray(x)
+              ? Object.fromEntries(
+                  Object.keys(x)
+                    .sort()
+                    .map((k) => [k, x[k]]),
+                )
+              : x,
+          );
+        const current = compiled.bound_plan;
+        const statuses: Record<string, string> = {};
+        const oldBound = old.plan || old;
+        for (const n of current?.static_plan?.nodes || []) {
+          const previous = oldBound.static_plan?.nodes?.find(
+            (v: any) => v.node_id === n.node_id,
+          );
+          const dependencies =
+            current.static_plan.dependencies[n.node_id] || [];
+          statuses[n.node_id] = !previous
+            ? "新节点 · 需要执行"
+            : stable(oldBound.bindings?.[n.node_id]) !==
+                  stable(current.bindings[n.node_id]) ||
+                stable(previous.inputs) !== stable(n.inputs) ||
+                previous.operator_contract_digest !== n.operator_contract_digest
+              ? "配置已改变 · 需要更新"
+              : dependencies.some(
+                    (id: string) =>
+                      statuses[id] !== "配置匹配 · 启动时核验输入和证据",
+                  )
+                ? "上游需更新 · 需要重新核验"
+                : "配置匹配 · 启动时核验输入和证据";
+        }
+        setNodeFreshness(statuses);
+      })().catch(() => {
+        if (!controller.signal.aborted) setNodeFreshness({});
+      });
+    }, 250);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [effectivePipeline, selected, reuseResults]);
+
   const executing = pending || !!envelope?.busy;
   const setInputArtifact = (name: string, artifactId: string) => {
     setInputRefs((old) => ({
@@ -463,7 +541,9 @@ export function ExecutionPanel({
             <div className="section-label">
               节点预览 · {selectedNode || "请选择节点"}
             </div>
-            <p>显示当前所选运行的已完成输出；修改画布不会改变历史结果。</p>
+            <p>
+              显示所选运行的历史结果；画布或输入改变后，启动时逐节点核验是否可复用。
+            </p>
             <label>
               输出端口
               <select
@@ -533,6 +613,31 @@ export function ExecutionPanel({
           </section>,
           previewHost,
         )}
+      {run?.dag?.named_actual_inputs?.image && !multiInput && !multiView && (
+        <button
+          onClick={() => {
+            setReusedImage(run.dag!.named_actual_inputs!.image);
+            setImageSource("reference");
+          }}
+        >
+          使用所选运行的原图
+        </button>
+      )}
+      {reuseStates && (
+        <section aria-label="节点复用状态">
+          <div className="section-label">所选运行的节点结果</div>
+          {Object.entries(reuseStates).map(([id, state]) => (
+            <p key={id}>
+              {id} ·{" "}
+              {state.attempts?.at(-1)?.reused_from
+                ? `此运行已复用 · ${nodeFreshness[id] || "正在核验当前配置"}`
+                : state.status === "succeeded"
+                  ? nodeFreshness[id] || "已有历史结果 · 正在核验配置"
+                  : "尚无成功结果"}
+            </p>
+          ))}
+        </section>
+      )}
       <div className="section-label">创建新运行</div>
       <p>已配置模型：{profile || "本地服务配置"}</p>
       {multiInput ? (
@@ -684,6 +789,16 @@ export function ExecutionPanel({
       {effectiveReason && (
         <p role="alert">当前入口不可运行：{effectiveReason}</p>
       )}
+      {envelope?.snapshot_ref && (
+        <label>
+          <input
+            type="checkbox"
+            checked={reuseResults}
+            onChange={(e) => setReuseResults(e.target.checked)}
+          />
+          复用所选运行的有效节点结果（后端核对身份与证据）
+        </label>
+      )}
       <label>
         <input
           type="checkbox"
@@ -724,6 +839,9 @@ export function ExecutionPanel({
             submitCreation({
               pipeline: structuredClone(effectivePipeline),
               idempotency_key: crypto.randomUUID(),
+              ...(reuseResults && envelope?.snapshot_ref
+                ? { reuse_source: envelope.snapshot_ref }
+                : {}),
               ...(multiInput
                 ? {
                     input_refs: Object.fromEntries(

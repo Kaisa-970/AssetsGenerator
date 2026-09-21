@@ -74,7 +74,13 @@ class DagEngine:
                     )
         return plan
 
-    def create(self, plan: BoundDagPlan, inputs: PortMap, run_id: str | None = None) -> BuildRun:
+    def create(
+        self,
+        plan: BoundDagPlan,
+        inputs: PortMap,
+        run_id: str | None = None,
+        reuse_source: ArtifactRef | None = None,
+    ) -> BuildRun:
         with self.repository._command_lock:
             plan = BoundDagPlan.from_dict(
                 plan.to_dict(), registry=self.registry, relation_registry=self.relations
@@ -109,6 +115,10 @@ class DagEngine:
                     {node.node_id: DagNodeState(node.node_id) for node in plan.static_plan.nodes},
                 ),
             )
+            if reuse_source is not None:
+                from .dag_reuse import seed_reuse
+
+                seed_reuse(self, run, plan, reuse_source)
             self.repository.create(run)
             return run
 
@@ -125,7 +135,7 @@ class DagEngine:
                 attempt.operator,
                 None,
                 attempt.status,
-                "executed",
+                "cached" if attempt.reused_from is not None else "executed",
                 attempt.started_at,
                 attempt.finished_at,
                 attempt.error_code,
@@ -498,7 +508,15 @@ class DagEngine:
                         raise ContractError("child result binding mismatch")
                 code = "recovery_output_invalid"
                 if attempt.status == "succeeded":
-                    if binding.spec["execution_kind"] == "remote":
+                    if attempt.reused_from is not None:
+                        from .dag_reuse import verify_source
+
+                        original = verify_source(self, attempt.reused_from, node, plan, inputs)
+                        if canonical_json_bytes(original.outputs) != canonical_json_bytes(
+                            attempt.outputs
+                        ):
+                            raise ContractError("reused output mismatch")
+                    elif binding.spec["execution_kind"] == "remote":
                         from .dag_remote_execution import validate_remote_success
 
                         validate_remote_success(self, run, node)
@@ -515,7 +533,7 @@ class DagEngine:
                         inputs=inputs,
                         outputs=attempt.outputs,
                         decision_ref=attempt.decision,
-                        execution_evidence=attempt.remote_result,
+                        execution_evidence=attempt.reused_from or attempt.remote_result,
                     )
                     actual = {
                         port: [self.store.read_structured(ref) for ref in refs]
