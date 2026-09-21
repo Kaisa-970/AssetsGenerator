@@ -1,8 +1,9 @@
+import { createPortal } from "react-dom";
 import { remoteStatusMessage } from "./remoteStatus";
 import { ImageOutput } from "./ImageOutput";
 import { RunGraph } from "./RunGraph";
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
-import type { Pipeline } from "./graph";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { pipelineThrough, type Pipeline } from "./graph";
 
 const GlbPreview = lazy(() =>
   import("./GlbPreview").then((module) => ({ default: module.GlbPreview })),
@@ -117,13 +118,65 @@ export function ExecutionPanel({
   pipeline,
   profile,
   executionReason,
+  selectedNode,
+  previewHost,
   onLoadDraft,
 }: {
   pipeline: Pipeline;
   profile?: string;
   executionReason?: string;
+  selectedNode?: string;
+  previewHost?: HTMLElement | null;
   onLoadDraft: (pipeline: Pipeline) => void;
 }) {
+  const [previewPort, setPreviewPort] = useState("");
+  const [runToSelection, setRunToSelection] = useState(false);
+  const targetPlan = useMemo(() => {
+    try {
+      return {
+        pipeline: runToSelection
+          ? pipelineThrough(pipeline, selectedNode || "")
+          : pipeline,
+        error: "",
+      };
+    } catch (error) {
+      return { pipeline, error: String(error) };
+    }
+  }, [pipeline, runToSelection, selectedNode]);
+  const effectivePipeline = targetPlan.pipeline;
+  const [sliceEligibility, setSliceEligibility] = useState<{
+    plan: Pipeline;
+    reason: string;
+  }>();
+  useEffect(() => {
+    if (!runToSelection || targetPlan.error) return;
+    const controller = new AbortController();
+    request("/api/compile", { pipeline: effectivePipeline }, controller.signal)
+      .then((result) => {
+        setSliceEligibility({
+          plan: effectivePipeline,
+          reason:
+            result.ok && result.execution_ready
+              ? ""
+              : result.execution_reason ||
+                "目标子图无法执行，请检查节点绑定与输入契约",
+        });
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted)
+          setSliceEligibility({
+            plan: effectivePipeline,
+            reason: String(error),
+          });
+      });
+    return () => controller.abort();
+  }, [effectivePipeline, targetPlan.error, runToSelection]);
+  const effectiveReason = runToSelection
+    ? targetPlan.error ||
+      (sliceEligibility?.plan === effectivePipeline
+        ? sliceEligibility.reason
+        : "正在检查目标子图…")
+    : executionReason;
   const [creation, setCreation] = useState(restoreCreation);
   const [preview, setPreview] = useState<{
     runId: string;
@@ -139,7 +192,7 @@ export function ExecutionPanel({
   const [inputRefs, setInputRefs] = useState<
     Record<string, Record<string, unknown>>
   >({});
-  const inputSignature = JSON.stringify(pipeline.inputs);
+  const inputSignature = JSON.stringify(effectivePipeline.inputs);
   const inputGeneration = useRef({ signature: inputSignature, revision: 0 });
   if (inputGeneration.current.signature !== inputSignature) {
     inputGeneration.current = {
@@ -155,10 +208,10 @@ export function ExecutionPanel({
     if (reusedImage) setImageSource("reference");
   }, [reusedImage]);
   const multiView =
-    Object.keys(pipeline.inputs).length === 1 &&
-    "observations" in pipeline.inputs;
-  const multiInput = Object.keys(pipeline.inputs).length > 1;
-  const rgbaInput = pipeline.inputs.image?.kind === "rgba_image";
+    Object.keys(effectivePipeline.inputs).length === 1 &&
+    "observations" in effectivePipeline.inputs;
+  const multiInput = Object.keys(effectivePipeline.inputs).length > 1;
+  const rgbaInput = effectivePipeline.inputs.image?.kind === "rgba_image";
   const [imageSource, setImageSource] = useState("path");
   const [uploaded, setUploaded] = useState<{
     name: string;
@@ -288,7 +341,7 @@ export function ExecutionPanel({
       setUploadMessage("请选择非空且不超过 20 MiB 的图片。");
       return;
     }
-    const kind = pipeline.inputs[name]?.kind;
+    const kind = effectivePipeline.inputs[name]?.kind;
     const endpoint =
       kind === "binary_mask"
         ? "/api/inputs/mask"
@@ -404,6 +457,82 @@ export function ExecutionPanel({
   };
   return (
     <section className="execution-panel">
+      {previewHost &&
+        createPortal(
+          <section className="selected-node-preview" aria-label="选中节点预览">
+            <div className="section-label">
+              节点预览 · {selectedNode || "请选择节点"}
+            </div>
+            <p>显示当前所选运行的已完成输出；修改画布不会改变历史结果。</p>
+            <label>
+              输出端口
+              <select
+                aria-label="预览输出端口"
+                value={previewPort}
+                onChange={(e) => setPreviewPort(e.target.value)}
+              >
+                <option value="">默认输出</option>
+                {envelope?.outputs
+                  ?.filter((o) => o.node_id === selectedNode)
+                  .map((o) => (
+                    <option key={o.port} value={o.port}>
+                      {o.port === "mask" ? "mask · 联合遮罩" : o.port}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            {run &&
+              envelope?.outputs
+                ?.filter((o) => o.node_id === selectedNode)
+                .filter((o, i, all) =>
+                  all.some((item) => item.port === previewPort)
+                    ? o.port === previewPort
+                    : all.some((item) => item.port === "mask")
+                      ? o.port === "mask"
+                      : i === 0,
+                )
+                .map((output) =>
+                  ["rgb_image", "rgba_image", "binary_mask"].includes(
+                    output.kind || "",
+                  ) ? (
+                    <ImageOutput
+                      key={`selected:${run.run_id}:${output.node_id}:${output.port}`}
+                      runId={run.run_id}
+                      nodeId={output.node_id}
+                      port={output.port}
+                      url={output.url}
+                      defaultOpen
+                    />
+                  ) : output.kind === "gltf_asset" ? (
+                    <button
+                      key={output.port}
+                      onClick={() =>
+                        setPreview({
+                          runId: run.run_id,
+                          nodeId: output.node_id,
+                          url: output.url,
+                        })
+                      }
+                    >
+                      预览模型 · {output.port}
+                    </button>
+                  ) : (
+                    <a
+                      key={output.port}
+                      href={output.url}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {output.port}
+                    </a>
+                  ),
+                )}
+            {!envelope?.outputs?.some((o) => o.node_id === selectedNode) && (
+              <p>该节点在当前运行中尚无可预览结果。</p>
+            )}
+          </section>,
+          previewHost,
+        )}
       <div className="section-label">创建新运行</div>
       <p>已配置模型：{profile || "本地服务配置"}</p>
       {multiInput ? (
@@ -412,7 +541,7 @@ export function ExecutionPanel({
             为每个输入上传文件，或从下方历史运行选择“用作输入”。 支持 RGB/RGBA
             图片和二值 PNG 遮罩。
           </p>
-          {Object.entries(pipeline.inputs).map(([name, port]) => {
+          {Object.entries(effectivePipeline.inputs).map(([name, port]) => {
             const artifactId = String(inputRefs[name]?.artifact_id || "");
             return (
               <div className="run-node" key={name}>
@@ -552,17 +681,33 @@ export function ExecutionPanel({
         </>
       )}
       <p>启动时后端重新编译当前草稿并固定计划。修改画布只影响下一次新运行。</p>
-      {executionReason && (
-        <p role="alert">当前入口不可运行：{executionReason}</p>
+      {effectiveReason && (
+        <p role="alert">当前入口不可运行：{effectiveReason}</p>
+      )}
+      <label>
+        <input
+          type="checkbox"
+          checked={runToSelection}
+          onChange={(e) => setRunToSelection(e.target.checked)}
+        />
+        只运行到选中节点（包含必要上游）
+      </label>
+      {runToSelection && (
+        <p>
+          目标：{selectedNode || "请在画布选择算子"}
+          。本次创建独立运行，不执行下游。
+        </p>
       )}
       <button
         className="primary"
         disabled={
+          (runToSelection &&
+            (!selectedNode || !pipeline.nodes[selectedNode])) ||
           pending ||
           unresolvedCreation ||
           uploading ||
           (multiInput
-            ? Object.keys(pipeline.inputs).some(
+            ? Object.keys(effectivePipeline.inputs).some(
                 (name) => !String(inputRefs[name]?.artifact_id || "").trim(),
               )
             : multiView
@@ -572,17 +717,17 @@ export function ExecutionPanel({
                 : imageSource === "path"
                   ? !imagePath.trim()
                   : !uploaded || uploaded.rgba !== rgbaInput) ||
-          !!executionReason
+          !!effectiveReason
         }
         onClick={() =>
           void mutate(() =>
             submitCreation({
-              pipeline: structuredClone(pipeline),
+              pipeline: structuredClone(effectivePipeline),
               idempotency_key: crypto.randomUUID(),
               ...(multiInput
                 ? {
                     input_refs: Object.fromEntries(
-                      Object.keys(pipeline.inputs).map((name) => [
+                      Object.keys(effectivePipeline.inputs).map((name) => [
                         name,
                         structuredClone(inputRefs[name]),
                       ]),
@@ -599,7 +744,7 @@ export function ExecutionPanel({
           )
         }
       >
-        启动新运行
+        {runToSelection ? "运行到这里" : "启动新运行"}
       </button>
       {unresolvedCreation && (
         <div className="run-node">
@@ -802,9 +947,10 @@ export function ExecutionPanel({
                     url={output.url}
                   />
                 ))}
-              {(multiInput || (!multiView && "image" in pipeline.inputs)) &&
+              {(multiInput ||
+                (!multiView && "image" in effectivePipeline.inputs)) &&
                 envelope.outputs.flatMap((output) =>
-                  Object.entries(pipeline.inputs)
+                  Object.entries(effectivePipeline.inputs)
                     .filter(([, port]) =>
                       (port.kinds || [port.kind]).includes(output.kind),
                     )

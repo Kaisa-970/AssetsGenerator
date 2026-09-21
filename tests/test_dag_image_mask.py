@@ -161,3 +161,56 @@ def test_compositing_rejects_implicit_alpha_or_color_conversion(tmp_path, damage
         ApplyBinaryMaskAdapter().execute(
             NodeExecutionContext("run", "mask", {"image": image_ref, "mask": mask_ref}, {}, store)
         )
+
+
+@pytest.mark.parametrize("schema", ["TextMaskUnion", "TextMaskSelection"])
+def test_masked_shape_checks_original_image_before_remote_payload(tmp_path, schema):
+    from assets_generator.dag_remote_masked_shape import RemoteMaskedShapeAdapter
+    from assets_generator.models import StructuredValue
+    from assets_generator.remote_protocol import RemoteIdentity
+
+    store = LocalArtifactStore(tmp_path / "store")
+
+    def image(color):
+        return store.persist_bytes(
+            _png(Image.new("RGB", (2, 2), color)),
+            kind="rgb_image",
+            schema_name="png",
+            schema_version="1.0",
+        )
+
+    original, other = image("red"), image("blue")
+    binding = store.persist_structured(
+        StructuredValue(
+            "quality_evidence", schema, "1.0", {"image": {"artifact_id": original.artifact_id}}
+        )
+    )
+
+    def mask(metadata):
+        return store.persist_bytes(
+            _png(Image.new("L", (2, 2), 255)),
+            kind="binary_mask",
+            schema_name="png",
+            schema_version="1.0",
+            identity_metadata=metadata,
+        )
+
+    bound = mask({"selection_binding": {"artifact_id": binding.artifact_id}})
+    plain = mask({})
+    adapter = RemoteMaskedShapeAdapter(
+        "http://127.0.0.1:8772", RemoteIdentity("test", "sha256:" + "a" * 64), "sha256:" + "b" * 64
+    )
+
+    def context(rgb, m):
+        return NodeExecutionContext(
+            "run", "shape", {"image": rgb, "mask": m}, adapter.spec.normalize_parameters({}), store
+        )
+
+    adapter.prepare_payload(context(original, bound))
+    adapter.prepare_payload(context(other, plain))
+    for operation in (adapter.prepare_payload, ApplyBinaryMaskAdapter().execute):
+        with pytest.raises(ContractError, match="original image"):
+            operation(context(other, bound))
+    store.blob_path(binding).unlink()
+    with pytest.raises((ContractError, OSError), match="binding|No such"):
+        adapter.prepare_payload(context(original, bound))

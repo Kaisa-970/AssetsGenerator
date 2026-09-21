@@ -476,3 +476,27 @@ footer {
   overflow: auto;
   flex-shrink: 0;
 }
+
+.node-preview-window {
+  position: absolute;
+  right: 12px;
+  bottom: 42px;
+  z-index: 5;
+  width: min(340px, 45%);
+  max-height: 48%;
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid #ccd8e3;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.97);
+  box-shadow: 0 4px 18px #182d4420;
+}
+.node-preview-window img {
+  max-width: 100%;
+  max-height: 230px;
+  object-fit: contain;
+}
+.node-preview-window p {
+  font-size: 11px;
+  color: #687889;
+}

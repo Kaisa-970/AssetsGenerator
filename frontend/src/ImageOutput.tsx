@@ -6,13 +6,15 @@ export function ImageOutput({
   nodeId,
   port,
   url,
+  defaultOpen = false,
 }: {
   runId: string;
   nodeId: string;
   port: string;
   url: string;
+  defaultOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
   const [readAttempt, setReadAttempt] = useState(0);
   const [status, setStatus] = useState<"loading" | "loaded" | "failed">(
     "loading",

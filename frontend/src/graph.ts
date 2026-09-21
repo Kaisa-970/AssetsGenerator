@@ -373,3 +373,34 @@ export function selectAdapter(
     ]),
   };
 }
+
+/** Extract only the target and its ancestors; backend still compiles the result. */
+export function pipelineThrough(pipeline: Pipeline, target: string): Pipeline {
+  if (!pipeline.nodes[target]) throw Error("请选择一个算子节点");
+  const keep = new Set<string>();
+  const inputs = new Set<string>();
+  function visit(id: string) {
+    if (keep.has(id)) return;
+    const node = pipeline.nodes[id];
+    if (!node) throw Error(`上游节点不存在：${id}`);
+    keep.add(id);
+    for (const binding of Object.values(node.inputs)) {
+      const ref = parseReference(binding);
+      if (!ref) throw Error(`无效绑定：${binding}`);
+      if (ref.source.startsWith("input:")) inputs.add(ref.source.slice(6));
+      else visit(ref.source);
+    }
+  }
+  visit(target);
+  return {
+    ...structuredClone(pipeline),
+    nodes: Object.fromEntries(
+      Object.entries(pipeline.nodes)
+        .filter(([id]) => keep.has(id))
+        .map(([id, node]) => [id, structuredClone(node)]),
+    ),
+    inputs: Object.fromEntries(
+      Object.entries(pipeline.inputs).filter(([id]) => inputs.has(id)),
+    ),
+  };
+}

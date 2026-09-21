@@ -9,6 +9,7 @@ from PIL import Image
 from .contracts import ContractError
 from .dag_adapters import AdapterSpec, NodeExecutionContext, NodeExecutionResult
 from .dag_remote_adapter import RemoteNodeAdapter
+from .mask_binding import validate_mask_image_binding
 from .models import ArtifactRef, PortValue
 from .remote_http import RemoteJobClient
 from .remote_protocol import RemoteIdentity, RemoteJob, RemoteOutput, decode_remote_json
@@ -61,6 +62,7 @@ class RemoteMaskedShapeAdapter(RemoteNodeAdapter):
             if context.store.get_manifest(ref.artifact_id).identity.kind != kind:
                 raise ContractError("masked shape input kind mismatch")
             refs[name] = ref
+        validate_mask_image_binding(context.store, refs["image"], refs["mask"])
         validate_images(
             *(context.store.blob_path(refs[name]).read_bytes() for name in ("image", "mask"))
         )

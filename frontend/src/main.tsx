@@ -120,6 +120,7 @@ function App() {
   const [busy, setBusy] = useState(false);
   const [filter, setFilter] = useState("");
   const [registeredOnly, setRegisteredOnly] = useState(false);
+  const [previewHost, setPreviewHost] = useState<HTMLDivElement | null>(null);
   const [parameters, setParameters] = useState("{}");
   const [inputSpec, setInputSpec] = useState("{}");
   const [tab, setTab] = useState("inspector");
@@ -540,6 +541,9 @@ function App() {
             <Controls />
             <MiniMap pannable zoomable nodeColor="#bccddb" />
           </ReactFlow>
+          {catalog.execution_enabled && (
+            <div className="node-preview-window" ref={setPreviewHost} />
+          )}
           <div className="canvas-note">
             拖动连接端口 · Delete 删除节点 ·{" "}
             {catalog.execution_enabled ? "草稿与运行独立" : "不执行模型"}
@@ -572,6 +576,8 @@ function App() {
             <div hidden={tab !== "run"}>
               <ExecutionPanel
                 pipeline={pipeline}
+                selectedNode={selected}
+                previewHost={previewHost}
                 onLoadDraft={(draft) => {
                   if (
                     pipelineRef.current !== pipeline ||

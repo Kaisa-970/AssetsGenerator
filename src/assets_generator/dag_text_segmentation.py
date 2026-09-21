@@ -1,8 +1,11 @@
 """Text segmentation and explicit candidate selection, independent of DAG scheduling."""
 
+import io
 import math
 from collections.abc import Mapping
 from typing import Any
+
+from PIL import Image, ImageChops
 
 from .contracts import ContractError
 from .dag_adapters import AdapterSpec, NodeExecutionContext, NodeExecutionResult
@@ -152,7 +155,39 @@ class RemoteTextSegmentationAdapter(RemoteNodeAdapter):
                 {"image": {"artifact_id": image.artifact_id}, "evidence": raw, "candidates": refs},
             )
         )
-        return NodeExecutionResult({"candidates": bundle})
+        if not refs:
+            raise ContractError("没有找到符合提示词和阈值的对象，请修改提示词或阈值")
+        union = Image.new("L", size, 0)
+        for entry in refs:
+            with Image.open(context.store.blob_path(ArtifactRef(**entry["mask"]))) as candidate:
+                union = ImageChops.lighter(union, candidate)
+        encoded = io.BytesIO()
+        union.save(encoded, format="PNG")
+        binding = context.store.persist_structured(
+            StructuredValue(
+                "quality_evidence",
+                "TextMaskUnion",
+                "1.0",
+                {
+                    "image": {"artifact_id": image.artifact_id},
+                    "bundle": {"artifact_id": bundle.artifact_id},
+                    "source_run_id": context.run_id,
+                    "node_id": context.node_id,
+                    "policy": "all_candidates_union@1",
+                },
+            )
+        )
+        mask = context.store.persist_bytes(
+            encoded.getvalue(),
+            kind="binary_mask",
+            schema_name="png",
+            schema_version="1.0",
+            identity_metadata={
+                "media_type": "image/png",
+                "selection_binding": {"artifact_id": binding.artifact_id},
+            },
+        )
+        return NodeExecutionResult({"candidates": bundle, "mask": mask})
 
 
 class SelectTextMaskAdapter:

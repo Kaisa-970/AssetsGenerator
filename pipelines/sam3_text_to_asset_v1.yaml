@@ -9,17 +9,12 @@ nodes:
     parameters: {prompt: robot, confidence: 0.5}
     inputs:
       image: pipeline.inputs.image
-  select:
-    operator: select_text_mask@1
-    adapter: select_text_mask@1
-    inputs:
-      candidates: segment.outputs.candidates
   shape:
     operator: masked_shape_generation@1
     backend: sam3d
     inputs:
       image: pipeline.inputs.image
-      mask: select.outputs.mask
+      mask: segment.outputs.mask
   canonical:
     operator: canonicalize@1
     adapter: canonicalize_shape@1

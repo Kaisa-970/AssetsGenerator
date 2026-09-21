@@ -89,7 +89,8 @@ def test_invalid_prompt_and_empty_mask_rejected():
         validate_mask(buffer.getvalue(), (2, 2))
 
 
-def test_import_checks_request_identity_and_persists_candidates(tmp_path):
+@pytest.mark.parametrize("count", [0, 1, 2])
+def test_import_checks_request_identity_and_persists_candidates(tmp_path, count):
     from assets_generator.dag_text_segmentation import RemoteTextSegmentationAdapter
     from assets_generator.models import ArtifactRef
     from assets_generator.remote_protocol import RemoteIdentity, RemoteJob, RemoteRequest
@@ -142,7 +143,13 @@ def test_import_checks_request_identity_and_persists_candidates(tmp_path):
             }
         ],
     }
-    blobs = {"evidence": canonical_json_bytes(evidence), "mask_0": mask.getvalue()}
+    evidence["candidates"] = [
+        {**evidence["candidates"][0], "output_id": f"mask_{i}"} for i in range(count)
+    ]
+    blobs = {
+        "evidence": canonical_json_bytes(evidence),
+        **{f"mask_{i}": mask.getvalue() for i in range(count)},
+    }
     wire = {k: v for k, v in request.to_dict().items() if k != "payload"}
     wire.update(
         protocol_version="1",
@@ -162,10 +169,22 @@ def test_import_checks_request_identity_and_persists_candidates(tmp_path):
         },
     )
     job = RemoteJob.parse(wire, request)
+    if count == 0:
+        with pytest.raises(ValueError, match="没有找到"):
+            adapter.import_result(context, job, blobs)
+        return
     result = adapter.import_result(context, job, blobs)
     ref = result.outputs["candidates"]
     assert isinstance(ref, ArtifactRef)
-    assert len(store.read_structured(ref)["candidates"]) == 1
+    assert len(store.read_structured(ref)["candidates"]) == count
+    output_mask = result.outputs["mask"]
+    with Image.open(store.blob_path(output_mask)) as merged:
+        assert merged.mode == "L"
+        assert merged.getextrema() == (255, 255)
+    from assets_generator.dag_persistence import DagRepository
+
+    with DagRepository(store, tmp_path / "dag") as repo:
+        repo.verify_reference_closure(output_mask)
     evidence["request_digest"] = "sha256:" + "f" * 64
     with pytest.raises(ValueError, match="evidence mismatch"):
         adapter.import_result(context, job, {**blobs, "evidence": canonical_json_bytes(evidence)})
@@ -210,9 +229,11 @@ def test_idle_worker_does_not_hash_and_changed_deployment_never_executes(tmp_pat
 
     monkeypatch.setattr(sam3_text_identity, "deployment_identity", changed)
     try:
+
         def handler(*args):
             calls.append(1)
             return {}
+
         assert execute_verified_job(store, handler, {}) is None
         assert not hashes
         store.submit(RemoteRequest.create(identity, "job", {}))

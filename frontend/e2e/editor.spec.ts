@@ -2635,3 +2635,118 @@ test("backend-only node exposes the unique adapter parameter form", async ({
     .poll(() => compiled?.nodes.segment.parameters.prompt)
     .toBe("robot");
 });
+
+test("run to selection omits downstream and node preview stays visible in configuration", async ({
+  page,
+}) => {
+  page.on("dialog", (dialog) => dialog.accept());
+  const pipeline = {
+    pipeline: "partial",
+    version: "1",
+    inputs: {
+      image: { kind: "rgb_image" },
+      unrelated_mask: { kind: "binary_mask" },
+    },
+    nodes: {
+      unrelated: {
+        operator: "extract@1",
+        inputs: { mask: "pipeline.inputs.unrelated_mask" },
+      },
+      segment: {
+        operator: "segment@1",
+        inputs: { image: "pipeline.inputs.image" },
+      },
+      extract: {
+        operator: "extract@1",
+        inputs: { mask: "segment.outputs.mask" },
+      },
+    },
+  };
+  let submitted: any;
+  const run = {
+    run_id: "dag_partial",
+    status: "succeeded",
+    dag: {
+      revision: 1,
+      node_states: { segment: { status: "succeeded", attempts: [] } },
+    },
+  };
+  await page.route("**/api/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    let body: any = {};
+    if (path === "/api/catalog")
+      body = {
+        execution_enabled: true,
+        adapters: [],
+        operators: {
+          "segment@1": {
+            name: "segment",
+            version: "1",
+            inputs: { image: { kind: "rgb_image" } },
+            outputs: { mask: { kind: "binary_mask" } },
+          },
+          "extract@1": {
+            name: "extract",
+            version: "1",
+            inputs: { mask: { kind: "binary_mask" } },
+            outputs: {},
+          },
+        },
+        templates: [{ id: "partial", label: "partial", pipeline }],
+      };
+    else if (path === "/api/compile") {
+      const graph = route.request().postDataJSON().pipeline;
+      body = {
+        ok: true,
+        execution_ready: !graph.nodes.unrelated,
+        execution_reason: graph.nodes.unrelated
+          ? "unrelated branch unavailable"
+          : null,
+      };
+    } else if (path === "/api/drafts") body = { drafts: [] };
+    else if (path === "/api/runs" && route.request().method() === "POST") {
+      submitted = route.request().postDataJSON();
+      body = { run };
+    } else if (path === "/api/runs") body = { runs: [] };
+    else
+      body = {
+        run,
+        outputs: [
+          {
+            node_id: "segment",
+            port: "mask",
+            kind: "binary_mask",
+            url: "/mask.png",
+          },
+        ],
+      };
+    await route.fulfill({ json: body });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "partial", exact: true }).click();
+  await page
+    .locator(".react-flow__node")
+    .filter({ hasText: "segment@1" })
+    .click();
+  await page.getByRole("button", { name: "编译校验", exact: true }).click();
+  await page.getByRole("button", { name: "运行", exact: true }).click();
+  await page
+    .getByRole("checkbox", { name: "只运行到选中节点（包含必要上游）" })
+    .check();
+  await page.getByLabel("运行图片路径").fill("/image.png");
+  await expect(page.getByLabel("上传输入 unrelated_mask")).toHaveCount(0);
+  await page.getByRole("button", { name: "运行到这里", exact: true }).click();
+  expect(Object.keys(submitted?.pipeline.inputs || {})).toEqual(["image"]);
+  await expect
+    .poll(() => Object.keys(submitted?.pipeline.nodes || {}))
+    .toEqual(["segment"]);
+  await expect(
+    page
+      .getByRole("region", { name: "选中节点预览" })
+      .getByRole("button", { name: "收起图片 · segment · mask", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "配置", exact: true }).click();
+  await expect(
+    page.getByRole("region", { name: "选中节点预览" }),
+  ).toBeVisible();
+});

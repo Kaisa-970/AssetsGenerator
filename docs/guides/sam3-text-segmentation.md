@@ -1,9 +1,10 @@
 # SAM3 文字遮罩接入首版
 
 新增 text_segmentation@1（图片输入，prompt/confidence 节点参数）与 select_text_mask@1。
-模板 `pipelines/sam3_text_to_asset_v1.yaml`：文字分割 → 明确选择 → SAM3D → canonicalize → QA → 组装 → 发布。
-候选默认只接受一个；零候选或多候选失败停止，用户需在 select 的 candidate_index 指定从 0 起的序号。
-当前不是可视人工审查节点，不能将该序号选择声称为用户质量批准。没有自动并集。
+模板 `pipelines/sam3_text_to_asset_v1.yaml`：文字分割（联合遮罩）→ SAM3D → canonicalize → QA → 组装 → 发布。
+文字分割默认输出所有候选的并集 mask，同时保留 candidates。零候选明确失败；不生成整图遮罩。
+只有需要逐个处理对象时才使用 select_text_mask，通过 candidate_index 指定候选序号。
+当前不是可视人工审查节点，不能将该序号选择声称为用户质量批准。联合遮罩使用 all_candidates_union@1 策略，证据绑定原图与候选包。
 
 在 remote-config 的 profiles 中增加 sam3：operator=text_segmentation@1，endpoint 为 SSH
 隧道的回环地址，service_id/backend_digest 使用远端固定 profile。保留 sam3d 配置。
@@ -23,7 +24,7 @@
 两个候选（0.77734375、0.6640625），下载和本地候选导入校验通过。初次 BF16 转 NumPy 失败，
 runner 增加 float 转换后使用新身份、新数据库重跑；旧失败保留。
 证据目录 `<DATASET_ROOT>/sam3-text-validation-20260921`，mask_0.png、mask_1.png、evidence.json。
-未验收文字→选择→SAM3D 的完整真实画布链路；当前多候选会停止，尚无可视化选择 UI。
+未验收文字→选择→SAM3D 的完整真实画布链路；已支持多候选并集，尚无可视化单候选人工选择节点。
 
 ## 只分割或提取图片
 
@@ -49,3 +50,27 @@ mask-preview.png、extract-preview.png 和 extracted.png。
 绑定证据进入递归完整性检查，提取算子也检查原图绑定。手动上传的普通 mask 仍是独立输入。
 SAM3 输入边界拒绝 PNG 透明信息和非标准 EXIF 方向。空闲 worker 不重复哈希权重；
 领取任务后在进程授权前核验部署身份。部署代码更新后必须重新固定身份，不能冒用旧身份。
+
+
+## 节点连线与预览
+
+推荐加载 `sam3_text_extract_v1`，它将 segment.mask 直接连接 extract.mask。
+点击 segment 在配置中填写 prompt（如 chair）；上传图片后可启动完整图，
+也可勾选“只运行到选中节点”，选择 segment 后点击“运行到这里”，仅执行分割。
+右下角节点预览窗口随画布选中节点切换；多输出通过端口下拉选择。
+预览来自所选运行，画布参数改动不会更新历史图像。运行列表可选择来源运行。
+本轮的“运行到这里”创建包含目标及全部祖先的独立计划，由后端重新编译；
+不执行下游或无关分支。目前不自动复用跨运行的推理结果，切换目标再次启动会新建运行。
+旧版图及结果仍保留，但旧计划使用旧契约/Adapter 身份，不能作为新版本自动恢复执行。
+
+本轮真实验证：新部署独立目录及数据库保留旧身份运行；浏览器加载提取模板，
+选中 segment 后“运行到这里”，父运行仅含 segment，一个 attempt 成功。
+两个真实候选逐像素取并集，与输出 mask 完全一致；该 mask 直接输入提取节点成功产出 RGBA。
+画布预览在切到“配置”标签后仍可见，截图为
+`<DATASET_ROOT>/sam3-text-validation-20260921/node-preview-union.png`。
+遮罩当前预览为黑白图，尚未实现原图叠加；模型仍通过预览按钮打开交互窗口。
+
+本轮审查修复：运行到选中节点时，输入表单、必填检查、提交内容和执行资格统一基于
+裁剪后的子图；子图单独请求后端编译，整图未满足的无关分支不再阻止启动。
+联合/候选 mask 的原图绑定校验由图片提取和远程 masked shape 共同调用，
+同尺寸但不同 Artifact 的原图在远端提交前被拒绝；普通上传 mask 保持原有规则。

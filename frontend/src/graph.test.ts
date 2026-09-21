@@ -1,4 +1,4 @@
-import { duplicateNode } from "./graph";
+import { pipelineThrough, duplicateNode } from "./graph";
 import { describe, it, expect } from "vitest";
 import { load, dump } from "js-yaml";
 import {
@@ -344,4 +344,26 @@ it("connection diagnostics identify endpoints and declared schema values", () =>
     ),
   ).toContain("zero_or_one → one");
   expect(JSON.stringify(p)).toBe(original);
+});
+
+it("run to target includes shared ancestors once and excludes downstream", () => {
+  const graph: Pipeline = {
+    pipeline: "slice",
+    version: "1",
+    inputs: { image: { kind: "rgb_image" }, unused: { kind: "rgb_image" } },
+    nodes: {
+      a: { operator: "copy@1", inputs: { image: "pipeline.inputs.image" } },
+      b: { operator: "copy@1", inputs: { image: "a.outputs.image" } },
+      c: { operator: "copy@1", inputs: { image: "a.outputs.image" } },
+      d: {
+        operator: "join@1",
+        inputs: { left: "b.outputs.image", right: "c.outputs.image" },
+      },
+      end: { operator: "copy@1", inputs: { image: "d.outputs.image" } },
+    },
+  };
+  const sliced = pipelineThrough(graph, "d");
+  expect(Object.keys(sliced.nodes)).toEqual(["a", "b", "c", "d"]);
+  expect(Object.keys(sliced.inputs)).toEqual(["image"]);
+  expect(Object.keys(graph.nodes)).toHaveLength(5);
 });

@@ -6,6 +6,7 @@ from PIL import Image
 
 from .contracts import ContractError
 from .dag_adapters import AdapterSpec, NodeExecutionContext, NodeExecutionResult
+from .mask_binding import validate_mask_image_binding
 from .models import ArtifactRef
 
 
@@ -29,15 +30,7 @@ class ApplyBinaryMaskAdapter:
             "1.0",
         ):
             raise ContractError("mask compositing requires a binary PNG mask")
-        binding = mask_identity.identity_metadata.get("selection_binding")
-        if binding is not None:
-            ref = ArtifactRef(**binding)
-            if not context.store.verify_digest(ref):
-                raise ContractError("mask selection binding missing")
-            if context.store.read_structured(ref).get("image") != {
-                "artifact_id": image.artifact_id
-            }:
-                raise ContractError("candidate mask must be used with its original image")
+        validate_mask_image_binding(context.store, image, mask)
         with (
             Image.open(context.store.blob_path(image)) as source,
             Image.open(context.store.blob_path(mask)) as mask_image,
