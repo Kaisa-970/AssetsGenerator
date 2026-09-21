@@ -6,6 +6,8 @@
 
 ## 架构与契约 · design
 
+- [共享网格、provenance 与发布基础能力](design/shared-asset-foundations.md)
+
 - [固定流程节点工作台 v1（实现中）](design/node-workbench-v1.md)
 - [通用 DAG 编排与节点编辑器实施设计（部分实现）](design/generic-dag-orchestration.md)
 - [节点编辑器结果预览首版](design/node-editor-result-preview.md)
@@ -61,6 +63,12 @@
 - [DA3 独立环境与 Python 接入](guides/da3-environment.md)
 
 ## 评测报告 · reports
+
+- [共享基础能力整理与回归记录](reports/shared-foundations-20260921.md)
+
+- [DA3 多视图推理中主控中断验收](reports/multiview-interruption-real.md)
+
+- [节点工作台 B2 历史验证归档](reports/node-editor-b2-history.md)
 
 - [工作台完整回归 2026-09-21](reports/workbench-regression-20260921.md)
 

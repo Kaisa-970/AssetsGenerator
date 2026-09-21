@@ -2,6 +2,14 @@
 
 通用 Real-to-Sim 资产生成管线的设计与后续实现仓库。
 
+## 推荐入口：节点工作台
+
+从 [中文节点编辑器指南](docs/guides/node-editor.md) 开始：配置模型服务、连接节点、
+上传输入、执行管线并查看模型。当前画布使用 React Flow。
+可用范围与缺口见 [简短状态表](docs/reports/node-editor-b2-status.md)。
+下文保留的 CLI 用于自动化、批处理和诊断；初次使用不必逐个学习。
+
+
 当前实现覆盖完整单图到结构化 3D 资产流程，以及 Phase 6 的模型中立多视图 Core vertical slice：
 
 ```text
