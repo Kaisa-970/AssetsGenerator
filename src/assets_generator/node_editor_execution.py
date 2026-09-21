@@ -255,7 +255,7 @@ class NodeEditorExecution:
 
     def release_archive(self, run_id: str, node_id: str, port: str) -> OutputPayload:
         """Download declared release files; never re-export or regenerate evidence."""
-        from .scene_workflow import _release_files
+        from .release_io import release_files as _release_files
 
         self._owned(run_id)
         run = self.engine.repository.load(run_id)

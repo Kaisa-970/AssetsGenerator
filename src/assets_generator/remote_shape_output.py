@@ -9,8 +9,10 @@ from collections.abc import Mapping
 import numpy as np
 
 from .artifact_store import LocalArtifactStore
+from .mesh_io import load_scene as _load_scene
+from .mesh_io import scene_vertices as _scene_vertices
 from .models import BackendNativeFrame, PBRMaterial, StructuredValue
-from .operators import ShapeOutput, _load_scene, _scene_vertices
+from .operators import ShapeOutput
 from .remote_protocol import decode_remote_json
 from .remote_service_worker import ServiceOutput
 from .serialization import canonical_json_bytes, sha256_bytes, to_primitive

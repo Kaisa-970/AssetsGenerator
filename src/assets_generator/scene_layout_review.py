@@ -21,10 +21,11 @@ from .completion import _checked
 from .contracts import ContractError
 from .errors import classify_error
 from .models import ArtifactRef, BuildRun, NodeAttempt, StructuredValue
+from .provenance import persist_build_run as _persist_build_run
+from .provenance import persist_provenance as _persist_provenance
 from .runtime import utc_now
 from .scene_workflow import build_scene
 from .serialization import canonical_json_bytes, sha256_bytes, to_primitive
-from .workflow import _persist_build_run, _persist_provenance
 
 
 def _number(value: Any, name: str) -> float:

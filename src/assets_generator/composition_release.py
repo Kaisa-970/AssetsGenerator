@@ -11,6 +11,8 @@ from .alignment import _glb, candidate_frame
 from .artifact_store import LocalArtifactStore
 from .completion import _checked
 from .contracts import ContractError
+from .mesh_io import load_scene as _load_scene
+from .mesh_io import scene_vertices as _scene_vertices
 from .models import (
     AABB,
     AppearanceSet,
@@ -25,9 +27,9 @@ from .models import (
     SemanticInfo,
     StructuredValue,
 )
-from .operators import _load_scene, _scene_vertices, export_release, material_from_glb
+from .operators import export_release, material_from_glb
+from .provenance import persist_provenance as _persist_provenance
 from .serialization import to_primitive
-from .workflow import _persist_provenance
 
 
 def standard_composition_release(

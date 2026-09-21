@@ -20,11 +20,13 @@ from .errors import PipelineError
 from .models import ArtifactRef, BuildRun, NodeAttempt, StructuredValue
 from .operators import validate_binary_mask
 from .pipeline import load_default_operator_specs
+from .provenance import persist_build_run as _persist_build_run
+from .provenance import persist_provenance as _persist_provenance
 from .publication import publish_staged_release
 from .runtime import utc_now
 from .serialization import canonical_json_bytes, to_primitive
 from .workbench_context import ChildRunContext
-from .workflow import _import_image, _persist_build_run, _persist_provenance
+from .workflow import _import_image
 
 
 class InstanceProposer(Protocol):

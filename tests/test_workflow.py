@@ -466,7 +466,7 @@ def test_release_materialization_failure_is_atomic(tmp_path, monkeypatch) -> Non
 
     with monkeypatch.context() as context:
         context.setattr(
-            "assets_generator.workflow.shutil.copyfile",
+            "assets_generator.release_io.shutil.copyfile",
             lambda *args: (_ for _ in ()).throw(OSError("copy failed")),
         )
         with pytest.raises(OSError, match="copy failed"):
@@ -497,7 +497,7 @@ def test_release_failure_is_a_separate_attempt(tmp_path, monkeypatch) -> None:
     Image.new("L", (8, 8), 255).save(mask_path)
     output = tmp_path / "release"
     monkeypatch.setattr(
-        "assets_generator.workflow.shutil.copyfile",
+        "assets_generator.release_io.shutil.copyfile",
         lambda *args: (_ for _ in ()).throw(OSError("copy failed")),
     )
     with pytest.raises(OSError):

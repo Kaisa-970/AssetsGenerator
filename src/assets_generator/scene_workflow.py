@@ -6,7 +6,7 @@ import json
 import re
 import tempfile
 import uuid
-from pathlib import Path, PurePosixPath, PureWindowsPath
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -16,40 +16,14 @@ from .alignment import _glb, _mesh, _similarity
 from .artifact_store import LocalArtifactStore
 from .completion import _checked
 from .contracts import ContractError, validate_operator_inputs, validate_operator_outputs
+from .mesh_io import load_scene as _load_scene
 from .models import ArtifactRef, BuildRun, NodeAttempt, SpatialTransform, StructuredValue
-from .operators import _load_scene
 from .pipeline import load_default_operator_specs
+from .provenance import persist_build_run as _persist_build_run
+from .provenance import persist_provenance as _persist_provenance
+from .release_io import release_files as _release_files
 from .runtime import utc_now
 from .serialization import canonical_json_bytes, to_primitive
-from .workflow import _persist_build_run, _persist_provenance
-
-
-def _release_files(store: LocalArtifactStore, release: ArtifactRef) -> dict[str, ArtifactRef]:
-    """Validate complete release files before adding them to an instance directory."""
-    raw = store.read_structured(release)["files"]
-    result = {}
-    for name, value in raw.items():
-        path = PurePosixPath(name)
-        if (
-            not name
-            or name == "."
-            or path.is_absolute()
-            or PureWindowsPath(name).drive
-            or ".." in path.parts
-            or "\\" in name
-            or "\x00" in name
-            or path.as_posix() != name
-            or path.parts[0] in {"asset.json", "release.json", "run.json"}
-        ):
-            raise ContractError(f"unsafe scene asset release path: {name}")
-        ref = ArtifactRef(**value)
-        if not store.verify_digest(ref):
-            raise ContractError(f"invalid scene asset release file: {name}")
-        result[name] = ref
-    for name in result:
-        if any(parent.as_posix() in result for parent in PurePosixPath(name).parents):
-            raise ContractError(f"conflicting scene asset release path: {name}")
-    return result
 
 
 def build_scene(

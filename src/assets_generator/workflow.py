@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import re
-import shutil
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,7 +24,6 @@ from .models import (
     AssetRelease,
     BackendNativeFrame,
     BuildRun,
-    ProvenanceRecord,
     StructuredValue,
 )
 from .operators import (
@@ -43,9 +41,13 @@ from .operators import (
     validate_geometry,
 )
 from .pipeline import compile_pipeline, load_default_operator_specs, load_default_pipeline
-from .publication import publish_staged_release
+from .provenance import output_id as _output_id  # noqa: F401 - historical import compatibility
+from .provenance import persist_build_run as _persist_build_run
+from .provenance import persist_provenance as _persist_provenance
+from .release_io import materialize_json as _materialize_json  # noqa: F401
+from .release_io import materialize_release as _materialize_release
 from .runtime import Phase1Runtime, utc_now
-from .serialization import canonical_json_bytes, sha256_bytes, to_primitive
+from .serialization import to_primitive
 from .spatial import SpatialContractError, validate_mesh_native_frame
 from .workbench_context import ChildRunContext
 
@@ -58,62 +60,6 @@ class BuildResult:
     glb: ArtifactRef
     quality_report: ArtifactRef
     output_directory: Path
-
-
-def _output_id(run_id: str, node_id: str, port_name: str, element_id: str | None = None) -> str:
-    if element_id is not None:
-        if not element_id:
-            raise ValueError("output element_id must be non-empty")
-        return sha256_bytes(
-            canonical_json_bytes(["output-element-v1", run_id, node_id, 1, port_name, element_id])
-        )
-    return sha256_bytes(f"{run_id}:{node_id}:1:{port_name}".encode())
-
-
-def _persist_provenance(
-    store: LocalArtifactStore,
-    *,
-    run_id: str,
-    node_id: str,
-    port_name: str,
-    artifact: ArtifactRef,
-    derived_from: list[ArtifactRef],
-    operator: str,
-    backend: str,
-    backend_version: str,
-    parameters: dict[str, Any],
-    seed: int | None,
-    source: str,
-    model_digest: str | None = None,
-    container_digest: str | None = None,
-    element_id: str | None = None,
-) -> ArtifactRef:
-    output_id = _output_id(run_id, node_id, port_name, element_id)
-    record = ProvenanceRecord(
-        provenance_id=sha256_bytes(f"provenance:{output_id}".encode()),
-        output_id=output_id,
-        output_artifact_id=artifact.artifact_id,
-        derived_from_artifact_ids=[item.artifact_id for item in derived_from],
-        operator=operator,
-        operator_version="1",
-        backend=backend,
-        backend_version=backend_version,
-        model_digest=model_digest,
-        container_digest=container_digest,
-        parameters=parameters,
-        seed=seed,
-        run_id=run_id,
-        node_id=node_id,
-        attempt=1,
-        source=source,
-    )
-    return store.persist_bytes(
-        canonical_json_bytes(record),
-        kind="provenance_record",
-        schema_name="ProvenanceRecord",
-        schema_version=SCHEMA_VERSION,
-        identity_metadata={"media_type": "application/json"},
-    )
 
 
 def _import_image(store: LocalArtifactStore, path: Path, kind: str) -> ArtifactRef:
@@ -133,53 +79,6 @@ def _import_image(store: LocalArtifactStore, path: Path, kind: str) -> ArtifactR
             "channel_layout": mode,
         },
     )
-
-
-def _materialize_json(store: LocalArtifactStore, artifact: ArtifactRef, target: Path) -> None:
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_bytes(store.blob_path(artifact).read_bytes())
-
-
-def _persist_build_run(store: LocalArtifactStore, run: BuildRun) -> ArtifactRef:
-    return store.record_build_run(
-        run.run_id,
-        StructuredValue("build_run", "BuildRun", SCHEMA_VERSION, to_primitive(run)),
-    )
-
-
-def _materialize_release(
-    store: LocalArtifactStore,
-    output_path: Path,
-    release_ref: ArtifactRef,
-    release: AssetRelease,
-    run_ref: ArtifactRef,
-) -> None:
-    output_path = output_path.expanduser().absolute()
-    if output_path.exists():
-        raise FileExistsError(f"output directory already exists: {output_path}")
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = output_path.parent / f".{output_path.name}.{uuid.uuid4().hex}.tmp"
-    try:
-        temporary.mkdir()
-        _materialize_json(store, release.asset_definition, temporary / "asset.json")
-        _materialize_json(store, release_ref, temporary / "release.json")
-        _materialize_json(store, run_ref, temporary / "run.json")
-        for relative_path, reference in release.files.items():
-            target = temporary / relative_path
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(store.blob_path(reference), target)
-            if not store.verify_digest(reference):
-                raise RuntimeError(f"artifact verification failed during release: {relative_path}")
-        expected = {"asset.json", "release.json", "run.json", *release.files.keys()}
-        actual = {
-            str(path.relative_to(temporary)) for path in temporary.rglob("*") if path.is_file()
-        }
-        if actual != expected:
-            raise RuntimeError("materialized release does not match its manifest")
-        publish_staged_release(temporary, output_path)
-    except Exception:
-        shutil.rmtree(temporary, ignore_errors=True)
-        raise
 
 
 def build_image_asset(

@@ -16,6 +16,8 @@ from .artifact_store import LocalArtifactStore
 from .collision import _artifact
 from .contracts import ContractError, validate_operator_inputs, validate_operator_outputs
 from .errors import ErrorCode, classify_error
+from .mesh_io import load_scene as _load_scene
+from .mesh_io import scene_vertices as _scene_vertices
 from .models import (
     SCHEMA_VERSION,
     ArtifactRef,
@@ -27,12 +29,13 @@ from .models import (
     QualityReport,
     StructuredValue,
 )
-from .operators import _load_scene, _scene_vertices
 from .pipeline import load_default_operator_specs
+from .provenance import persist_build_run as _persist_build_run
+from .provenance import persist_provenance as _persist_provenance
+from .release_io import materialize_release as _materialize_release
+from .release_io import release_files as _release_files
 from .runtime import utc_now
-from .scene_workflow import _release_files
 from .serialization import canonical_json_bytes, sha256_bytes, to_primitive
-from .workflow import _materialize_release, _persist_build_run, _persist_provenance
 
 
 @dataclass(frozen=True)

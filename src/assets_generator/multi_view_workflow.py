@@ -44,6 +44,9 @@ from .operators import (
     validate_semantic_info,
 )
 from .pipeline import compile_pipeline, load_default_operator_specs, load_multi_view_pipeline
+from .provenance import persist_build_run as _persist_build_run
+from .provenance import persist_provenance as _persist_provenance
+from .release_io import materialize_release as _materialize_release
 from .runtime import Phase1Runtime, utc_now
 from .serialization import canonical_json_bytes, to_primitive
 from .spatial import (
@@ -52,12 +55,7 @@ from .spatial import (
     validate_mesh_native_frame,
 )
 from .workbench_context import ChildRunContext
-from .workflow import (
-    BuildResult,
-    _materialize_release,
-    _persist_build_run,
-    _persist_provenance,
-)
+from .workflow import BuildResult
 
 
 def _structured(value: StructuredValue, *, kind: str, schema_name: str) -> dict[str, Any]:

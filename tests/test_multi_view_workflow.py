@@ -1402,7 +1402,7 @@ def test_multi_view_release_materialization_failure_is_atomic(tmp_path, monkeypa
     observations = _observations(tmp_path, store)
     output = tmp_path / "release"
     monkeypatch.setattr(
-        "assets_generator.workflow.shutil.copyfile",
+        "assets_generator.release_io.shutil.copyfile",
         lambda *args: (_ for _ in ()).throw(OSError("copy failed")),
     )
 

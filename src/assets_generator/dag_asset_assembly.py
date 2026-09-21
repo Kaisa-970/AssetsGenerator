@@ -8,6 +8,8 @@ import numpy as np
 from .artifact_store import LocalArtifactStore
 from .contracts import ContractError
 from .dag_adapters import AdapterSpec, NodeExecutionContext, NodeExecutionResult
+from .mesh_io import load_scene as _load_scene
+from .mesh_io import scene_vertices as _scene_vertices
 from .models import (
     AABB,
     AppearanceSet,
@@ -19,7 +21,7 @@ from .models import (
     SemanticInfo,
     StructuredValue,
 )
-from .operators import _load_scene, _scene_vertices, material_from_glb
+from .operators import material_from_glb
 from .serialization import cache_key, sha256_bytes, to_primitive
 
 

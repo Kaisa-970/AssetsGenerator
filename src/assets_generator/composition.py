@@ -15,12 +15,13 @@ from .artifact_store import LocalArtifactStore
 from .completion import _checked
 from .composition_release import standard_composition_release
 from .contracts import ContractError, validate_operator_inputs, validate_operator_outputs
+from .mesh_io import load_scene as _load_scene
 from .models import ArtifactRef, BuildRun, NodeAttempt, StructuredValue
-from .operators import _load_scene
 from .pipeline import load_default_operator_specs
+from .provenance import persist_build_run as _persist_build_run
+from .provenance import persist_provenance as _persist_provenance
 from .runtime import utc_now
 from .serialization import canonical_json_bytes, to_primitive
-from .workflow import _persist_build_run, _persist_provenance
 
 
 def records(store: LocalArtifactStore, kind: str) -> list[tuple[ArtifactRef, dict[str, Any]]]:

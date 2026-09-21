@@ -17,9 +17,11 @@ from .contracts import ContractError
 from .errors import classify_error
 from .models import ArtifactRef, BuildRun, NodeAttempt, StructuredValue
 from .operators import validate_binary_mask
+from .provenance import persist_build_run as _persist_build_run
+from .provenance import persist_provenance as _persist_provenance
 from .runtime import utc_now
 from .serialization import canonical_json_bytes, to_primitive
-from .workflow import _import_image, _persist_build_run, _persist_provenance, build_image_asset
+from .workflow import _import_image, build_image_asset
 
 
 @dataclass(frozen=True)

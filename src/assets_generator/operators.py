@@ -19,6 +19,9 @@ from .backends.model_identity import snapshot_digest, snapshot_state
 from .backends.source_identity import backend_source_identity
 from .contracts import ContractError
 from .errors import ErrorCode, PipelineError
+from .mesh_io import OperatorExecutionError as OperatorExecutionError
+from .mesh_io import load_scene as _load_scene
+from .mesh_io import scene_vertices as _scene_vertices
 from .models import (
     SCHEMA_VERSION,
     AppearanceSet,
@@ -39,10 +42,6 @@ from .observations import make_observation_bundle, observation_bundle_value
 from .serialization import cache_key, sha256_bytes, to_primitive
 from .spatial import CanonicalizationResult, canonicalize_vertices
 from .worker import LocalProcessWorker, ProcessJobRequest
-
-
-class OperatorExecutionError(RuntimeError):
-    pass
 
 
 @dataclass(frozen=True)
@@ -715,25 +714,6 @@ class BiRefNetSegmentationBackend:
             ),
             response,
         )
-
-
-def _load_scene(data: bytes) -> trimesh.Scene:
-    loaded = trimesh.load(io.BytesIO(data), file_type="glb", force="scene")
-    if not isinstance(loaded, trimesh.Scene):
-        return trimesh.Scene(loaded)
-    return loaded
-
-
-def _scene_vertices(scene: trimesh.Scene) -> np.ndarray[Any, np.dtype[np.float64]]:
-    vertices: list[np.ndarray[Any, np.dtype[np.float64]]] = []
-    for node_name in scene.graph.nodes_geometry:
-        transform, geometry_name = scene.graph[node_name]
-        geometry = scene.geometry[geometry_name]
-        points = trimesh.transform_points(np.asarray(geometry.vertices), transform)
-        vertices.append(np.asarray(points, dtype=np.float64))
-    if not vertices:
-        raise OperatorExecutionError("GLB contains no mesh geometry")
-    return np.vstack(vertices)
 
 
 def canonicalize_glb(
