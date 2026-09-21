@@ -6,6 +6,9 @@
 
 ## 架构与契约 · design
 
+- [SAM3D 兼容服务开发指南](guides/sam3d-bridge.md)
+- [SAM3D 服务兼容层与统一协议](design/sam3d-service-bridge.md)
+
 - [共享网格、provenance 与发布基础能力](design/shared-asset-foundations.md)
 
 - [固定流程节点工作台 v1（实现中）](design/node-workbench-v1.md)
@@ -63,6 +66,8 @@
 - [DA3 独立环境与 Python 接入](guides/da3-environment.md)
 
 ## 评测报告 · reports
+
+- [SAM3D 服务协议 1.1 部署记录](reports/sam3d-protocol-deployment.md)
 
 - [共享基础能力整理与回归记录](reports/shared-foundations-20260921.md)
 

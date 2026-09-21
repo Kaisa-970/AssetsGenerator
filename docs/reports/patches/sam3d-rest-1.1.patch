@@ -1,0 +1,472 @@
+--- a/app/api_server.py
++++ b/app/api_server.py
+@@ -26,6 +26,8 @@
+ import web_app as web
+ import quality_options
+ import cleanup_manager
++import api_protocol
++import api_identity
+ 
+ ROOT = web.PROJECT_DIR / 'outputs' / 'api'
+ ROOT.mkdir(parents=True, exist_ok=True)
+@@ -37,6 +39,9 @@
+ MAX_UPLOAD = 30 * 1024 * 1024
+ MAX_PIXELS = 32_000_000
+ security = HTTPBearer(auto_error=False)
++REGISTRY = api_protocol.SubmissionRegistry(ROOT.parent / "protocol" / "submissions.sqlite")
++DEPLOYMENT = None
++SUBMIT_LOCK = threading.RLock()
+ 
+ 
+ class Options(BaseModel):
+@@ -74,10 +79,10 @@
+     with META_LOCK:
+         f = p / 'job.json'
+         data = json.loads(f.read_text()) if f.exists() else {}
++        if data.get('status') in ('completed','failed'):
++            raise RuntimeError('terminal job metadata is immutable')
+         data.update(values, updated_at=time.time())
+-        tmp = p / 'job.json.tmp'
+-        tmp.write_text(json.dumps(data, indent=2))
+-        tmp.replace(f)
++        api_protocol.atomic_json(f, data)
+         return data
+ 
+ 
+@@ -133,23 +138,44 @@
+                                      (Path(ply).with_suffix('.json'),'parameters.json')]:
+                     source.replace(p / name)
+             names = ['model.ply','model.glb','parameters.json','mask.png']
+-            update(p, status='completed', finished_at=time.time(),
+-                   files={n:f'/api/v1/jobs/{p.name}/files/{n}' for n in names})
++            # Sync bytes before committing terminal metadata. Completed files never mutate.
++            for name in names:
++                with (p/name).open('rb') as stream:
++                    os.fsync(stream.fileno())
++            api_protocol.sync_directory(p)
++            descriptors = {n:api_protocol.file_descriptor(p/n) for n in names}
++            parameters = json.loads((p/'parameters.json').read_bytes())
++            evidence = {'schema':'sam3d-result@1', 'request':meta['request_identity'],
++                        'request_digest':meta['request_digest'], 'deployment':meta['deployment'],
++                        'actual_parameters':parameters, 'files':descriptors,
++                        'input_processing':{'image':'EXIF transpose then RGB',
++                                            'mask':'EXIF transpose, grayscale, values <=1 scaled by 255, threshold >127; actual mask.png saved',
++                                            'model_preprocessing':'checkpoint pipeline.yaml; identity recorded'},
++                        'spatial':meta['deployment']['spatial']}
++            api_protocol.atomic_json(p/'evidence.json', evidence)
++            names.append('evidence.json')
++            descriptors['evidence.json'] = api_protocol.file_descriptor(p/'evidence.json')
++            update(p, status='completed', finished_at=time.time(), error=None, error_code=None,
++                   files={n:f'/api/v1/jobs/{p.name}/files/{n}' for n in names},
++                   file_descriptors=descriptors)
+         except Exception as e:
+             logging.exception('API job %s failed', p.name)
+             if isinstance(e, __import__('torch').cuda.OutOfMemoryError):
+                 web.clear_gpu_model()
+-            update(p, status='failed', error=str(e), finished_at=time.time())
++            update(p, status='failed', error=str(e), error_code='INFERENCE_FAILED', finished_at=time.time())
+         finally:
+             Q.task_done()
+ 
+ 
+ @asynccontextmanager
+ async def lifespan(app):
++    global DEPLOYMENT
++    DEPLOYMENT = await asyncio.to_thread(api_identity.build_identity, web.PROJECT_DIR)
+     # Requests interrupted by a container restart are not silently reported as running.
+     for f in ROOT.glob('*/job.json'):
+         if read_meta(f.parent).get('status') in ('queued','waiting_gpu','running'):
+-            update(f.parent, status='failed', error='Service restarted before completion')
++            update(f.parent, status='failed', error='Service restarted before completion',
++                   error_code='SERVICE_RESTARTED', finished_at=time.time())
+     web.sam2_client.start()
+     cleanup_manager.start()
+     threading.Thread(target=worker, daemon=True, name='sam3d-api-worker').start()
+@@ -159,7 +185,7 @@
+     web.sam3_client.stop()
+ 
+ 
+-app = FastAPI(title='SAM3D API', version='1.0', lifespan=lifespan,
++app = FastAPI(title='SAM3D API', version='1.1', lifespan=lifespan,
+               docs_url='/api/docs', openapi_url='/api/openapi.json', redoc_url=None)
+ 
+ 
+@@ -189,22 +215,69 @@
+ def health():
+     return {'status':'ok','queue_length':Q.qsize(),'queue_capacity':8,
+             'sam3d_loaded':web._model is not None,'point_backend':'SAM2.1',
++            'active_api_jobs':sum(read_meta(f.parent).get('status') in ('queued','waiting_gpu','running')
++                                  for f in ROOT.glob('*/job.json')),
++            'backend_digest':DEPLOYMENT['backend_digest'] if DEPLOYMENT else None,
+             'retention': cleanup_manager.status()}
++
++
++@app.get('/api/v1/capabilities', dependencies=[Depends(auth)])
++def capabilities():
++    return {'protocol_version':'1.1', 'service_id':'sam3d-objects',
++            'idempotency':{'persistent':True, 'lookup_by_key':True,
++                           'tombstones_expire':False, 'expired_results':'410; never reexecute'},
++            'inputs':['image+mask','image+points'],
++            'outputs':{'model.glb':'triangle_mesh','model.ply':'gaussian_splat'},
++            'options_schema':Options.model_json_schema(), 'deployment':DEPLOYMENT,
++            'cancel_supported':False, 'retention':cleanup_manager.status()}
++
++
++def receipt_response(receipt):
++    try:
++        meta = read_meta(job_dir(receipt['id']))
++    except HTTPException:
++        raise HTTPException(410, {'code':'RESULT_EXPIRED_OR_MISSING', 'receipt':receipt})
++    except (OSError, ValueError):
++        raise HTTPException(503, 'Recorded job metadata unavailable; never resubmit')
++    return {**receipt, 'status':meta['status']}
++
++
++@app.get('/api/v1/jobs/by-key/{submission_key}', dependencies=[Depends(auth)])
++def by_key(submission_key: str):
++    try:
++        receipt = REGISTRY.lookup(submission_key)
++    except ValueError as e:
++        raise HTTPException(422, str(e))
++    if receipt is None:
++        raise HTTPException(404, 'Submission key not found')
++    return receipt_response(receipt)
+ 
+ 
+ @app.post('/api/v1/jobs', status_code=202, dependencies=[Depends(auth)])
+ async def submit(image: UploadFile = File(...), mask: UploadFile | None = File(None),
+-                 points: str | None = Form(None), options: str = Form('{}')):
+-    """image + mask OR image + points [[x,y,1],[x,y,0]]. Points use EXIF-oriented pixel coordinates.
+-    Positive=1, negative=0; point segmentation currently uses SAM2.1.
+-    Poll the returned status_url; completed jobs include authenticated download URLs.
+-    """
++                 points: str | None = Form(None), options: str = Form('{}'),
++                 submission_key: str | None = Form(None), request_digest: str | None = Form(None),
++                 backend_digest: str | None = Form(None)):
++    """Optional idempotent key requires request/deployment digests; old clients remain supported."""
+     if (mask is None) == (points is None):
+         raise HTTPException(422, 'Supply exactly one of mask or points')
++    if (submission_key is None) != (request_digest is None):
++        raise HTTPException(422, 'submission_key and request_digest must be supplied together')
++    if submission_key is not None:
++        try:
++            api_protocol.validate_key(submission_key, request_digest)
++        except ValueError as e:
++            raise HTTPException(422, str(e))
++        if backend_digest != DEPLOYMENT['backend_digest']:
++            raise HTTPException(409, 'Deployment identity mismatch')
++    elif backend_digest is not None:
++        raise HTTPException(422, 'backend_digest requires submission_key')
+     p = None
++    durable = False
+     try:
+         opts = Options.model_validate_json(options).model_dump()
+-        quality_options.options(*[opts[k] for k in ('steps1','steps2','cfg1','cfg2','bake','texture','reduction')])
++        settings = quality_options.options(*[opts[k] for k in ('steps1','steps2','cfg1','cfg2','bake','texture','reduction')])
++        opts = {'seed':opts['seed'], **settings}
+         pts = json.loads(points) if points is not None else None
+         if pts is not None:
+             if not isinstance(pts,list) or not 1 <= len(pts) <= 64:
+@@ -214,8 +287,6 @@
+                     raise ValueError('Each point is [integer x, integer y, label 0 or 1]')
+             if not any(pt[2] == 1 for pt in pts):
+                 raise ValueError('At least one foreground point is required')
+-        if Q.full():
+-            raise HTTPException(429, 'Queue full; retry later')
+         p = ROOT / uuid.uuid4().hex
+         p.mkdir()
+         await upload(image, p / 'image.upload')
+@@ -225,17 +296,49 @@
+         if mask is not None:
+             await upload(mask, p / 'mask.upload')
+             await asyncio.to_thread(load_mask, p / 'mask.upload', arr.shape[:2])
+-        update(p, id=p.name, status='queued', created_at=time.time(), options=opts, points=pts)
+-        try:
++        identity = api_protocol.request_identity(p/'image.upload', p/'mask.upload' if mask else None, pts, opts)
++        actual_digest = api_protocol.digest(identity)
++        if request_digest is not None and request_digest != actual_digest:
++            raise HTTPException(422, 'request_digest does not match input bytes and normalized options')
++        # The registry and queue are guarded together. Replays bypass queue capacity checks.
++        with SUBMIT_LOCK:
++            if submission_key is not None:
++                existing = REGISTRY.lookup(submission_key)
++                if existing:
++                    if existing['request_digest'] != actual_digest or existing['backend_digest'] != backend_digest:
++                        raise HTTPException(409, 'Submission key conflicts with prior request/deployment')
++                    shutil.rmtree(p)
++                    p = None
++                    return receipt_response(existing)
++            if Q.full():
++                raise HTTPException(429, 'Queue full; retry later')
++            for name in ('image.upload', 'mask.upload'):
++                if (p/name).exists():
++                    with (p/name).open('rb') as stream:
++                        os.fsync(stream.fileno())
++            update(p, id=p.name, status='queued', created_at=time.time(), options=opts, points=pts,
++                   request_identity=identity, request_digest=actual_digest,
++                   submission_key=submission_key, deployment=DEPLOYMENT)
++            api_protocol.sync_directory(ROOT)
++            if submission_key is not None:
++                # From this point on, even a failed reserve commit may be durable.
++                durable = True
++                receipt, fresh = REGISTRY.reserve(submission_key, actual_digest, p.name, backend_digest)
++                if not fresh:
++                    raise RuntimeError('unexpected concurrent registry reservation; do not enqueue')
++            else:
++                receipt = {'id':p.name, 'status_url':f'/api/v1/jobs/{p.name}'}
++            durable = True
+             Q.put_nowait(p)
+-        except queue.Full:
+-            raise HTTPException(429,'Queue full; retry later')
+-        return {'id':p.name,'status':'queued','status_url':f'/api/v1/jobs/{p.name}'}
++        return {**receipt, 'status':'queued'}
+     except Exception as e:
+-        if p is not None:
++        if p is not None and not durable:
+             shutil.rmtree(p, ignore_errors=True)
+         if isinstance(e,HTTPException):
+             raise
++        if durable:
++            logging.exception('Durable submission interrupted; original identity retained')
++            raise HTTPException(503, 'Submission outcome uncertain; query original key') from e
+         raise HTTPException(422,str(e)) from e
+ 
+ 
+@@ -247,7 +350,7 @@
+ @app.get('/api/v1/jobs/{job_id}/files/{name}', dependencies=[Depends(auth)])
+ def download(job_id: str, name: str):
+     p = job_dir(job_id)
+-    if name not in ('model.ply','model.glb','parameters.json','mask.png'):
++    if name not in ('model.ply','model.glb','parameters.json','mask.png','evidence.json'):
+         raise HTTPException(404,'Unknown file')
+     if read_meta(p).get('status') != 'completed' or not (p/name).is_file():
+         raise HTTPException(409,'Result not ready')
+--- /dev/null
++++ b/app/api_protocol.py
+@@ -0,0 +1,126 @@
++"""Durable API submission identities; independent of GPU and web frameworks."""
++import hashlib
++import json
++import os
++import re
++import sqlite3
++import uuid
++from pathlib import Path
++
++
++class SubmissionConflict(ValueError):
++    pass
++
++
++def canonical(value):
++    return json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=True,
++                      allow_nan=False).encode()
++
++
++def digest(value):
++    return 'sha256:' + hashlib.sha256(canonical(value)).hexdigest()
++
++
++def file_descriptor(path):
++    h = hashlib.sha256()
++    size = 0
++    with Path(path).open('rb') as stream:
++        while chunk := stream.read(1024 * 1024):
++            h.update(chunk)
++            size += len(chunk)
++    return {'sha256': 'sha256:' + h.hexdigest(), 'byte_length': size}
++
++
++def atomic_json(path, value):
++    path = Path(path)
++    tmp = path.with_name(path.name + '.tmp')
++    with tmp.open('wb') as stream:
++        stream.write(canonical(value))
++        stream.flush()
++        os.fsync(stream.fileno())
++    os.replace(tmp, path)
++    sync_directory(path.parent)
++
++
++def sync_directory(path):
++    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
++    try:
++        os.fsync(fd)
++    finally:
++        os.close(fd)
++
++
++def request_identity(image, mask, points, options):
++    return {'schema': 'sam3d-request@1', 'image': file_descriptor(image)['sha256'],
++            'mask': file_descriptor(mask)['sha256'] if mask else None,
++            'points': points, 'options': options}
++
++
++def validate_key(key, request_digest):
++    if not isinstance(key, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', key):
++        raise ValueError('submission_key must contain 1..128 letters, digits, underscores or hyphens')
++    if not isinstance(request_digest, str) or not re.fullmatch(r'sha256:[0-9a-f]{64}', request_digest):
++        raise ValueError('invalid request_digest')
++
++
++class SubmissionRegistry:
++    """Permanent key tombstones outlive expiring job output directories.
++
++    A registry identity sidecar prevents recreating a missing database. Service
++    serializes reserve+queue operations; SQLite enforces concurrent key identity.
++    """
++    def __init__(self, path):
++        self.path = Path(path)
++        self.path.parent.mkdir(parents=True, exist_ok=True)
++        marker = self.path.with_suffix('.identity.json')
++        fresh = not self.path.exists() and not marker.exists()
++        if not fresh and (not self.path.is_file() or not marker.is_file()):
++            raise RuntimeError('submission registry missing; refusing to recreate')
++        if fresh:
++            atomic_json(marker, {'schema': 'sam3d-submissions@1', 'id':uuid.uuid4().hex})
++        identity = json.loads(marker.read_bytes())
++        if set(identity) != {'schema','id'} or identity['schema'] != 'sam3d-submissions@1':
++            raise RuntimeError('invalid submission registry marker')
++        if fresh:
++            with self.path.open("xb") as stream:
++                stream.flush()
++                os.fsync(stream.fileno())
++        with self.connect() as db:
++            if fresh:
++                db.execute('CREATE TABLE identity (body BLOB NOT NULL)')
++                db.execute('INSERT INTO identity VALUES (?)', (canonical(identity),))
++                db.execute('CREATE TABLE submissions (key TEXT PRIMARY KEY, digest TEXT NOT NULL, '
++                           'job_id TEXT NOT NULL UNIQUE, receipt BLOB NOT NULL)')
++            else:
++                if db.execute('SELECT body FROM identity').fetchall() != [(canonical(identity),)]:
++                    raise RuntimeError('submission registry identity mismatch')
++                db.execute('SELECT key,digest,job_id,receipt FROM submissions LIMIT 0')
++        sync_directory(self.path.parent)
++
++    def connect(self):
++        db = sqlite3.connect(self.path.as_uri() + "?mode=rw", uri=True, timeout=30)
++        db.execute('PRAGMA synchronous=FULL')
++        return db
++
++    def lookup(self, key):
++        if not isinstance(key, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', key):
++            raise ValueError('invalid submission key')
++        with self.connect() as db:
++            row = db.execute('SELECT receipt FROM submissions WHERE key=?', (key,)).fetchone()
++        return None if row is None else json.loads(row[0])
++
++    def reserve(self, key, request_digest, job_id, backend_digest):
++        validate_key(key, request_digest)
++        receipt = {'id': job_id, 'submission_key': key, 'request_digest': request_digest,
++                   'backend_digest': backend_digest, 'status_url': f'/api/v1/jobs/{job_id}'}
++        with self.connect() as db:
++            db.execute('BEGIN IMMEDIATE')
++            row = db.execute('SELECT receipt FROM submissions WHERE key=?', (key,)).fetchone()
++            if row:
++                old = json.loads(row[0])
++                if old['request_digest'] != request_digest or old['backend_digest'] != backend_digest:
++                    raise SubmissionConflict('submission key already belongs to another request or deployment')
++                return old, False
++            db.execute('INSERT INTO submissions VALUES (?,?,?,?)',
++                       (key, request_digest, job_id, canonical(receipt)))
++        return receipt, True
+--- /dev/null
++++ b/app/api_identity.py
+@@ -0,0 +1,47 @@
++"""Content-based deployment declaration, computed once before accepting requests."""
++import importlib.metadata
++import platform
++from pathlib import Path
++
++from api_protocol import digest, file_descriptor
++
++
++def tree(root, suffixes=None):
++    root = Path(root)
++    values = {}
++    if root.is_dir():
++        for path in sorted(root.rglob('*')):
++            if path.is_file() and '__pycache__' not in path.parts and (suffixes is None or path.suffix in suffixes):
++                values[path.relative_to(root).as_posix()] = file_descriptor(path)
++    return values
++
++
++def build_identity(project, models=Path('/models')):
++    project, models = Path(project), Path(models)
++    source = {}
++    for name in ('api_server.py', 'api_protocol.py', 'api_identity.py', 'web_app.py',
++                 'quality_options.py', 'texture_baking.py', 'sam2_client.py', 'sam2_worker.py'):
++        source[name] = file_descriptor(project / name)
++    for folder in ('sam3d_objects', 'notebook'):
++        source.update({folder+'/'+name: item for name,item in tree(project/folder, {'.py','.yaml','.json'}).items()})
++    checkpoints = tree(models/'checkpoints')
++    # Auxiliary depth/image encoders can be loaded from HF/Torch caches. Capture
++    # actual cached blobs too; do not label only SAM3D checkpoint files complete.
++    auxiliary = {}
++    for folder in ('huggingface/hub', 'torch/hub/checkpoints'):
++        for name, item in tree(project/'.cache'/folder).items():
++            if '/.locks/' not in '/'+name and not name.endswith('.lock'):
++                auxiliary[folder+'/'+name] = item
++    packages = {name: importlib.metadata.version(name) for name in
++                ('torch','torchvision','numpy','Pillow','trimesh','gradio','fastapi')}
++    body = {'schema':'sam3d-deployment@1', 'source_digest':digest(source),
++            'checkpoint_digest':digest(checkpoints), 'auxiliary_cache_digest':digest(auxiliary),
++            'sam2_digest':digest(tree(models/'sam2')), 'packages':packages,
++            'python':platform.python_version(), 'verification':'startup_content_hashes',
++            'environment_verification':'package_versions_only',
++            'mutable_resources_policy':'restart required after changing code or model files',
++            'spatial':{'frame_id':'sam3d_glb', 'handedness':'right', 'up_axis':'+Y',
++                       'forward_axis':None, 'unit':'relative', 'metric_scale_verified':False,
++                       'mesh_row_vector_transform':[[1,0,0],[0,0,-1],[0,1,0]],
++                       'basis':'export code converts model Z-up to GLB Y-up; semantic front unverified'}}
++    return {**body, 'backend_digest':digest(body), 'checkpoint_files':checkpoints}
+--- a/app/API.md
++++ b/app/API.md
+@@ -258,3 +258,47 @@
+ `.env` 权限为600。更换其中的 `SAM3D_API_KEY` 后，执行 `docker compose up -d` 使其生效；这会重建服务容器并中断活动任务，应在空闲时进行。
+ 
+ 保持单个 Uvicorn 工作进程，多进程会重复加载GPU模型。当前REST API已通过真实GPU重建、鉴权和文件下载测试。
++
++## 10. Pipeline 接入扩展（协议 1.1）
++
++原有请求与网页继续可用。新增鉴权接口：
++
++- `GET /api/v1/capabilities`：部署内容摘要、参数 schema、空间声明与恢复能力。
++- `GET /api/v1/jobs/by-key/{submission_key}`：按调用方请求键找回原任务。
++
++提交可增加 `submission_key`、`request_digest`、`backend_digest` 三个 multipart 字段，
++三者一起提供。backend_digest 从 capabilities.deployment 获取。同键同摘要返回原任务，
++不重复入队；同键不同输入、参数或部署返回 409。首次未使用请求键的旧请求不具备幂等保证。
++
++request_digest 算法为 `sha256:` 加下面对象的规范 JSON SHA-256。JSON 使用 UTF-8、
++键排序、无空格、ensure_ascii=true、禁止 NaN；文件摘要为上传原始字节的 SHA-256。
++
++```json
++{
++  "schema":"sam3d-request@1",
++  "image":"sha256:<原图文件摘要>",
++  "mask":"sha256:<mask文件摘要>",
++  "points":null,
++  "options":{"seed":42,"steps1":25,"steps2":25,"cfg1":7.0,"cfg2":1.0,"bake":false,"texture":1024,"reduction":0.0}
++}
++```
++
++使用 points 时 mask=null，points 为解析后的坐标数组。所有默认参数必须展开；
++seed/steps/texture 是整数，cfg1/cfg2/reduction 是浮点数，bake 是布尔值。
++服务端对实际文件和规范参数重新计算摘要，不信任调用者提供的摘要。
++
++请求键登记永久保留在 outputs/protocol，独立于结果文件保留期。同键任务结果过期或
++缺失返回 410 和原 receipt，不会重新执行。任务元数据损坏返回 503。不要删除或
++重建登记数据库；数据库/身份标记缺失时拒绝启动。备份 outputs 时须一起保留 protocol。
++
++完成任务新增 `file_descriptors`（sha256、byte_length）和 `evidence.json` 下载，包含
++输入摘要、实际参数、实际 mask 摘要、部署身份、预处理及坐标声明。下载后应校验摘要。
++原文件 URL 仍保留，旧任务没有这些新增证据，不补造历史记录。
++
++GLB 导出代码执行 Z-up → Y-up，右手系；对象语义前向未验证，尺度是 relative，
++不能当成已标定米制。部署身份在启动时计算源文件、checkpoint 和辅助模型缓存内容哈希；
++环境目前记录关键包版本，不代表完整 wheel/build 内容身份。运行期间不要修改代码或模型，
++更改后必须重新启动；更新后的 backend_digest 不能认领旧部署的请求。
++
++`SERVICE_RESTARTED` 表示服务重启中断；`INFERENCE_FAILED` 表示推理或后处理失败。
++失败任务的同键请求仍返回原失败任务；确需重新生成，应由用户明确发起新请求键。

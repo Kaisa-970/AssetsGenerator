@@ -1,0 +1,36 @@
+# SAM3D 兼容服务首版
+
+当前供开发验证：已实现统一协议监听、一次提交、按原键恢复和结果导入。
+尚未注册画布双输入节点，不能把此入口当成已完成的用户工作流；未验收真实 GPU 生成。
+
+在 node-workbench 工作树运行 `PYTHONPATH=src python -m assets_generator.sam3d_service_cli --help`。
+Python 使用项目已有虚拟环境。每条命令都需要：
+
+- `--deployment`：经核对的 REST 1.1 capabilities 响应中的 **deployment 对象**保存的 JSON；不要保存 Key。
+- `--endpoint`：SAM3D 地址，如 `http://172.16.89.51:7861`。
+- `--directory`：仓库外专用运行目录；初始化前必须不存在。
+
+动作按顺序使用：
+
+1. `identity` 查看统一服务身份。摘要包含上游部署及兼容代码，改动后不得复用旧身份。
+2. `init` 创建一次 SQLite 持久库。
+3. `serve --port 8772` 启动仅绑定回环地址的统一协议监听，**不会自动推理**。
+4. 统一协议调用方上传 RGB 图和同尺寸非空二值 mask 字节，再提交作业。
+5. 另一终端执行 `execute-next`，明确授权一次上游提交；没有自动循环或 POST 重试。
+6. `list` 查看任务；`recover --key 原请求键` 查询同一任务并导入结果。
+
+只有 execute-next / recover 要求私有环境变量 `SAM3D_API_KEY`，可用 `--key-env` 指定名称。
+不能把密钥写入 deployment、Pipeline、命令参数或 Git。
+
+请求 payload 包含 operation=`masked_shape_generation@1`、image_digest、mask_digest、
+parameters（SAM3D 参数对象）和 backend_digest（上游 deployment 的摘要）。
+外层请求的 Backend 摘要则使用 identity 动作输出的兼容服务摘要，两者不能混用。
+这是服务请求格式，尚不是 OperatorSpec 注册。
+
+恢复只查询已登记键。授权之后、POST 之前崩溃也会保守阻塞，不把“查不到”解释成允许重发。
+成功结果的字节与成功状态一起事务提交；之后缺失或损坏不会通过重新下载掩盖。
+目录下 staging 仅用于格式转换，权威输出是 SQLite 中的 mesh、shape_metadata、
+sam3d_evidence、actual_mask 四份字节。shape importer 仅接收其中前两份；DAG 接入时还须
+单独持久化并关联后两份证据。服务输出保留 GLB 自带外观，不再次旋转 Y-up 网格。
+
+这里只验证可自包含读取的 GLB 和相对尺度声明，不证明材质视觉质量或真实尺寸。

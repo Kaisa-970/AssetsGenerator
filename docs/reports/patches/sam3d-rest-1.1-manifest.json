@@ -1,0 +1,21 @@
+{
+  "container_image": "sha256:48b032748235a2ac917716deb72e02d44aaf6ccb5539bf514d9a6b035829c726",
+  "files": {
+    "api_server.py": {
+      "before_sha256": "2cd6bf2dee62d1ec1aa6fe4ae88d1ac91d63982000c13d9259166da32fc5199d",
+      "deployed_sha256": "5db11a3bdceef43ef188cc8965bdf2a481244711ba302e36ad0fa5fc713d9de0"
+    },
+    "api_protocol.py": {
+      "before_sha256": null,
+      "deployed_sha256": "3fb9c35e979c4e54b134c5e1c4f98a327fcc98e58e25155585093930f2669305"
+    },
+    "api_identity.py": {
+      "before_sha256": null,
+      "deployed_sha256": "05dbcf5eda144d76437683eb576c8f0c94ad2f0fc92c29b31520568e19d38436"
+    },
+    "API.md": {
+      "before_sha256": "790379cca988a130f7b9f114486737db3f1725601ac1afbc93ed8759a7936798",
+      "deployed_sha256": "074ee6a0ca14b2cc28bf83ec35e07c577124708ee08c0693f3fe96c13fe90b63"
+    }
+  }
+}
