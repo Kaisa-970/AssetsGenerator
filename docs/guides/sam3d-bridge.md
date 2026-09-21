@@ -2,7 +2,7 @@
 
 当前供开发验证：已实现统一协议监听、一次提交、按原键恢复和结果导入。
 双输入节点已可通过启动配置注册，完整资产发布链已通过 CPU 替身 HTTP 验证。
-尚未完成浏览器操作和真实 GPU 生成验收。
+已完成一次真实浏览器上传 → SAM3D GPU 生成 → 发布 → 模型预览；不代表质量 benchmark 或推理中断验收。
 
 在 node-workbench 工作树运行 `PYTHONPATH=src python -m assets_generator.sam3d_service_cli --help`。
 Python 使用项目已有虚拟环境。每条命令都需要：
@@ -46,4 +46,5 @@ assembly 显式消费服务证据和实际 mask，并核对它们来自同一次
 
 图片和 mask 可分别绑定输入；运行前检查尺寸关系，服务边界检查精确 Artifact 身份和上传摘要。
 导入核对服务证据、请求参数、Backend、网格及实际 mask，防止两条输入或结果错配。
-已完成 CPU 替身完整 HTTP DAG 验证，尚未做浏览器或 GPU 验收。
+已完成 CPU 替身完整 HTTP DAG、一次真实浏览器/GPU 发布及完成后恢复。
+兼容服务仍需显式 execute-next / recover；监听和画布轮询不会自动派发上游推理。

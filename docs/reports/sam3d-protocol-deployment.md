@@ -125,3 +125,31 @@ canonical 矩阵和单次导出坐标变换后的顶点一致。重开的是控�
 最终相关链路与 HTTP 协议合跑 **136 passed（40.52 秒）**，mypy（141 文件）、
 修改文件 Ruff lint/format、git diff --check 通过。未运行全仓测试或 build。
 浏览器操作与真实 SAM3D GPU 验收仍待进行；本轮未提交。
+
+## 真实画布与 SAM3D 首次验收（3c6a9b6）
+
+2026-09-21，复用现有远端环境与已加载模型，没有下载模型/PyTorch、没有重建或重启远端服务。
+本次线上部署摘要为 `sha256:e7ddcf73eeee26bfd86bbace19cc4a3082201508594b56e4cd480c695c6fc21a`，
+与早期部署不同；读取本次 capabilities 并单独固定，未复用旧身份。启动前 active_api_jobs=0。
+Key 经 SSH 仅进入执行器私有内存，未写到配置、报告或验收目录。
+
+证据目录 `<DATASET_ROOT>/sam3d-acceptance-20260921/`：deployment.json、remote-config.json、
+image.png、mask.png、browser-start.json、running.json、completed.json、restored.json、
+validation.json、canvas.png、completed-browser.png、visual.glb，以及 bridge/editor/store。
+输入复用先前单图验收的 RGB 与 mask（561×688），本次没有重新分割或声明用户重新确认。
+浏览器操作由自动化执行，不属于用户本人质量批准。
+
+真实 Chromium 操作：加载五节点模板 → 编译 → 分别上传 image/mask → 启动新运行；
+兼容服务以显式 execute-next 提交，显式 recover 导入完成结果；浏览器点击恢复/继续，
+完成 canonicalize、QA、assembly、export，随后预览显示“模型已加载”。
+监听不自动执行上游任务，这次包含明确的兼容服务执行步骤，不能描述为无人值守自动调度。
+
+运行 `dag_01b3c4870d1440d2b8e3581667433438`；上游任务 `dfb85bc12fde4d40b7f6e736869a1561`。
+五节点均 succeeded、各一次 attempt；同一服务库只有一份上游 receipt。最终 GLB 回读
+351,090 顶点、702,200 三角面，vertex visual。Release 引用闭包通过，assembly provenance
+包含本次 sam3d_evidence 和 actual_mask。完成后再次恢复，node_states 与 completed.json
+一致，没有创建第二次生成。模型预览浏览器无 pageerror，截图保存于仓库外。
+
+这证明此次输入、部署和默认参数下的真实单次发布，以及完成后恢复；不证明代表性质量、
+烘焙纹理质量、真实网络提交响应丢失、推理中 SIGKILL 或远端容器重启恢复。
+本次未修改实现，未重复运行测试套件；上一提交 CPU 136 项结果仍见前节。
