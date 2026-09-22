@@ -1,3 +1,4 @@
+import { InputContractForm } from "./InputContractForm";
 import { executionStatus } from "./executionStatus";
 import { ParameterForm } from "./ParameterForm";
 import React, {
@@ -67,6 +68,9 @@ function OperatorNode({ data, selected }: NodeProps<Node<Data>>) {
             <b>{name}</b>
             <small>
               {portKinds(p).join(" | ")} · {p.cardinality || "one"}
+              {p.schema_name
+                ? ` · ${p.schema_name}@${p.schema_version || "未声明版本"}`
+                : " · 格式未声明"}
             </small>
           </div>
         ))}
@@ -76,6 +80,9 @@ function OperatorNode({ data, selected }: NodeProps<Node<Data>>) {
             <b>{name}</b>
             <small>
               {portKinds(p).join(" | ")} · {p.cardinality || "one"}
+              {p.schema_name
+                ? ` · ${p.schema_name}@${p.schema_version || "未声明版本"}`
+                : " · 格式未声明"}
             </small>
           </div>
         ))}
@@ -114,6 +121,7 @@ function App() {
   pipelineRef.current = pipeline;
   const layoutRef = useRef(layout);
   layoutRef.current = layout;
+  const [connectionIssue, setConnectionIssue] = useState("");
   const [message, setMessage] = useState("正在读取节点目录…");
   const [draft, setDraft] = useState("my-pipeline");
   const [drafts, setDrafts] = useState<string[]>([]);
@@ -291,11 +299,23 @@ function App() {
     );
     if (error) {
       setMessage(error);
+      setConnectionIssue(error);
+      if (c.source.startsWith("input:")) {
+        setSelected(c.source);
+        setTab("inspector");
+      }
       return;
     }
+    setConnectionIssue("");
     update(bind(pipeline, c.source, c.sourceHandle, c.target, c.targetHandle));
     setMessage("已连接。跨输入来源与空间关系由后端编译及运行校验。");
   };
+  const selectedInputName = selected?.startsWith("input:")
+    ? selected.slice(6)
+    : undefined;
+  const selectedInput = selectedInputName
+    ? pipeline.inputs[selectedInputName]
+    : undefined;
   const states = (
     run?.dag as { node_states?: Record<string, { status: string }> } | undefined
   )?.node_states;
@@ -407,6 +427,17 @@ function App() {
           </button>
         </div>
       </header>
+      {connectionIssue && (
+        <div role="alert" className="connection-issue">
+          <strong>连线未建立：</strong>
+          {connectionIssue}
+          <p>
+            管线输入可在“配置 →
+            输入类型与格式”中调整；实际数据格式不同需要显式转换节点。修改后重新连线，后端编译仍会校验。
+          </p>
+          <button onClick={() => setConnectionIssue("")}>关闭连线提示</button>
+        </div>
+      )}
       <div className="workspace">
         <aside className="catalog">
           <div className="section-label">节点目录</div>
@@ -989,9 +1020,25 @@ function App() {
                     </>
                   ) : (
                     <>
+                      {selectedInput && selectedInputName && (
+                        <InputContractForm
+                          port={selectedInput}
+                          catalog={catalog}
+                          onChange={(value) => {
+                            update((previous) => ({
+                              ...previous,
+                              inputs: {
+                                ...previous.inputs,
+                                [selectedInputName]: value,
+                              },
+                            }));
+                          }}
+                        />
+                      )}
                       <label>
-                        输入契约 · JSON
+                        输入契约 · JSON（高级）
                         <textarea
+                          aria-label="输入契约 · JSON"
                           value={inputSpec}
                           onChange={(e) => setInputSpec(e.target.value)}
                         />

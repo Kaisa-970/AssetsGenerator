@@ -125,3 +125,14 @@ encode_png 输出的 PNG 不能回接只接收 raster_image 的端口，改用�
 刷新后重发同一请求。前端单测 55 passed，生产构建、Ruff check、mypy 通过。
 浏览器新用例使用 HTTP 替身，后端用小型 CPU human Adapter；
 未进行真实 SAM 人工组件跨运行复用或 GPU 验收，不关闭完整产品交互验收。
+
+## 输入契约表单与连线提示
+
+普通输入节点配置新增“输入类型与格式”表单，提供 RGB 图片、PNG 输出、二值遮罩
+等快捷契约，字段包括数据类型、载体、Schema 名称/版本和数量。高级 JSON 入口保留，
+未展示的 frame/unit 等字段不会被表单修改丢失。端口标签同时显示 Schema；连接被拒绝时，
+顶部提示具体的类型、载体、基数或 Schema 差异，并引导回输入契约表单。
+
+新增浏览器回归覆盖：缺少 `schema_name=raster_image` 时连线被拒绝并显示原因，选择普通
+RGB 快捷契约后连线成功，高级 JSON 的 frame/unit 在修改其他字段时保留。前端单测 55
+passed，完整浏览器回归 57 passed，前端构建通过。真实模型和 GPU 未涉及。

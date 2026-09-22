@@ -17,6 +17,28 @@ select,
 textarea {
   font: inherit;
 }
+.contract-form {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0;
+  padding: 10px;
+  border: 1px solid #d7e0e8;
+  border-radius: 8px;
+}
+.contract-form legend {
+  padding: 0 4px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.contract-form label {
+  display: grid;
+  gap: 4px;
+}
+.contract-form p {
+  margin: 0;
+  color: #5a6875;
+  font-size: 0.8rem;
+}
 button,
 select {
   cursor: pointer;
@@ -499,4 +521,14 @@ footer {
 .node-preview-window p {
   font-size: 11px;
   color: #687889;
+}
+
+.connection-issue {
+  padding: 10px 18px;
+  border: 1px solid #cf8b35;
+  background: #fff6e7;
+  color: #633d0a;
+}
+.connection-issue p {
+  margin: 6px 0;
 }
