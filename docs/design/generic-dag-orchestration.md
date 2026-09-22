@@ -642,3 +642,21 @@ AdapterSpec 参数 schema 的受支持子集新增数组 minItems/maxItems：
 
 schema 原样进入固定 Adapter 绑定及摘要；旧 schema 未声明这些字段时保持原语义。
 前端按字段 JSON 编辑仅检查顶层类型，后端编译负责维度权威校验。
+
+### 跨运行人工决定显式确认首片（2026-09-22）
+
+等待人工的节点可提出复用固定 BuildRun 快照中同名成功节点的决定内容。
+只读核验要求实际输入引用、Operator 契约、绑定（含参数与 Backend 身份）
+一致；请求除 run/node/attempt/input_digest 等运行归属字段外，其余内容精确一致。
+来源快照完整闭包须可读，不重新生成缺失证据。界面选择的运行 ID 只用于查找，
+最终确认固定快照，启动前再次核验。
+
+明确确认沿用旧选择会调用现有 decide 路径，先耐久保存 prepared 回执，
+再创建当前运行的 DagHumanDecision。新决定增加可选 reuse 字段，包含
+source_snapshot、source_run_id、node_id、source_decision、source_reviewer 和 payload，
+以及 confirmed_at。原决定仍属于旧运行；当前 reviewer 必须显式提供。
+无 reuse 字段的旧决定读取不变。新引用属于完整证据闭包，进入下游 provenance。
+
+幂等请求身份包含来源快照；重复键不能更换来源、内容或确认人。
+prepared 恢复再次核验旧证据；已经提交的决定不自动重新执行中断节点。
+当前只支持同名节点和精确匹配，不支持候选重映射、模糊等价或自动继承。

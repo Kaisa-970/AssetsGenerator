@@ -301,6 +301,14 @@ class DagEngine:
                 or not isinstance(payload, dict)
             ):
                 raise ContractError("malformed prepared decision receipt")
+            if "reuse" in receipt:
+                from .dag_decision_reuse import decision_proposal
+
+                proposal = decision_proposal(
+                    self, run, node_id, ArtifactRef(**receipt["reuse"]["source_snapshot"])
+                )
+                if canonical_json_bytes(proposal) != canonical_json_bytes(receipt["reuse"]):
+                    raise ContractError("prepared decision reuse evidence changed")
             decision = self.store.persist_structured(
                 StructuredValue(
                     "dag_human_decision",
@@ -313,6 +321,14 @@ class DagEngine:
                         "input_digest": attempt.input_digest,
                         "reviewer": reviewer,
                         "payload": copy.deepcopy(payload),
+                        **(
+                            {
+                                "reuse": copy.deepcopy(receipt["reuse"]),
+                                "confirmed_at": receipt["confirmed_at"],
+                            }
+                            if "reuse" in receipt
+                            else {}
+                        ),
                     },
                 )
             )
@@ -927,6 +943,7 @@ class DagEngine:
         idempotency_key: str,
         reviewer: str,
         payload: dict[str, Any],
+        reuse_source: ArtifactRef | None = None,
     ) -> BuildRun:
         with self.repository._command_lock:
             run = self.repository.load(run_id)
@@ -938,6 +955,7 @@ class DagEngine:
                     "node_id": node_id,
                     "reviewer": reviewer,
                     "payload": payload,
+                    **({"reuse_source": to_primitive(reuse_source)} if reuse_source else {}),
                 }
             )
             previous = run.dag.receipts.get(idempotency_key)
@@ -963,12 +981,20 @@ class DagEngine:
                 self._save(run)
                 raise ContractError("node is not waiting for input")
             node = next(item for item in plan.static_plan.nodes if item.node_id == node_id)
+            reuse = None
+            if reuse_source is not None:
+                from .dag_decision_reuse import decision_proposal
+
+                reuse = decision_proposal(self, run, node_id, reuse_source)
+                if canonical_json_bytes(reuse["payload"]) != canonical_json_bytes(payload):
+                    raise ContractError("confirmed payload differs from original decision")
             run.dag.receipts[idempotency_key] = {
                 "request_digest": body_digest,
                 "node_id": node_id,
                 "reviewer": reviewer,
                 "payload": copy.deepcopy(payload),
                 "status": "prepared",
+                **({"reuse": reuse, "confirmed_at": utc_now()} if reuse else {}),
             }
             self._save(run)
             self._resume_prepared_decisions(run, plan)

@@ -429,6 +429,8 @@ class NodeEditorExecution:
             "node_id": node_id,
             "decision_ref": to_primitive(attempt.decision),
             "reviewer": decision["reviewer"],
+            "reuse": decision.get("reuse"),
+            "confirmed_at": decision.get("confirmed_at"),
             "payload": decision["payload"],
             "node_finished_at": attempt.finished_at,
             "decision_time": None,
@@ -1143,6 +1145,75 @@ class NodeEditorExecution:
                 raise ContractError("node is not retryable")
             self._stop_review(validate=lambda: self._revision(run_id, expected_revision))
             self._dispatch(run_id, lambda: self.engine.retry(run_id, node_id, expected_revision))
+            return self.snapshot(run_id)
+
+    def reuse_decision(self, run_id: str, body: dict[str, Any]) -> dict[str, Any]:
+        from .dag_decision_reuse import decision_proposal
+
+        with self._lock:
+            self._idle()
+            if "confirm" in body and body["confirm"] is not True:
+                raise ContractError("confirmation must be explicit true")
+            self._owned(run_id)
+            target = self.engine.repository.load(run_id)
+            assert target.dag is not None
+            if body.get("confirm") is True:
+                if not isinstance(body.get("reviewer"), str) or not body["reviewer"].strip():
+                    raise ContractError("confirmation requires reviewer")
+                if not isinstance(body.get("idempotency_key"), str) or not body["idempotency_key"]:
+                    raise ContractError("confirmation requires idempotency key")
+                receipt = target.dag.receipts.get(body["idempotency_key"])
+                if receipt is not None:
+                    reuse = receipt.get("reuse", {})
+                    if (
+                        receipt["node_id"] != body["node_id"]
+                        or receipt["reviewer"] != body["reviewer"]
+                        or reuse.get("source_snapshot") != body["source_snapshot"]
+                        or reuse.get("source_run_id") != body["source_run_id"]
+                    ):
+                        raise ContractError("decision idempotency conflict")
+                    if receipt.get("status") == "prepared":
+                        self._stop_review()
+                        self._dispatch(
+                            run_id,
+                            lambda: self.engine.decide(
+                                run_id,
+                                body["node_id"],
+                                expected_revision=body["expected_revision"],
+                                idempotency_key=body["idempotency_key"],
+                                reviewer=body["reviewer"],
+                                payload=receipt["payload"],
+                                reuse_source=ArtifactRef(**body["source_snapshot"]),
+                            ),
+                        )
+                    return self.snapshot(run_id)
+            self._revision(run_id, body["expected_revision"])
+            source_id = body["source_run_id"]
+            self._owned(source_id)
+            source = (
+                ArtifactRef(**body["source_snapshot"])
+                if "source_snapshot" in body
+                else ArtifactRef(**read_json(self.engine.store.root / "runs" / f"{source_id}.json"))
+            )
+            target = self.engine.repository.load(run_id)
+            proposal = decision_proposal(self.engine, target, body["node_id"], source)
+            if proposal["source_run_id"] != source_id:
+                raise ContractError("source snapshot belongs to another run")
+            if body.get("confirm") is not True:
+                return proposal
+            self._stop_review(validate=lambda: self._revision(run_id, body["expected_revision"]))
+            self._dispatch(
+                run_id,
+                lambda: self.engine.decide(
+                    run_id,
+                    body["node_id"],
+                    expected_revision=body["expected_revision"],
+                    idempotency_key=body["idempotency_key"],
+                    reviewer=body["reviewer"],
+                    payload=proposal["payload"],
+                    reuse_source=source,
+                ),
+            )
             return self.snapshot(run_id)
 
     def review(self, run_id: str, node_id: str) -> dict[str, Any]:

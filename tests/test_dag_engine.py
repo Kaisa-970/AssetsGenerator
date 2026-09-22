@@ -641,3 +641,139 @@ def test_explicit_backend_instances_execute_and_restore_with_provenance(tmp_path
         with pytest.raises(ContractError, match="unresolved Backend"):
             DagEngine(repo, missing).recover(run.run_id)
         assert repo.load(run.run_id).dag.node_states == run.dag.node_states
+
+
+def test_cross_run_decision_requires_exact_inputs_and_records_confirmation(tmp_path):
+    from assets_generator.dag_decision_reuse import decision_proposal
+    from assets_generator.models import ArtifactRef
+    from assets_generator.serialization import read_json
+
+    store, adapter, registry, plan, source = setup(tmp_path, human=True)
+    with DagRepository(store, tmp_path / "repo") as repo:
+        engine = DagEngine(repo, registry)
+        old = engine.drain(engine.create(plan, {"source": source}).run_id)
+        old = engine.decide(
+            old.run_id,
+            "B",
+            expected_revision=old.dag.revision,
+            idempotency_key="old",
+            reviewer="original",
+            payload={"accept": True},
+        )
+        snapshot = ArtifactRef(**read_json(store.root / "runs" / f"{old.run_id}.json"))
+        new = engine.drain(engine.create(plan, {"source": source}).run_id)
+        proposal = decision_proposal(engine, new, "B", snapshot)
+        assert new.dag.node_states["B"].current().decision is None
+        revision = new.dag.revision
+        args = dict(
+            expected_revision=revision,
+            idempotency_key="reuse",
+            reviewer="confirmer",
+            payload=proposal["payload"],
+            reuse_source=snapshot,
+        )
+        new = engine.decide(new.run_id, "B", **args)
+        record = store.read_structured(new.dag.node_states["B"].current().decision)
+        assert record["reviewer"] == "confirmer"
+        assert record["reuse"]["source_decision"] == proposal["source_decision"]
+        assert record["confirmed_at"]
+        assert engine.decide(new.run_id, "B", **args).dag.revision == new.dag.revision
+        assert engine.recover(new.run_id).status == "succeeded"
+        other = store.persist_bytes(
+            b"other", kind="rgb_image", schema_name="raster_image", schema_version="1.0"
+        )
+        mismatch = engine.drain(engine.create(plan, {"source": other}).run_id)
+        with pytest.raises(ContractError, match="inputs or binding differ"):
+            decision_proposal(engine, mismatch, "B", snapshot)
+
+
+def test_reused_decision_prepared_receipt_recovers_without_second_execution(tmp_path, monkeypatch):
+    from assets_generator.models import ArtifactRef
+    from assets_generator.serialization import read_json
+
+    store, adapter, registry, plan, source = setup(tmp_path, human=True)
+    with DagRepository(store, tmp_path / "repo") as repo:
+        engine = DagEngine(repo, registry)
+        old = engine.drain(engine.create(plan, {"source": source}).run_id)
+        old = engine.decide(
+            old.run_id,
+            "B",
+            expected_revision=old.dag.revision,
+            idempotency_key="old",
+            reviewer="first",
+            payload={"accept": True},
+        )
+        snapshot = ArtifactRef(**read_json(store.root / "runs" / f"{old.run_id}.json"))
+        new = engine.drain(engine.create(plan, {"source": source}).run_id)
+        persist = store.persist_structured
+
+        def crash(value, *args, **kwargs):
+            result = persist(value, *args, **kwargs)
+            if value.schema_name == "DagHumanDecision":
+                raise RuntimeError("after decision blob before parent save")
+            return result
+
+        monkeypatch.setattr(store, "persist_structured", crash)
+        args = dict(
+            expected_revision=new.dag.revision,
+            idempotency_key="reuse",
+            reviewer="second",
+            payload={"accept": True},
+            reuse_source=snapshot,
+        )
+        with pytest.raises(RuntimeError):
+            engine.decide(new.run_id, "B", **args)
+        assert repo.load(new.run_id).dag.receipts["reuse"]["status"] == "prepared"
+        monkeypatch.setattr(store, "persist_structured", persist)
+        new = engine.decide(new.run_id, "B", **args)
+        # Recovery does not silently re-execute an interrupted human adapter.
+        assert new.status == "interrupted"
+        saved_decision = new.dag.node_states["B"].current().decision
+        new = engine.retry(new.run_id, "B", new.dag.revision)
+        assert new.status == "succeeded"
+        assert new.dag.node_states["B"].current().decision == saved_decision
+        calls = len(adapter.calls)
+        assert engine.decide(new.run_id, "B", **args).status == "succeeded"
+        assert len(adapter.calls) == calls
+
+
+def test_editor_decision_reuse_check_confirm_and_repeat(tmp_path):
+    import time
+
+    from assets_generator.node_editor_execution import NodeEditorExecution
+
+    store, _, registry, plan, source = setup(tmp_path, human=True)
+    with DagRepository(store, tmp_path / "repo") as repo:
+        engine = DagEngine(repo, registry)
+        old = engine.drain(engine.create(plan, {"source": source}).run_id)
+        old = engine.decide(
+            old.run_id,
+            "B",
+            expected_revision=old.dag.revision,
+            idempotency_key="old",
+            reviewer="first",
+            payload={"accept": True},
+        )
+        new = engine.drain(engine.create(plan, {"source": source}).run_id)
+        service = NodeEditorExecution(engine)
+        try:
+            body = dict(node_id="B", expected_revision=new.dag.revision, source_run_id=old.run_id)
+            proposal = service.reuse_decision(new.run_id, body)
+            assert repo.load(new.run_id).dag.revision == new.dag.revision
+            body.update(
+                source_snapshot=proposal["source_snapshot"],
+                confirm=True,
+                idempotency_key="confirmation",
+                reviewer="second",
+            )
+            service.reuse_decision(new.run_id, body)
+            deadline = time.monotonic() + 10
+            while service.snapshot(new.run_id)["busy"]:
+                assert time.monotonic() < deadline
+                time.sleep(0.01)
+            done = service.reuse_decision(new.run_id, body)
+            assert done["run"]["status"] == "succeeded"
+            with pytest.raises(ContractError, match="idempotency conflict"):
+                service.reuse_decision(new.run_id, {**body, "reviewer": "other"})
+        finally:
+            service.close()

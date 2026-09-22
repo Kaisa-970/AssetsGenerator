@@ -441,6 +441,19 @@ def create_editor_server(editor: DraftEditor, port: int = 8767) -> ThreadingHTTP
                         value = editor.execution.retry(
                             run_id, body["node_id"], body["expected_revision"]
                         )
+                    elif action == "reuse-decision" and set(body) in (
+                        {"node_id", "expected_revision", "source_run_id"},
+                        {
+                            "node_id",
+                            "expected_revision",
+                            "source_run_id",
+                            "source_snapshot",
+                            "confirm",
+                            "idempotency_key",
+                            "reviewer",
+                        },
+                    ):
+                        value = editor.execution.reuse_decision(run_id, body)
                     elif action == "review" and set(body) == {"node_id"}:
                         value = editor.execution.review(run_id, body["node_id"])
                     else:

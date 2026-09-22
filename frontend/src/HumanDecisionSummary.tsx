@@ -16,6 +16,11 @@ export function HumanDecisionSummary({
     key: string;
     value?: {
       reviewer: string;
+      confirmed_at?: string;
+      reuse?: {
+        source_run_id: string;
+        source_decision: { artifact_id: string };
+      };
       payload: unknown;
       node_finished_at: string | null;
     };
@@ -60,7 +65,13 @@ export function HumanDecisionSummary({
             来源：{runId} / {nodeId}
           </p>
           <p>选择人（自报身份，未认证）：{active.value.reviewer}</p>
-          <p>确认时间：未记录</p>
+          <p>确认时间：{active.value.confirmed_at || "未记录"}</p>
+          {active.value.reuse && (
+            <p>
+              沿用来源：{active.value.reuse.source_run_id}；原决定：
+              {active.value.reuse.source_decision.artifact_id}
+            </p>
+          )}
           <p>节点完成时间：{active.value.node_finished_at || "未记录"}</p>
           <details>
             <summary>选择内容（不代表质量结论）</summary>

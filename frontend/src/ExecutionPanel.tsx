@@ -1,3 +1,4 @@
+import { ReuseHumanDecision } from "./ReuseHumanDecision";
 import { useResultFreshness } from "./useResultFreshness";
 import { request, type Envelope } from "./executionApi";
 import { useRunCreation, type CreationRequest } from "./useRunCreation";
@@ -1217,6 +1218,17 @@ export function ExecutionPanel({
                     </div>
                   ))}
                 </details>
+              )}
+              {state.status === "waiting_for_input" && (
+                <ReuseHumanDecision
+                  key={`${run.run_id}/${id}`}
+                  runId={run.run_id}
+                  nodeId={id}
+                  revision={run.dag!.revision}
+                  runs={runs}
+                  disabled={executing}
+                  mutate={mutate}
+                />
               )}
               {state.status === "waiting_for_input" && (
                 <button
