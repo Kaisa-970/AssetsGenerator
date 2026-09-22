@@ -165,3 +165,6 @@
 - [真实模型执行期间 HTTP 监听服务中断验收](reports/http-listener-crash-real.md)
 
 - [可组合 RGB 图片缩放节点](reports/image-resize-module.md)
+
+- [SAM3 文字分割与 v1/v2 管线使用](guides/sam3-text-segmentation.md)
+- [文本输入到 SAM3D 真实发布验证](reports/text-input-sam3d-validation.md)

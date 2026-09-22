@@ -39,7 +39,7 @@ def test_text_asset_template_binds():
     )
     plan = registry.bind_plan(
         compile_pipeline(
-            load_pipeline(Path("pipelines/sam3_text_to_asset_v1.yaml")),
+            load_pipeline(Path("pipelines/sam3_text_to_asset_v2.yaml")),
             load_default_operator_specs(),
             require_explicit_joins=True,
         )
@@ -52,6 +52,19 @@ def test_text_asset_template_binds():
     assert nodes["publish"].inputs["asset"].node_id == "assemble"
     assert "prompt" not in plan.bindings["segment"].parameters
     assert all(binding.spec["execution_kind"] != "human" for binding in plan.bindings.values())
+
+    legacy = registry.bind_plan(
+        compile_pipeline(
+            load_pipeline(Path("pipelines/sam3_text_to_asset_v1.yaml")),
+            load_default_operator_specs(),
+            require_explicit_joins=True,
+        )
+    )
+    assert set(legacy.static_plan.inputs) == {"image"}
+    assert legacy.static_plan.pipeline_version == "1"
+    assert plan.static_plan.pipeline_version == "2"
+    assert legacy.bindings["segment"].parameters["prompt"] == "robot"
+    assert "bake_filter" not in legacy.bindings["shape"].parameters
 
 
 def test_auto_extract_template_routes_union_mask_without_selection_node():

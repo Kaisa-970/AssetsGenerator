@@ -1,7 +1,8 @@
 # SAM3 文字遮罩接入首版
 
 新增 text_segmentation@1（图片输入，prompt/confidence 节点参数）与 select_text_mask@1。
-模板 `pipelines/sam3_text_to_asset_v1.yaml`：文字分割（联合遮罩）→ SAM3D → canonicalize → QA → 组装 → 发布。
+模板 `pipelines/sam3_text_to_asset_v1.yaml`：兼容旧调用的内置 prompt 流程（image → 文字分割 → SAM3D → 发布）。
+模板 `pipelines/sam3_text_to_asset_v2.yaml`：文字输入（image + text）→ 联合遮罩 → SAM3D → canonicalize → QA → 组装 → 发布。
 如果不需要人工确认，使用 `pipelines/sam3_text_auto_extract_v1.yaml`：文字分割完成后，模型返回的全部候选会自动取并集，`segment.mask` 直接进入提取节点；整条路径不会创建人工等待或选择节点。
 文字分割默认输出所有候选的并集 mask，同时保留 candidates。零候选明确失败；不生成整图遮罩。
 只有需要逐个处理对象时才使用 select_text_mask，通过 candidate_index 指定候选序号。
@@ -114,7 +115,7 @@ V2 没有 prompt 参数；旧的 text_segmentation@1 及其 prompt 参数仍保�
 
 ## 图片＋文本自动发布 3D
 
-加载 `sam3_text_to_asset_v1`，上传 image，在 text 框填写目标并应用文本，然后启动。
+加载 `sam3_text_to_asset_v2`，上传 image，在 text 框填写目标并应用文本，然后启动。
 模板使用 text_segmentation@2 → masked_shape_generation → canonicalize → QA → assemble → export。
 mask 自动使用全部候选的并集，不设置人工选择节点。segment 可预览遮罩，publish 可预览/下载 GLB。
 需要运行匹配配置的 SAM3 服务/worker、SAM3D 兼容 serve/work 和编辑器。
