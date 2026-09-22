@@ -77,3 +77,25 @@ test("missing schema explains rejected wire and RGB preset connects without JSON
   expect(compiles.at(-1).inputs.image.frame_id).toBe("custom");
   expect(compiles.at(-1).inputs.image.unit).toBe("meter");
 });
+
+test("structured carrier uses the backend enum and compiles", async ({
+  page,
+}) => {
+  await page.route("**/api/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    const body =
+      path === "/api/catalog"
+        ? { operators: {}, adapters: [], templates: [] }
+        : path === "/api/drafts"
+          ? { drafts: [] }
+          : path === "/api/compile"
+            ? { ok: true, execution_ready: true }
+            : {};
+    await route.fulfill({ json: body });
+  });
+  await page.goto("/");
+  await page.locator('.react-flow__node[data-id="input:image"]').click();
+  await page.getByLabel("输入载体").selectOption("structured");
+  await expect(page.getByLabel("输入载体")).toHaveValue("structured");
+  await expect(page.getByLabel("当前配置编译状态")).toContainText(/编译/);
+});

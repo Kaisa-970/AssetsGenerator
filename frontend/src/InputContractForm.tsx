@@ -102,7 +102,7 @@ export function InputContractForm({
               ? `多个载体：${carriers.join(" / ")}（高级 JSON）`
               : "未声明"}
           </option>
-          {[...new Set([...carriers, "artifact_ref", "structured_value"])].map(
+          {[...new Set([...carriers, "artifact_ref", "structured"])].map(
             (c) => (
               <option key={c} value={c}>
                 {c}
