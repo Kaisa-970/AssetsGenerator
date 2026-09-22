@@ -311,7 +311,7 @@ def select_instance_proposals(
                 store,
                 run_id=run.run_id,
                 node_id=attempt.node_id,
-                port_name="inverted_mask",
+                port_name="processed_mask",
                 artifact=mask,
                 derived_from=[original, original_proposals],
                 operator="instance_selection",
@@ -367,7 +367,7 @@ def select_instance_proposals(
                 source="user",
             )
             attempt.outputs = {
-                "inverted_mask": mask,
+                "processed_mask": mask,
                 "mask_provenance": mask_provenance,
                 "derived_proposals": proposals,
                 "derived_provenance": derived_provenance,
@@ -384,7 +384,12 @@ def select_instance_proposals(
                     "unselected_ids": sorted(set(indexed) - set(proposal_ids)),
                     "reviewer": reviewer.strip(),
                     "reviewed_at": utc_now(),
-                    "scope": "mask_selection_only",
+                    "scope": (
+                        "mask_selection_and_processing"
+                        if (invert or keep_largest)
+                        else "mask_selection_only"
+                    ),
+                    "processing": (parameters if (invert or keep_largest) else None),
                     "semantic_labels": "unknown",
                 },
             )

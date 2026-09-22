@@ -146,7 +146,14 @@ def test_inverted_selection_is_traceable_and_hands_off_to_extraction(tmp_path):
         ArtifactRef(**run["node_attempts"][0]["outputs"]["mask_provenance"])
     )
     assert evidence["parameters"]["operation"] == "invert_binary_mask"
+    from assets_generator.provenance import output_id
+
+    assert evidence["output_id"] == output_id(
+        result["run_id"], "select_instances", "processed_mask"
+    )
     assert evidence["run_id"] == result["run_id"]
+    assert decision["scope"] == "mask_selection_and_processing"
+    assert decision["processing"]["operation"] == "invert_binary_mask"
     (tmp_path / "extract").mkdir()
     args = setup(tmp_path / "extract")
     args.update(
@@ -221,4 +228,6 @@ def test_keep_largest_removes_strips_and_preserves_evidence(tmp_path, invert):
     assert transformed["transformation"]["removed_pixels"] == 6
     assert transformed["transformation"]["connectivity"] == 8
     assert transformed["transformation"]["invert_first"] is invert
+    assert decision["scope"] == "mask_selection_and_processing"
+    assert decision["processing"]["operation"] == "keep_largest_component"
     assert store.read_structured(changed) == raw

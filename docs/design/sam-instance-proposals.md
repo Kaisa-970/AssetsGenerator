@@ -23,3 +23,12 @@ selection 的图像、顺序和 mask identity，来源标记 selected_model_prop
 默认 ViT-H：points_per_side=16、crop_n_layers=0、max_instances=20、min_area_pixels=64、
 pred_iou_thresh=.88、stability_score_thresh=.95。真实可用性必须固定 checkpoint digest 并完成
 GPU smoke；mock 测试只证明契约。SAM 不提供语义标签、世界位姿、尺度或对象关系。
+
+## 选择后的 mask 处理证据
+
+选择边界可以在单个候选上执行取反或最大连通区域保留。处理后的 mask provenance 使用中性的
+`processed_mask` 输出身份；它不再暗示具体操作。`InstanceSelection.scope` 在发生任一处理时为
+`mask_selection_and_processing`，并在 `processing` 字段保留操作参数（例如 `invert_first`、
+`connectivity`、`tie_break` 和 `policy_version`）。未处理的普通选择继续使用
+`mask_selection_only`，其 `processing` 为 `null`。取反和连通区域处理都产生新的不可变 Artifact，
+原候选和原 proposals 保持不变。
