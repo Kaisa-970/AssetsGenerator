@@ -32,6 +32,7 @@ import {
   portKinds,
   inputId,
   graphEdges,
+  dependencyLayout,
   connectionError,
   bind,
   removeNodes,
@@ -319,12 +320,13 @@ function App() {
   const states = (
     run?.dag as { node_states?: Record<string, { status: string }> } | undefined
   )?.node_states;
-  const declaredNodes = useMemo<Node<Data>[]>(
-    () => [
-      ...Object.entries(pipeline.inputs).map(([id, p], i) => ({
+  const declaredNodes = useMemo<Node<Data>[]>(() => {
+    const positions = dependencyLayout(pipeline);
+    return [
+      ...Object.entries(pipeline.inputs).map(([id, p]) => ({
         id: inputId(id),
         type: "operator",
-        position: layout[inputId(id)] || { x: 30, y: 80 + i * 200 },
+        position: layout[inputId(id)] || positions[inputId(id)],
         selected: selected === inputId(id),
         data: {
           label: id,
@@ -333,13 +335,10 @@ function App() {
           outputs: { value: p },
         },
       })),
-      ...Object.entries(pipeline.nodes).map(([id, n], i) => ({
+      ...Object.entries(pipeline.nodes).map(([id, n]) => ({
         id,
         type: "operator",
-        position: layout[id] || {
-          x: 360 + (i % 3) * 340,
-          y: 80 + Math.floor(i / 3) * 330,
-        },
+        position: layout[id] || positions[id],
         selected: selected === id,
         data: {
           label: id,
@@ -349,9 +348,8 @@ function App() {
           status: states?.[id]?.status,
         },
       })),
-    ],
-    [pipeline, layout, selected, catalog, states],
-  );
+    ];
+  }, [pipeline, layout, selected, catalog, states]);
   const [nodes, setNodes] = useState<Node<Data>[]>([]);
   useEffect(() => setNodes(declaredNodes), [declaredNodes]);
   const edges = useMemo(

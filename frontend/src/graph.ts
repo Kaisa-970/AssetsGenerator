@@ -412,3 +412,45 @@ export function pipelineThrough(pipeline: Pipeline, target: string): Pipeline {
     ),
   };
 }
+
+/** Default layout follows dependencies, never JSON key order. Saved positions take precedence. */
+export function dependencyLayout(p: Pipeline): Layout {
+  const positions: Layout = {};
+  const levels = new Map<string, number>();
+  Object.keys(p.inputs).forEach((name, row) => {
+    levels.set(inputId(name), 0);
+    positions[inputId(name)] = { x: 30, y: 80 + row * 330 };
+  });
+  const pending = new Set(Object.keys(p.nodes).sort());
+  while (pending.size) {
+    let progressed = false;
+    for (const id of pending) {
+      const parents = Object.values(p.nodes[id].inputs || {})
+        .map(parseReference)
+        .filter(
+          (ref) => ref && (ref.source in p.nodes || levels.has(ref.source)),
+        )
+        .map((ref) => ref!.source);
+      if (parents.some((parent) => !levels.has(parent))) continue;
+      levels.set(
+        id,
+        Math.max(1, ...parents.map((parent) => levels.get(parent)! + 1)),
+      );
+      pending.delete(id);
+      progressed = true;
+    }
+    // Invalid cyclic drafts must remain editable; compilation reports the cycle.
+    if (!progressed) {
+      for (const id of pending) levels.set(id, 1);
+      break;
+    }
+  }
+  const rows = new Map<number, number>();
+  for (const id of Object.keys(p.nodes).sort()) {
+    const level = levels.get(id)!;
+    const row = rows.get(level) || 0;
+    positions[id] = { x: 30 + level * 430, y: 80 + row * 330 };
+    rows.set(level, row + 1);
+  }
+  return positions;
+}
