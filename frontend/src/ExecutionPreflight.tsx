@@ -84,11 +84,20 @@ export function ExecutionPreflight({
         typeof report.execution_ready !== "boolean"
       )
         throw Error("预检响应无法核实");
-      setChecked({
+      const checkedResult = {
         key,
         prepared: { ...prepared, preflight_digest: report.digest },
         report,
-      });
+      };
+      const requiresConfirmation =
+        Boolean(intent.reuse_source) || label !== "启动新运行";
+      if (report.execution_ready && !requiresConfirmation) {
+        // Ordinary runs keep the preflight as an internal preparation step.
+        // The server still receives the digest and performs its own second check.
+        await onConfirm(checkedResult.prepared);
+        return;
+      }
+      setChecked(checkedResult);
     } catch (cause) {
       if (current.current === key) setError(String(cause));
     } finally {
@@ -100,12 +109,13 @@ export function ExecutionPreflight({
     <section aria-label="执行前预检">
       <button
         className="primary"
+        aria-label={`${label} · 检查执行范围`}
         disabled={disabled || busy}
         onClick={() => void check()}
       >
-        {busy ? "正在检查当前配置…" : `${label} · 检查执行范围`}
+        {busy ? "正在检查当前配置…" : label}
       </button>
-      <p>确定输入并检查执行范围；此时不运行模型。</p>
+      <p>启动时会自动检查输入和执行范围。</p>
       {checked && !active && <p>输入、配置或来源已变化，请重新检查。</p>}
       {error && <p role="alert">{error}</p>}
       {active && (
