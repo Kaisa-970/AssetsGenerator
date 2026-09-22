@@ -517,3 +517,87 @@ def test_masked_adapter_import_preserves_explicit_evidence(setup):
     blobs["actual_mask"] = png("L", 0)
     with pytest.raises(ValueError, match="file mismatch"):
         adapter.import_result(context, job, blobs)
+
+
+def test_masked_adapter_payload_includes_baking_options(setup):
+    from assets_generator.dag_adapters import NodeExecutionContext
+    from assets_generator.dag_remote_masked_shape import RemoteMaskedShapeAdapter
+
+    owner, request, _client, bridge, artifacts = setup
+    adapter = RemoteMaskedShapeAdapter(
+        "http://127.0.0.1:8772", owner.identity, bridge.backend_digest
+    )
+    payload = json.loads(request.payload_json)
+    inputs = {
+        name: artifacts.persist_bytes(
+            owner.get_blob(payload[name + "_digest"]),
+            kind=kind,
+            schema_name="png",
+            schema_version="1.0",
+            identity_metadata={"media_type": "image/png"},
+        )
+        for name, kind in (("image", "rgb_image"), ("mask", "binary_mask"))
+    }
+    parameters = {
+        **adapter.spec.defaults,
+        "bake_view_resolution": 1024,
+        "bake_filter": "legacy",
+    }
+    context = NodeExecutionContext("run", "shape", inputs, parameters, artifacts)
+    actual = adapter.prepare_payload(context)
+    assert actual["parameters"]["bake_view_resolution"] == 1024
+    assert actual["parameters"]["bake_filter"] == "legacy"
+
+
+def test_masked_adapter_evidence_accepts_payload_baking_options(setup):
+    from assets_generator.dag_adapters import NodeExecutionContext
+    from assets_generator.dag_remote_masked_shape import RemoteMaskedShapeAdapter
+
+    owner, request, client, bridge, artifacts = setup
+    adapter = RemoteMaskedShapeAdapter(
+        "http://127.0.0.1:8772", owner.identity, bridge.backend_digest
+    )
+    payload = json.loads(request.payload_json)
+    inputs = {
+        name: artifacts.persist_bytes(
+            owner.get_blob(payload[name + "_digest"]),
+            kind=kind,
+            schema_name="png",
+            schema_version="1.0",
+            identity_metadata={"media_type": "image/png"},
+        )
+        for name, kind in (("image", "rgb_image"), ("mask", "binary_mask"))
+    }
+    parameters = {
+        **adapter.spec.defaults,
+        "bake_view_resolution": 1024,
+        "bake_filter": "legacy",
+    }
+    context = NodeExecutionContext("run", "shape", inputs, parameters, artifacts)
+    request_payload = adapter.prepare_payload(context)
+    request = RemoteRequest.create(owner.identity, "payload-baking", request_payload)
+    owner.db.execute("DELETE FROM jobs")
+    owner.submit(request)
+    bridge.start_next(owner, artifacts)
+    client.complete()
+    job = bridge.recover(owner, request, artifacts)
+    blobs = {
+        item["output_id"]: owner.get_blob(item["blob_digest"])
+        for item in json.loads(job.result_json)["outputs"]
+    }
+    # The evidence verifier compares the full normalized options object.
+    result = adapter.import_result(context, job, blobs)
+    assert result.outputs["mesh"].artifact_id.startswith("sha256:")
+
+    from dataclasses import replace
+
+    for change in ({"bake_filter": "mipmap"}, {"bake_view_resolution": 512}):
+        altered = replace(context, parameters={**parameters, **change})
+        with pytest.raises(ValueError, match="another request/backend"):
+            adapter.import_result(altered, job, blobs)
+    evidence = json.loads(blobs["sam3d_evidence"])
+    evidence["request_digest"] = "sha256:" + "0" * 64
+    with pytest.raises(ValueError, match="another request/backend"):
+        adapter.import_result(
+            context, job, {**blobs, "sam3d_evidence": canonical_json_bytes(evidence)}
+        )
