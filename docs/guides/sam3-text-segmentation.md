@@ -110,3 +110,13 @@ text 输入的格式是 text / plain_text@1.0，载体为 ArtifactRef；也能�
 文本以 UTF-8 保存，分割提示词必须非空且最多 256 字符。修改文本会改变输入身份，不能复用旧文字的分割结果。
 V2 没有 prompt 参数；旧的 text_segmentation@1 及其 prompt 参数仍保留。
 这是自动分割，不需要人工选择 mask。
+
+
+## 图片＋文本自动发布 3D
+
+加载 `sam3_text_to_asset_v1`，上传 image，在 text 框填写目标并应用文本，然后启动。
+模板使用 text_segmentation@2 → masked_shape_generation → canonicalize → QA → assemble → export。
+mask 自动使用全部候选的并集，不设置人工选择节点。segment 可预览遮罩，publish 可预览/下载 GLB。
+需要运行匹配配置的 SAM3 服务/worker、SAM3D 兼容 serve/work 和编辑器。
+当前新版 SAM3D 模板显式配置 bake_view_resolution=512、bake_filter=mipmap（bake 默认 false）。
+旧客户端请求默认参数保持不变；旧服务模板不要添加这两个扩展字段。配置必须绑定实际部署摘要。

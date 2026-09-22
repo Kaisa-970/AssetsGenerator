@@ -44,7 +44,14 @@ def test_text_asset_template_binds():
             require_explicit_joins=True,
         )
     )
-    assert plan.bindings["segment"].parameters["prompt"] == "robot"
+    assert set(plan.static_plan.inputs) == {"image", "text"}
+    nodes = {node.node_id: node for node in plan.static_plan.nodes}
+    assert nodes["segment"].operator == "text_segmentation@2"
+    assert nodes["segment"].inputs["text"].port == "text"
+    assert nodes["shape"].inputs["mask"].node_id == "segment"
+    assert nodes["publish"].inputs["asset"].node_id == "assemble"
+    assert "prompt" not in plan.bindings["segment"].parameters
+    assert all(binding.spec["execution_kind"] != "human" for binding in plan.bindings.values())
 
 
 def test_auto_extract_template_routes_union_mask_without_selection_node():

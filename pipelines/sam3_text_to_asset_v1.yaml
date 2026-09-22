@@ -2,16 +2,19 @@ pipeline: sam3_text_to_asset_v1
 version: 1
 inputs:
   image: {kind: rgb_image, carriers: [artifact_ref]}
+  text: {kind: text, carriers: [artifact_ref], schema_name: plain_text, schema_version: "1.0"}
 nodes:
   segment:
-    operator: text_segmentation@1
+    operator: text_segmentation@2
     backend: sam3
-    parameters: {prompt: robot, confidence: 0.5}
+    parameters: {confidence: 0.5}
     inputs:
       image: pipeline.inputs.image
+      text: pipeline.inputs.text
   shape:
     operator: masked_shape_generation@1
     backend: sam3d
+    parameters: {bake_view_resolution: 512, bake_filter: mipmap}
     inputs:
       image: pipeline.inputs.image
       mask: segment.outputs.mask
