@@ -1,8 +1,11 @@
+import { useResultFreshness } from "./useResultFreshness";
+import { request, type Envelope } from "./executionApi";
+import { useRunCreation, type CreationRequest } from "./useRunCreation";
 import { OutputComparison, type ComparisonSlot } from "./OutputComparison";
-import { NodeActionHint, type RunActionAdvice } from "./NodeActionHint";
+import { NodeActionHint } from "./NodeActionHint";
 import { ContinueExtraction } from "./ContinueExtraction";
 import { ExecutionPreflight } from "./ExecutionPreflight";
-import { LocalInputPreview } from "./LocalInputPreview";
+import { ExecutionInputs } from "./ExecutionInputs";
 import { QualityEvidencePanel } from "./QualityEvidencePanel";
 import { HumanDecisionSummary } from "./HumanDecisionSummary";
 import { executionStatus } from "./executionStatus";
@@ -17,119 +20,6 @@ const GlbPreview = lazy(() =>
   import("./GlbPreview").then((module) => ({ default: module.GlbPreview })),
 );
 
-type NodeState = {
-  status: string;
-  recovery_blocked_reason?: string | null;
-  dispatch_block_reason?: string | null;
-  attempts?: {
-    request?: { artifact_id: string };
-    decision?: { artifact_id: string };
-    reused_from?: { artifact_id: string };
-    resolved_inputs?: Record<string, unknown>;
-    outputs?: Record<string, unknown>;
-    provenance?: Record<string, unknown>;
-    operator?: string;
-    adapter?: string;
-    input_digest?: string;
-    binding_digest?: string;
-    parameters_digest?: string;
-    started_at?: string;
-    finished_at?: string | null;
-    error_code?: string;
-    error_detail?: string;
-    status?: string;
-    attempt?: number;
-    remote_binding?: { service_id: string; submission_key: string };
-  }[];
-};
-type Run = {
-  run_id: string;
-  status: string;
-  dag?: {
-    plan_id?: string;
-    named_actual_inputs?: Record<string, { artifact_id: string }>;
-    revision: number;
-    invalid_evidence?: Record<string, string>;
-    unassigned_evidence_blocks?: Record<string, string>;
-    node_states: Record<string, NodeState>;
-  };
-};
-type Envelope = {
-  actions?: RunActionAdvice;
-  snapshot_ref?: { artifact_id: string };
-  run: Run;
-  busy?: boolean;
-  error?: string | null;
-  outputs?: { node_id: string; port: string; kind?: string; url: string }[];
-};
-async function request(path: string, body?: unknown, signal?: AbortSignal) {
-  const response = await fetch(path, {
-    ...(body === undefined
-      ? {}
-      : { method: "POST", body: JSON.stringify(body) }),
-    headers: { "Content-Type": "application/json" },
-    signal,
-  });
-  const value = await response.json();
-  if (!response.ok) throw Error(value.error || `HTTP ${response.status}`);
-  return value;
-}
-type CreationRequest = {
-  reuse_source?: { artifact_id: string };
-  pipeline: Pipeline;
-  idempotency_key: string;
-  preflight_digest?: string;
-  image_path?: string;
-  image_ref?: Record<string, unknown>;
-  observations_ref?: Record<string, unknown>;
-  input_refs?: Record<string, Record<string, unknown>>;
-};
-const creationStorageKey = "assets-generator:pending-creation:v1";
-function restoreCreation(): { request?: CreationRequest; error?: string } {
-  try {
-    const raw = sessionStorage.getItem(creationStorageKey);
-    if (!raw) return {};
-    const value = JSON.parse(raw);
-    if (
-      !value ||
-      typeof value !== "object" ||
-      typeof value.idempotency_key !== "string" ||
-      !/^[A-Za-z0-9_-]{1,128}$/.test(value.idempotency_key) ||
-      !value.pipeline ||
-      typeof value.pipeline !== "object" ||
-      !(
-        (typeof value.image_path === "string" &&
-          value.image_path.length > 0 &&
-          !value.image_ref &&
-          !value.observations_ref) ||
-        (value.image_ref &&
-          typeof value.image_ref.artifact_id === "string" &&
-          !value.image_path &&
-          !value.observations_ref) ||
-        (value.observations_ref &&
-          typeof value.observations_ref.artifact_id === "string" &&
-          !value.image_path &&
-          !value.image_ref) ||
-        (value.input_refs &&
-          typeof value.input_refs === "object" &&
-          !Array.isArray(value.input_refs) &&
-          !value.image_path &&
-          !value.image_ref &&
-          !value.observations_ref &&
-          Object.values(value.input_refs).every(
-            (ref) =>
-              !!ref &&
-              typeof ref === "object" &&
-              typeof (ref as Record<string, unknown>).artifact_id === "string",
-          ))
-      )
-    )
-      throw Error("保存的请求格式无效");
-    return { request: value };
-  } catch (error) {
-    return { error: `无法读取待确认请求：${String(error)}` };
-  }
-}
 export function ExecutionPanel({
   pipeline,
   profile,
@@ -198,7 +88,11 @@ export function ExecutionPanel({
         ? sliceEligibility.reason
         : "正在检查目标子图…")
     : executionReason;
-  const [creation, setCreation] = useState(restoreCreation);
+  const {
+    creation,
+    submit: sendCreation,
+    clear: clearCreation,
+  } = useRunCreation();
   const [preview, setPreview] = useState<{
     runId: string;
     nodeId: string;
@@ -344,23 +238,7 @@ export function ExecutionPanel({
     }
   };
   const submitCreation = async (submitted: CreationRequest) => {
-    // Persist before sending so an uncertain response retains the original intent.
-    sessionStorage.setItem(creationStorageKey, JSON.stringify(submitted));
-    setCreation({ request: submitted });
-    const response = await fetch("/api/runs", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(submitted),
-    });
-    const value = await response.json();
-    if (!response.ok) {
-      if (response.status === 409 && value.code === "preflight_changed") {
-        sessionStorage.removeItem(creationStorageKey);
-        setCreation({});
-      }
-      throw Error(value.error || `HTTP ${response.status}`);
-    }
-    if (!value.run?.run_id) throw Error("服务未返回有效运行，原请求已保留");
+    const value = await sendCreation(submitted);
     choose(value.run.run_id);
     accept(value);
     setSnapshot({
@@ -371,8 +249,7 @@ export function ExecutionPanel({
       { run_id: value.run.run_id, status: value.run.status },
       ...old.filter((item) => item.run_id !== value.run.run_id),
     ]);
-    sessionStorage.removeItem(creationStorageKey);
-    setCreation({});
+    clearCreation();
     setMessage("运行已创建；请在下方查看真实节点状态。");
   };
   const unresolvedCreation = !!creation.request || !!creation.error;
@@ -383,79 +260,11 @@ export function ExecutionPanel({
       ? envelope?.actions
       : undefined;
   const reuseStates = run?.dag?.node_states;
-  const [nodeFreshness, setNodeFreshness] = useState<Record<string, string>>(
-    {},
+  const nodeFreshness = useResultFreshness(
+    effectivePipeline,
+    selected,
+    reuseResults,
   );
-  const sourcePlan = useRef<{ runId: string; plan: any } | undefined>(
-    undefined,
-  );
-  useEffect(() => {
-    if (!selected || !reuseResults) {
-      setNodeFreshness({});
-      return;
-    }
-    const controller = new AbortController();
-    setNodeFreshness({});
-    const timer = setTimeout(() => {
-      void (async () => {
-        const old =
-          sourcePlan.current?.runId === selected
-            ? sourcePlan.current.plan
-            : await request(
-                `/api/runs/${encodeURIComponent(selected)}/plan`,
-                undefined,
-                controller.signal,
-              );
-        sourcePlan.current = { runId: selected, plan: old };
-        const compiled = await request(
-          "/api/compile",
-          { pipeline: effectivePipeline },
-          controller.signal,
-        );
-        if (controller.signal.aborted) return;
-        const stable = (v: any): string =>
-          JSON.stringify(v, (_k, x) =>
-            x && typeof x === "object" && !Array.isArray(x)
-              ? Object.fromEntries(
-                  Object.keys(x)
-                    .sort()
-                    .map((k) => [k, x[k]]),
-                )
-              : x,
-          );
-        const current = compiled.bound_plan;
-        const statuses: Record<string, string> = {};
-        const oldBound = old.plan || old;
-        for (const n of current?.static_plan?.nodes || []) {
-          const previous = oldBound.static_plan?.nodes?.find(
-            (v: any) => v.node_id === n.node_id,
-          );
-          const dependencies =
-            current.static_plan.dependencies[n.node_id] || [];
-          statuses[n.node_id] = !previous
-            ? "新节点 · 需要执行"
-            : stable(oldBound.bindings?.[n.node_id]) !==
-                  stable(current.bindings[n.node_id]) ||
-                stable(previous.inputs) !== stable(n.inputs) ||
-                previous.operator_contract_digest !== n.operator_contract_digest
-              ? "配置已改变 · 需要更新"
-              : dependencies.some(
-                    (id: string) =>
-                      statuses[id] !== "配置匹配 · 启动时核验输入和证据",
-                  )
-                ? "上游需更新 · 需要重新核验"
-                : "配置匹配 · 启动时核验输入和证据";
-        }
-        setNodeFreshness(statuses);
-      })().catch(() => {
-        if (!controller.signal.aborted) setNodeFreshness({});
-      });
-    }, 250);
-    return () => {
-      clearTimeout(timer);
-      controller.abort();
-    };
-  }, [effectivePipeline, selected, reuseResults]);
 
   const executing = pending || !!envelope?.busy;
   const setInputArtifact = (name: string, artifactId: string) => {
@@ -801,175 +610,35 @@ export function ExecutionPanel({
       )}
       <div className="section-label">创建新运行</div>
       <p>执行环境：{profile || "本地服务配置"}</p>
-      {multiInput ? (
-        <div>
-          <p>
-            为每个输入上传文件，或从下方历史运行选择“用作输入”。 支持 RGB/RGBA
-            图片和二值 PNG 遮罩。
-          </p>
-          {Object.entries(effectivePipeline.inputs).map(([name, port]) => {
-            const artifactId = String(inputRefs[name]?.artifact_id || "");
-            return (
-              <div className="run-node" key={name}>
-                <strong>{name}</strong> ·{" "}
-                {port.kind || port.kinds?.join(" | ") || "未声明类型"}
-                {(port.kind === "rgb_image" ||
-                  port.kind === "rgba_image" ||
-                  port.kind === "binary_mask") && (
-                  <input
-                    type="file"
-                    accept={
-                      port.kind === "binary_mask" ? "image/png" : "image/*"
-                    }
-                    aria-label={`上传输入 ${name}`}
-                    disabled={pending || uploading}
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      e.target.value = "";
-                      void uploadInputArtifact(name, file);
-                    }}
-                  />
-                )}
-                {inputFiles[name]?.artifactId === artifactId && (
-                  <LocalInputPreview
-                    file={inputFiles[name].file}
-                    label={`输入 ${name}`}
-                  />
-                )}
-                {inputOrigins[name]?.artifactId === artifactId && (
-                  <p>
-                    下游输入来源：{inputOrigins[name].runId} /{" "}
-                    {inputOrigins[name].nodeId}.{inputOrigins[name].port}。
-                    切换查看其他运行不会改变此绑定。
-                  </p>
-                )}
-                <input
-                  aria-label={`输入 ${name} Artifact ID`}
-                  placeholder="sha256:…"
-                  value={artifactId}
-                  disabled={pending || uploading}
-                  onChange={(e) => setInputArtifact(name, e.target.value)}
-                />
-              </div>
-            );
-          })}
-          {uploadMessage && <p role="status">{uploadMessage}</p>}
-        </div>
-      ) : multiView ? (
-        <div>
-          <label>
-            选择多视图照片（RGB，2–32 张）
-            <input
-              type="file"
-              multiple
-              accept="image/png,image/jpeg,image/webp"
-              aria-label="上传多视图照片"
-              disabled={pending || uploading}
-              onChange={(e) => {
-                const files = Array.from(e.target.files || []);
-                e.target.value = "";
-                if (files.length) void uploadObservations(files);
-              }}
-            />
-          </label>
-          <p>按选择顺序分配视图 ID；不自动补充相机、mask 或深度。</p>
-          {observationFiles.length > 0 && (
-            <ol>
-              {observationFiles.map((name, i) => (
-                <li key={i}>{name}</li>
-              ))}
-            </ol>
-          )}
-          {uploadMessage && <p role="status">{uploadMessage}</p>}
-          <label>
-            已导入的 ObservationBundle Artifact ID
-            <input
-              aria-label="观测包 Artifact ID"
-              value={observationsId}
-              placeholder="sha256:…"
-              disabled={pending || uploading}
-              onChange={(e) => setObservationsId(e.target.value)}
-            />
-            <p>也可使用 import-observations 导入后的已有引用。</p>
-          </label>
-        </div>
-      ) : (
-        <>
-          {rgbaInput && (
-            <p>请提供已处理好的 RGBA PNG，透明区域为背景；此流程不自动抠图。</p>
-          )}
-          <label>
-            图片来源
-            <select
-              aria-label="图片来源"
-              value={reusedImage ? "reference" : imageSource}
-              disabled={pending || uploading}
-              onChange={(e) => {
-                setImageSource(e.target.value);
-                if (e.target.value !== "reference") setReusedImage(undefined);
-              }}
-            >
-              <option value="path">服务器本地路径</option>
-              <option value="upload">从浏览器上传</option>
-              <option value="reference">使用历史输出</option>
-            </select>
-          </label>
-          {reusedImage || imageSource === "reference" ? (
-            <div>
-              <p>在下方选择历史运行，点击匹配输出的“用作输入”。</p>
-              {reusedImage && (
-                <p className="run-identity">{reusedImage.artifact_id}</p>
-              )}
-              {reusedImage &&
-                inputOrigins.image?.artifactId === reusedImage.artifact_id && (
-                  <p>
-                    下游输入来源：{inputOrigins.image.runId} /{" "}
-                    {inputOrigins.image.nodeId}.{inputOrigins.image.port}。
-                    切换查看其他运行不会改变此绑定。
-                  </p>
-                )}
-            </div>
-          ) : imageSource === "path" ? (
-            <label>
-              服务所在电脑的图片绝对路径
-              <input
-                aria-label="运行图片路径"
-                placeholder="/path/to/image.png"
-                value={imagePath}
-                disabled={pending}
-                onChange={(e) => setImagePath(e.target.value)}
-              />
-            </label>
-          ) : (
-            <div>
-              <label>
-                上传图片（最多 20 MiB）
-                <input
-                  type="file"
-                  aria-label="上传运行图片"
-                  accept={rgbaInput ? "image/png" : "image/*"}
-                  disabled={pending || uploading}
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    e.target.value = "";
-                    void upload(file);
-                  }}
-                />
-              </label>
-              {uploadedFile && uploaded?.rgba === rgbaInput && (
-                <LocalInputPreview file={uploadedFile} label="运行图片" />
-              )}
-              {uploading && <p>正在上传并验证图片…</p>}
-              {uploaded && (
-                <p className="run-identity">
-                  {uploaded.name} · {String(uploaded.ref.artifact_id)}
-                </p>
-              )}
-              {uploadMessage && <p role="status">{uploadMessage}</p>}
-            </div>
-          )}
-        </>
-      )}
+      <ExecutionInputs
+        pipeline={effectivePipeline}
+        {...{
+          multiInput,
+          multiView,
+          rgbaInput,
+          pending,
+          uploading,
+          uploadMessage,
+          inputRefs,
+          inputFiles,
+          inputOrigins,
+          setInputArtifact,
+          uploadInputArtifact,
+          observationFiles,
+          observationsId,
+          setObservationsId,
+          uploadObservations,
+          imageSource,
+          setImageSource,
+          reusedImage,
+          setReusedImage,
+          imagePath,
+          setImagePath,
+          uploaded,
+          uploadedFile,
+          upload,
+        }}
+      />
       <p>启动时后端重新编译当前草稿并固定计划。修改画布只影响下一次新运行。</p>
       {effectiveReason && (
         <p role="alert">当前入口不可运行：{effectiveReason}</p>
@@ -1078,8 +747,7 @@ export function ExecutionPanel({
             disabled={pending}
             onClick={() => {
               try {
-                sessionStorage.removeItem(creationStorageKey);
-                setCreation({});
+                clearCreation();
                 setMessage("已放弃本地待确认请求；服务器运行不会被取消。");
               } catch (error) {
                 setMessage(`无法清除请求：${String(error)}`);

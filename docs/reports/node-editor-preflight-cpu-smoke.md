@@ -84,3 +84,12 @@ Ruff check/format、mypy、前端构建及 Python 打包通过。模型 smoke �
 实际走查发现并修正旧脚本的假设：自动编译 POST 不是执行变更；
 encode_png 输出的 PNG 不能回接只接收 raster_image 的端口，改用明确的 PNG 消费者；
 运行列表允许已有记录，验证绑定前后 ID 集合不变。失败尝试日志保留在仓库外。
+
+## 面板职责拆分
+
+启动脚本基线 `e5909dc` 后进行行为保持的拆分：`ExecutionInputs` 负责输入表单，
+`useRunCreation` 负责浏览器请求回执与发送，`useResultFreshness` 负责历史计划比较，
+`executionApi` 提供共享记录类型和读取。父面板仍协调所选运行、输入及命令互斥；
+不改 Artifact 身份、服务端 API、幂等键或恢复状态迁移。
+
+拆分后全量浏览器 54 passed、前端单测 55 passed、生产构建通过。

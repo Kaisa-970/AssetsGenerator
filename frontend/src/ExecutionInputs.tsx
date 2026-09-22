@@ -1,0 +1,239 @@
+import type { Pipeline } from "./graph";
+import { LocalInputPreview } from "./LocalInputPreview";
+type Props = {
+  pipeline: Pipeline;
+  multiInput: boolean;
+  multiView: boolean;
+  rgbaInput: boolean;
+  pending: boolean;
+  uploading: boolean;
+  uploadMessage: string;
+  inputRefs: Record<string, Record<string, unknown>>;
+  inputFiles: Record<string, { file: File; artifactId: string }>;
+  inputOrigins: Record<
+    string,
+    {
+      artifactId: string;
+      runId: string;
+      nodeId: string;
+      port: string;
+      snapshot?: string;
+    }
+  >;
+  setInputArtifact: (name: string, value: string) => void;
+  uploadInputArtifact: (name: string, file?: File) => Promise<void>;
+  observationFiles: string[];
+  observationsId: string;
+  setObservationsId: (value: string) => void;
+  uploadObservations: (files: File[]) => Promise<void>;
+  imageSource: string;
+  setImageSource: (value: string) => void;
+  reusedImage?: { artifact_id: string };
+  setReusedImage: (value: { artifact_id: string } | undefined) => void;
+  imagePath: string;
+  setImagePath: (value: string) => void;
+  uploaded?: { name: string; rgba: boolean; ref: Record<string, unknown> };
+  uploadedFile?: File;
+  upload: (file?: File) => Promise<void>;
+};
+export function ExecutionInputs({
+  pipeline: effectivePipeline,
+  multiInput,
+  multiView,
+  rgbaInput,
+  pending,
+  uploading,
+  uploadMessage,
+  inputRefs,
+  inputFiles,
+  inputOrigins,
+  setInputArtifact,
+  uploadInputArtifact,
+  observationFiles,
+  observationsId,
+  setObservationsId,
+  uploadObservations,
+  imageSource,
+  setImageSource,
+  reusedImage,
+  setReusedImage,
+  imagePath,
+  setImagePath,
+  uploaded,
+  uploadedFile,
+  upload,
+}: Props) {
+  return (
+    <>
+      {multiInput ? (
+        <div>
+          <p>
+            为每个输入上传文件，或从下方历史运行选择“用作输入”。 支持 RGB/RGBA
+            图片和二值 PNG 遮罩。
+          </p>
+          {Object.entries(effectivePipeline.inputs).map(([name, port]) => {
+            const artifactId = String(inputRefs[name]?.artifact_id || "");
+            return (
+              <div className="run-node" key={name}>
+                <strong>{name}</strong> ·{" "}
+                {port.kind || port.kinds?.join(" | ") || "未声明类型"}
+                {(port.kind === "rgb_image" ||
+                  port.kind === "rgba_image" ||
+                  port.kind === "binary_mask") && (
+                  <input
+                    type="file"
+                    accept={
+                      port.kind === "binary_mask" ? "image/png" : "image/*"
+                    }
+                    aria-label={`上传输入 ${name}`}
+                    disabled={pending || uploading}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      e.target.value = "";
+                      void uploadInputArtifact(name, file);
+                    }}
+                  />
+                )}
+                {inputFiles[name]?.artifactId === artifactId && (
+                  <LocalInputPreview
+                    file={inputFiles[name].file}
+                    label={`输入 ${name}`}
+                  />
+                )}
+                {inputOrigins[name]?.artifactId === artifactId && (
+                  <p>
+                    下游输入来源：{inputOrigins[name].runId} /{" "}
+                    {inputOrigins[name].nodeId}.{inputOrigins[name].port}。
+                    切换查看其他运行不会改变此绑定。
+                  </p>
+                )}
+                <input
+                  aria-label={`输入 ${name} Artifact ID`}
+                  placeholder="sha256:…"
+                  value={artifactId}
+                  disabled={pending || uploading}
+                  onChange={(e) => setInputArtifact(name, e.target.value)}
+                />
+              </div>
+            );
+          })}
+          {uploadMessage && <p role="status">{uploadMessage}</p>}
+        </div>
+      ) : multiView ? (
+        <div>
+          <label>
+            选择多视图照片（RGB，2–32 张）
+            <input
+              type="file"
+              multiple
+              accept="image/png,image/jpeg,image/webp"
+              aria-label="上传多视图照片"
+              disabled={pending || uploading}
+              onChange={(e) => {
+                const files = Array.from(e.target.files || []);
+                e.target.value = "";
+                if (files.length) void uploadObservations(files);
+              }}
+            />
+          </label>
+          <p>按选择顺序分配视图 ID；不自动补充相机、mask 或深度。</p>
+          {observationFiles.length > 0 && (
+            <ol>
+              {observationFiles.map((name, i) => (
+                <li key={i}>{name}</li>
+              ))}
+            </ol>
+          )}
+          {uploadMessage && <p role="status">{uploadMessage}</p>}
+          <label>
+            已导入的 ObservationBundle Artifact ID
+            <input
+              aria-label="观测包 Artifact ID"
+              value={observationsId}
+              placeholder="sha256:…"
+              disabled={pending || uploading}
+              onChange={(e) => setObservationsId(e.target.value)}
+            />
+            <p>也可使用 import-observations 导入后的已有引用。</p>
+          </label>
+        </div>
+      ) : (
+        <>
+          {rgbaInput && (
+            <p>请提供已处理好的 RGBA PNG，透明区域为背景；此流程不自动抠图。</p>
+          )}
+          <label>
+            图片来源
+            <select
+              aria-label="图片来源"
+              value={reusedImage ? "reference" : imageSource}
+              disabled={pending || uploading}
+              onChange={(e) => {
+                setImageSource(e.target.value);
+                if (e.target.value !== "reference") setReusedImage(undefined);
+              }}
+            >
+              <option value="path">服务器本地路径</option>
+              <option value="upload">从浏览器上传</option>
+              <option value="reference">使用历史输出</option>
+            </select>
+          </label>
+          {reusedImage || imageSource === "reference" ? (
+            <div>
+              <p>在下方选择历史运行，点击匹配输出的“用作输入”。</p>
+              {reusedImage && (
+                <p className="run-identity">{reusedImage.artifact_id}</p>
+              )}
+              {reusedImage &&
+                inputOrigins.image?.artifactId === reusedImage.artifact_id && (
+                  <p>
+                    下游输入来源：{inputOrigins.image.runId} /{" "}
+                    {inputOrigins.image.nodeId}.{inputOrigins.image.port}。
+                    切换查看其他运行不会改变此绑定。
+                  </p>
+                )}
+            </div>
+          ) : imageSource === "path" ? (
+            <label>
+              服务所在电脑的图片绝对路径
+              <input
+                aria-label="运行图片路径"
+                placeholder="/path/to/image.png"
+                value={imagePath}
+                disabled={pending}
+                onChange={(e) => setImagePath(e.target.value)}
+              />
+            </label>
+          ) : (
+            <div>
+              <label>
+                上传图片（最多 20 MiB）
+                <input
+                  type="file"
+                  aria-label="上传运行图片"
+                  accept={rgbaInput ? "image/png" : "image/*"}
+                  disabled={pending || uploading}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = "";
+                    void upload(file);
+                  }}
+                />
+              </label>
+              {uploadedFile && uploaded?.rgba === rgbaInput && (
+                <LocalInputPreview file={uploadedFile} label="运行图片" />
+              )}
+              {uploading && <p>正在上传并验证图片…</p>}
+              {uploaded && (
+                <p className="run-identity">
+                  {uploaded.name} · {String(uploaded.ref.artifact_id)}
+                </p>
+              )}
+              {uploadMessage && <p role="status">{uploadMessage}</p>}
+            </div>
+          )}
+        </>
+      )}
+    </>
+  );
+}
