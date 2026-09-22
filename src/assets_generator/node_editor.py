@@ -11,7 +11,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
 from pathlib import Path
 from typing import Any, cast
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 import yaml
 
@@ -20,6 +20,7 @@ from .dag_adapters import AdapterRegistry, NodeBindingError
 from .multi_view_relations import register_multi_view_relations
 from .node_editor_execution import (
     NodeEditorExecution,
+    PreflightChanged,
     validate_editor_execution,
     validate_editor_reference_inputs,
 )
@@ -69,11 +70,39 @@ class DraftEditor:
         self.lock = threading.RLock()
 
     def catalog(self) -> dict[str, Any]:
+        templates = []
+        for template in self.templates:
+            result = self.compile(template["pipeline"])
+            bindings = (result.get("bound_plan") or {}).get("bindings", {})
+            kinds = {item["spec"]["execution_kind"] for item in bindings.values()}
+            level = (
+                "remote"
+                if "remote" in kinds
+                else "local"
+                if "process" in kinds
+                else "cpu"
+                if bindings
+                else "unconfigured"
+            )
+            reason = result.get("execution_reason")
+            if not result.get("ok"):
+                reason = "; ".join(item["message"] for item in result.get("diagnostics", []))
+            elif not result.get("execution_ready") and not reason:
+                reason = "当前服务仅支持编辑，请配置执行入口"
+            templates.append(
+                {
+                    **template,
+                    "execution_ready": result.get("execution_ready", False),
+                    "execution_reason": reason,
+                    "execution_level": level,
+                    "service_status": "未检查远程可达性" if level == "remote" else None,
+                }
+            )
         return {
             "operators": {k: to_primitive(v) for k, v in self.specs.items()},
             "adapters": self.adapters.catalog() if self.adapters else [],
             "backends": self.adapters.backend_catalog() if self.adapters else [],
-            "templates": self.templates,
+            "templates": templates,
             "execution_enabled": self.execution is not None,
             "execution_profile": self.execution_profile,
         }
@@ -196,7 +225,40 @@ def create_editor_server(editor: DraftEditor, port: int = 8767) -> ThreadingHTTP
                     self.respond(200, {"runs": editor.execution.list_runs()})
                 elif path.startswith("/api/runs/") and editor.execution:
                     parts = path.removeprefix("/api/runs/").split("/")
-                    if len(parts) == 4 and parts[1] == "archives":
+                    if len(parts) == 4 and parts[1] in {"snapshot-output", "snapshot-reference"}:
+                        query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
+                        if (
+                            set(query) != {"snapshot"}
+                            or len(query["snapshot"]) != 1
+                            or not query["snapshot"][0]
+                        ):
+                            raise ValueError("snapshot output requires one snapshot identity")
+                        snapshot = {"artifact_id": query["snapshot"][0]}
+                        if parts[1] == "snapshot-reference":
+                            self.respond(
+                                200,
+                                editor.execution.snapshot_reference(
+                                    parts[0], parts[2], parts[3], snapshot
+                                ),
+                            )
+                        else:
+                            output = editor.execution.snapshot_output(
+                                parts[0], parts[2], parts[3], snapshot
+                            )
+                            self.send(200, output.data, output.media_type)
+                    elif len(parts) == 3 and parts[1] == "continue-extraction":
+                        query = parse_qs(urlsplit(self.path).query)
+                        if set(query) != {"snapshot"} or len(query["snapshot"]) != 1:
+                            raise ValueError("continue extraction requires one snapshot identity")
+                        self.respond(
+                            200,
+                            editor.execution.continue_extraction(
+                                parts[0], parts[2], {"artifact_id": query["snapshot"][0]}
+                            ),
+                        )
+                    elif len(parts) == 3 and parts[1] == "decisions":
+                        self.respond(200, editor.execution.decision_summary(parts[0], parts[2]))
+                    elif len(parts) == 4 and parts[1] == "archives":
                         output = editor.execution.release_archive(parts[0], parts[2], parts[3])
                         self.send(200, output.data, output.media_type)
                     elif len(parts) == 4 and parts[1] == "references":
@@ -295,10 +357,42 @@ def create_editor_server(editor: DraftEditor, port: int = 8767) -> ThreadingHTTP
                     if not isinstance(body, dict) or set(body) != {"images"}:
                         raise ValueError("observations import requires images")
                     self.respond(201, editor.execution.import_observations(body["images"]))
+                elif self.command == "POST" and path == "/api/preflight" and editor.execution:
+                    if not isinstance(body, dict) or set(body) - {"reuse_source"} != {
+                        "pipeline",
+                        "input_refs",
+                    }:
+                        raise ValueError("preflight requires pipeline and prepared input_refs")
+                    self.respond(
+                        200,
+                        editor.execution.preflight(
+                            body["pipeline"],
+                            input_refs=body["input_refs"],
+                            reuse_source=body.get("reuse_source"),
+                        ),
+                    )
+                elif self.command == "POST" and path == "/api/prepare-inputs" and editor.execution:
+                    if not isinstance(body, dict) or set(body) not in (
+                        {"pipeline", "image_path"},
+                        {"pipeline", "image_ref"},
+                        {"pipeline", "observations_ref"},
+                        {"pipeline", "input_refs"},
+                    ):
+                        raise ValueError(
+                            "input preparation requires pipeline and exactly one input source"
+                        )
+                    self.respond(
+                        201,
+                        editor.execution.prepare_inputs(
+                            body["pipeline"],
+                            **{key: value for key, value in body.items() if key != "pipeline"},
+                        ),
+                    )
                 elif self.command == "POST" and path == "/api/runs" and editor.execution:
                     if not isinstance(body, dict) or set(body) - {
                         "idempotency_key",
                         "reuse_source",
+                        "preflight_digest",
                     } not in (
                         {"pipeline", "image_path"},
                         {"pipeline", "image_ref"},
@@ -311,6 +405,8 @@ def create_editor_server(editor: DraftEditor, port: int = 8767) -> ThreadingHTTP
                         if not isinstance(body["idempotency_key"], str):
                             raise ValueError("idempotency_key must be text")
                         options["idempotency_key"] = body["idempotency_key"]
+                    if "preflight_digest" in body:
+                        options["preflight_digest"] = body["preflight_digest"]
                     if "reuse_source" in body:
                         options["reuse_source"] = body["reuse_source"]
                     if "input_refs" in body:
@@ -354,6 +450,11 @@ def create_editor_server(editor: DraftEditor, port: int = 8767) -> ThreadingHTTP
                     self.respond(200, editor.save(path.removeprefix("/api/drafts/"), body))
                 else:
                     self.respond(404, {"error": "unknown route"})
+            except PreflightChanged as error:
+                self.respond(
+                    409,
+                    {"error": str(error), "code": "preflight_changed", "preflight": error.report},
+                )
             except (
                 ValueError,
                 OSError,
@@ -385,8 +486,15 @@ def serve_editor(
     proposal_config: Path | None = None,
 ) -> None:
     from contextlib import ExitStack
+    from importlib.resources import as_file
 
     with ExitStack() as stack:
+        if not templates:
+            templates = [
+                stack.enter_context(
+                    as_file(files("assets_generator.resources").joinpath("cpu-image-editor.yaml"))
+                )
+            ]
         execution = None
         editor = DraftEditor(directory, operators, templates)
         if any(
@@ -401,16 +509,8 @@ def serve_editor(
                 comfy_config,
             )
         ):
-            if store is None or (
-                proposal_config is None
-                and remote_config is None
-                and comfy_config is None
-                and multi_view_config is None
-                and (config is None or profile is None)
-            ):
-                raise ValueError(
-                    "execution requires --store and an image, multi-view or remote configuration"
-                )
+            if store is None:
+                raise ValueError("execution requires --store")
             if proposal_config is not None and config is not None:
                 raise ValueError("choose either image config or proposal config")
             if (config is None and proposal_config is None) != (profile is None):
@@ -481,7 +581,24 @@ def serve_editor(
             )
             stack.callback(execution.close)
             editor = DraftEditor(
-                directory, operators, templates, execution=execution, execution_profile=profile
+                directory,
+                operators,
+                templates,
+                execution=execution,
+                execution_profile=(
+                    "CPU · 未配置模型"
+                    if all(
+                        value is None
+                        for value in (
+                            config,
+                            proposal_config,
+                            multi_view_config,
+                            remote_config,
+                            comfy_config,
+                        )
+                    )
+                    else profile
+                ),
             )
         server = create_editor_server(editor, port)
         stack.callback(server.server_close)

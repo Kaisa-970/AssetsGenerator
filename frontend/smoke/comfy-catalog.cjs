@@ -13,7 +13,7 @@ const { chromium, expect } = require("@playwright/test");
     page.on("dialog", (dialog) => dialog.accept());
     await page.goto(url);
     await page
-      .getByRole("button", { name: "comfy_image_chain_v1", exact: true })
+      .getByRole("button", { name: "comfy_image_chain_v1", exact: false })
       .click();
     await expect(page.locator(".react-flow__node")).toHaveCount(4);
     await page.locator('.react-flow__node[data-id="first"]').click();

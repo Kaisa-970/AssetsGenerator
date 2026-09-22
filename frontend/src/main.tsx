@@ -1,3 +1,4 @@
+import { executionStatus } from "./executionStatus";
 import { ParameterForm } from "./ParameterForm";
 import React, {
   useEffect,
@@ -55,7 +56,7 @@ function OperatorNode({ data, selected }: NodeProps<Node<Data>>) {
     <div className={`op-node ${selected ? "selected" : ""}`}>
       <div className="node-top">
         <span>{data.operator === "Pipeline input" ? "输入" : "算子"}</span>
-        {data.status && <em>{data.status}</em>}
+        {data.status && <em>{executionStatus(data.status)}</em>}
       </div>
       <strong>{data.label}</strong>
       <small>{data.operator}</small>
@@ -118,6 +119,12 @@ function App() {
   const [drafts, setDrafts] = useState<string[]>([]);
   const [result, setResult] = useState<unknown>();
   const [busy, setBusy] = useState(false);
+  const [compilePending, setCompilePending] = useState(true);
+  const [compileMessage, setCompileMessage] = useState("正在检查当前配置…");
+  const compileRequest = useRef<{
+    sequence: number;
+    controller?: AbortController;
+  }>({ sequence: 0 });
   const [filter, setFilter] = useState("");
   const [registeredOnly, setRegisteredOnly] = useState(false);
   const [previewHost, setPreviewHost] = useState<HTMLDivElement | null>(null);
@@ -134,17 +141,63 @@ function App() {
         typeof change === "function" ? change(pipelineRef.current) : change;
       pipelineRef.current = next;
       setPipeline(next);
+      compileRequest.current.controller?.abort();
+      compileRequest.current.sequence++;
       setResult(undefined);
-      setMessage("图已修改，请重新编译校验当前配置。");
+      setCompilePending(true);
+      setCompileMessage("正在检查当前配置…");
+      setMessage("图已修改，正在自动检查当前配置。");
     },
     [],
   );
+  const compileCurrent = useCallback(async (current: Pipeline) => {
+    compileRequest.current.controller?.abort();
+    const controller = new AbortController();
+    const sequence = ++compileRequest.current.sequence;
+    compileRequest.current.controller = controller;
+    setCompilePending(true);
+    setCompileMessage("正在检查当前配置…");
+    const active = () =>
+      !controller.signal.aborted &&
+      sequence === compileRequest.current.sequence &&
+      pipelineRef.current === current;
+    try {
+      const response = await api("/api/compile", {
+        method: "POST",
+        body: JSON.stringify({ pipeline: current }),
+        signal: controller.signal,
+      });
+      if (!active()) return;
+      setResult(response);
+      setCompileMessage(
+        response.ok
+          ? response.execution_ready
+            ? "编译通过；配置可执行，尚未启动。"
+            : `编译通过；${response.execution_reason || "当前仅支持编辑，未启用执行入口。"}`
+          : "编译未通过，请查看诊断。",
+      );
+    } catch (error) {
+      if (active()) {
+        setResult(undefined);
+        setCompileMessage(`当前配置无法核实：${String(error)}`);
+      }
+    } finally {
+      if (active()) setCompilePending(false);
+    }
+  }, []);
+  useEffect(() => {
+    const timer = window.setTimeout(() => void compileCurrent(pipeline), 250);
+    return () => {
+      window.clearTimeout(timer);
+      compileRequest.current.controller?.abort();
+    };
+  }, [pipeline, compileCurrent]);
   useEffect(() => {
     Promise.all([api("/api/catalog"), api("/api/drafts")])
       .then(([c, d]) => {
         setCatalog(c);
         setDrafts(d.drafts);
-        setMessage("拖入算子并连接端口，完成后点击编译校验。");
+        setMessage("选择模板或组合算子；配置改变后会自动检查。");
       })
       .catch((e) => setMessage(String(e)));
   }, []);
@@ -345,29 +398,10 @@ function App() {
           <button
             className="primary"
             disabled={busy}
-            onClick={() =>
-              guarded(async () => {
-                const r = await api("/api/compile", {
-                  method: "POST",
-                  body: JSON.stringify({ pipeline }),
-                });
-                if (pipelineRef.current !== pipeline) {
-                  setMessage("图已修改，忽略旧版本的编译结果；请重新编译。");
-                  return;
-                }
-                setResult(r);
-                setTab("plan");
-                setMessage(
-                  r.ok
-                    ? catalog.execution_enabled
-                      ? r.execution_ready
-                        ? "编译通过；可在运行页创建新运行。"
-                        : `编译通过；当前入口不可运行：${r.execution_reason || "执行条件未满足"}`
-                      : "编译通过；此页面不启动推理。"
-                    : "编译未通过，请查看诊断。",
-                );
-              })
-            }
+            onClick={() => {
+              setTab("plan");
+              void compileCurrent(pipeline);
+            }}
           >
             编译校验
           </button>
@@ -451,11 +485,30 @@ function App() {
               <button
                 key={t.id}
                 onClick={() => {
-                  if (window.confirm("加载示例会替换当前未保存画布，继续？"))
+                  if (window.confirm("加载示例会替换当前未保存画布，继续？")) {
                     loadPipeline(t.pipeline);
+                    setTab(catalog.execution_enabled ? "run" : "plan");
+                  }
                 }}
               >
                 {t.label}
+                {t.execution_ready !== undefined && (
+                  <small>
+                    {
+                      (
+                        {
+                          cpu: "CPU · 无需模型",
+                          local: "本地模型",
+                          remote: "远程服务",
+                          unconfigured: "未配置实现",
+                        } as Record<string, string>
+                      )[t.execution_level || "unconfigured"]
+                    }{" "}
+                    · {t.execution_ready ? "配置可执行" : "暂不可运行"}
+                  </small>
+                )}
+                {t.execution_reason && <small>{t.execution_reason}</small>}
+                {t.service_status && <small>{t.service_status}</small>}
               </button>
             ))}
           </div>
@@ -572,6 +625,9 @@ function App() {
               </button>
             )}
           </nav>
+          <p aria-label="当前配置编译状态" aria-live="polite">
+            {compileMessage}
+          </p>
           {catalog.execution_enabled && (
             <div hidden={tab !== "run"}>
               <ExecutionPanel
@@ -591,8 +647,19 @@ function App() {
                 }}
                 profile={catalog.execution_profile}
                 executionReason={
-                  (result as { execution_reason?: string } | undefined)
-                    ?.execution_reason
+                  compilePending
+                    ? "正在检查当前配置…"
+                    : !(result as { ok?: boolean } | undefined)?.ok
+                      ? compileMessage
+                      : (
+                            result as {
+                              execution_ready?: boolean;
+                              execution_reason?: string;
+                            }
+                          ).execution_ready
+                        ? undefined
+                        : (result as { execution_reason?: string })
+                            .execution_reason || "当前配置不适用于执行入口"
                 }
               />
             </div>
@@ -600,7 +667,7 @@ function App() {
           {tab === "run" ? null : tab === "plan" ? (
             <>
               <p>
-                编译反馈为后端权威结果。静态契约通过不代表模型推理成功。修改图后需要重新编译；启动运行时后端再次校验。
+                编译反馈为后端权威结果。静态契约通过不代表模型推理成功。修改图后自动重新编译；启动运行时后端再次校验。
               </p>
               {(
                 (

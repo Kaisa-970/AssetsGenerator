@@ -13,7 +13,7 @@ const { chromium, expect } = require("@playwright/test");
     page.on("dialog", (d) => d.accept());
     await page.goto(config.url);
     await page
-      .getByRole("button", { name: "dag-multi-view-asset", exact: true })
+      .getByRole("button", { name: "dag-multi-view-asset", exact: false })
       .click();
     await page.getByRole("button", { name: "运行", exact: true }).click();
     let observations = config.observations;
@@ -56,7 +56,12 @@ const { chromium, expect } = require("@playwright/test");
       (r) =>
         r.url() === config.url + "/api/runs" && r.request().method() === "POST",
     );
-    await page.getByRole("button", { name: "启动新运行", exact: true }).click();
+    await page
+      .getByRole("button", { name: "启动新运行 · 检查执行范围", exact: true })
+      .click();
+    await page
+      .getByRole("button", { name: "确认执行上述范围", exact: true })
+      .click();
     const start = await response;
     assert.equal(start.status(), 202);
     const created = await start.json();

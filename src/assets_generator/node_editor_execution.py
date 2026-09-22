@@ -18,12 +18,22 @@ from typing import Any
 
 from PIL import Image
 
-from .compiled_plan import CompiledPlan, thaw
+from .compiled_plan import CompiledPlan, digest, thaw
 from .contracts import ContractError, OperatorSpec, validate_port_value
+from .dag_adapters import BoundDagPlan
 from .dag_engine import DagEngine
+from .dag_models import PortMap
+from .dag_preflight import analyze_execution
 from .dag_review import DagMaskReviewService, create_dag_review_server
 from .models import ArtifactRef, PortValue, StructuredValue
-from .pipeline import _pipeline_from_raw, _port_spec, compile_pipeline, load_default_operator_specs
+from .node_editor_actions import project_run_actions
+from .pipeline import (
+    _operator_specs_from_raw,
+    _pipeline_from_raw,
+    _port_spec,
+    compile_pipeline,
+    load_default_operator_specs,
+)
 from .relations import RelationValidatorRegistry
 from .serialization import cache_key, canonical_json_bytes, read_json, to_primitive
 from .workbench_http import OutputPayload
@@ -85,6 +95,12 @@ def validate_editor_reference_inputs(plan: CompiledPlan) -> None:
             "zero_or_one",
         }:
             raise ContractError(f"canvas {name} input must accept a scalar ArtifactRef")
+
+
+class PreflightChanged(ContractError):
+    def __init__(self, report: dict[str, Any]):
+        super().__init__("execution preflight changed; inspect and confirm the new explanation")
+        self.report = report
 
 
 class NodeEditorExecution:
@@ -207,6 +223,14 @@ class NodeEditorExecution:
         return {
             "run": to_primitive(run),
             "snapshot_ref": snapshot_ref,
+            "actions": project_run_actions(
+                run,
+                command_busy=bool(
+                    self._closed
+                    or (self._worker and self._worker.is_alive())
+                    or (review and review[0]._thread and review[0]._thread.is_alive())
+                ),
+            ),
             "outputs": self._output_entries(run),
             "busy": busy_before or self._run_busy(run_id),
             "error": self._errors.get(run_id)
@@ -304,17 +328,42 @@ class NodeEditorExecution:
             "schema_version": identity.schema_version,
         }
 
+    def snapshot_reference(
+        self, run_id: str, node_id: str, port: str, snapshot: dict[str, Any]
+    ) -> dict[str, Any]:
+        from .node_editor_snapshot import snapshot_reference
+
+        return snapshot_reference(self, run_id, node_id, port, snapshot)
+
+    def snapshot_output(
+        self, run_id: str, node_id: str, port: str, snapshot: dict[str, Any]
+    ) -> OutputPayload:
+        from .node_editor_snapshot import snapshot_output
+
+        return snapshot_output(self, run_id, node_id, port, snapshot)
+
     def _bind_candidate_input(self, value: dict[str, Any], inputs: dict[str, Any]) -> ArtifactRef:
         source = value["source"]
-        if not isinstance(source, dict) or set(source) != {"run_id", "node_id", "port"}:
+        if not isinstance(source, dict) or set(source) not in (
+            {"run_id", "node_id", "port"},
+            {"run_id", "node_id", "port", "snapshot"},
+        ):
             raise ContractError("invalid candidate source")
-        resolved = self.output_reference(source["run_id"], source["node_id"], source["port"])
+        if "snapshot" in source:
+            resolved = self.snapshot_reference(
+                source["run_id"], source["node_id"], source["port"], source["snapshot"]
+            )
+            from .node_editor_snapshot import snapshot_run
+
+            run = snapshot_run(self, source["run_id"], source["snapshot"])
+        else:
+            resolved = self.output_reference(source["run_id"], source["node_id"], source["port"])
+            run = self.engine.repository.load(source["run_id"])
         if (
             resolved["reference"] != {"artifact_id": value["artifact_id"]}
             or "~" not in source["port"]
         ):
             raise ContractError("candidate source does not match mask")
-        run = self.engine.repository.load(source["run_id"])
         if run.dag is None:
             raise ContractError("candidate run missing DAG")
         parent = source["port"].rsplit("~", 1)[0]
@@ -350,6 +399,41 @@ class NodeEditorExecution:
                 "selection_binding": to_primitive(binding),
             },
         )
+
+    def continue_extraction(
+        self, run_id: str, node_id: str, snapshot_ref: dict[str, Any]
+    ) -> dict[str, Any]:
+        from .node_editor_continuation import continue_extraction
+
+        return continue_extraction(self, run_id, node_id, snapshot_ref)
+
+    def decision_summary(self, run_id: str, node_id: str) -> dict[str, Any]:
+        """Read a verified human decision without claiming authentication or QA approval."""
+        self._owned(run_id)
+        run = self.engine.repository.load(run_id)
+        if run.dag is None or node_id not in run.dag.node_states:
+            raise ContractError("human node missing")
+        state = run.dag.node_states[node_id]
+        if not state.attempts or state.current().decision is None:
+            return {"recorded": False, "run_id": run_id, "node_id": node_id}
+        attempt = state.current()
+        plan = self.engine._plan(run)
+        node = next(item for item in plan.static_plan.nodes if item.node_id == node_id)
+        self.engine._human_evidence(run, plan, node, attempt)
+        assert attempt.decision is not None
+        self.engine.repository.verify_reference_closure(attempt.decision)
+        decision = self.engine.store.read_structured(attempt.decision)
+        return {
+            "recorded": True,
+            "run_id": run_id,
+            "node_id": node_id,
+            "decision_ref": to_primitive(attempt.decision),
+            "reviewer": decision["reviewer"],
+            "payload": decision["payload"],
+            "node_finished_at": attempt.finished_at,
+            "decision_time": None,
+            "identity_verified": False,
+        }
 
     def output(self, run_id: str, node_id: str, port: str) -> OutputPayload:
         self._owned(run_id)
@@ -602,6 +686,289 @@ class NodeEditorExecution:
                 "views": to_primitive(bundle.views),
             }
 
+    def _compile_execution(self, raw: dict[str, Any]) -> BoundDagPlan:
+        if not isinstance(raw, dict) or set(raw) - {"pipeline", "version", "inputs", "nodes"}:
+            raise ContractError("invalid pipeline object")
+        plan = self.engine.registry.bind_plan(
+            compile_pipeline(
+                _pipeline_from_raw(raw),
+                self.specs,
+                relation_registry=self.relations,
+                require_explicit_joins=True,
+            ),
+            relation_registry=self.relations,
+        )
+        return plan
+
+    def _resolve_inputs(
+        self,
+        plan: BoundDagPlan,
+        image_path: str | None = None,
+        *,
+        image_ref: dict[str, Any] | None = None,
+        observations_ref: dict[str, Any] | None = None,
+        input_refs: dict[str, dict[str, Any]] | None = None,
+    ) -> PortMap:
+        actual_inputs: dict[str, PortValue | list[PortValue]]
+        if input_refs is not None:
+            if any(value is not None for value in (image_path, image_ref, observations_ref)):
+                raise ContractError("multi-input refs cannot be combined with image sources")
+            validate_editor_reference_inputs(plan.static_plan)
+            name = None
+            if not isinstance(input_refs, dict) or set(input_refs) != set(plan.static_plan.inputs):
+                raise ContractError(
+                    "multi-input run requires one ArtifactRef for every pipeline input"
+                )
+            if any(
+                not isinstance(value, dict)
+                or set(value) not in ({"artifact_id"}, {"artifact_id", "source"})
+                for value in input_refs.values()
+            ):
+                raise ContractError("multi-input inputs must be ArtifactRef objects")
+            actual_inputs = {
+                key: ArtifactRef(value["artifact_id"]) for key, value in input_refs.items()
+            }
+            for key, supplied in input_refs.items():
+                if "source" in supplied:
+                    actual_inputs[key] = self._bind_candidate_input(supplied, actual_inputs)
+        else:
+            name = validate_editor_execution(plan.static_plan)
+            if sum(v is not None for v in (image_path, image_ref, observations_ref)) != 1:
+                raise ContractError("provide exactly one input source")
+            if (name == "observations") != (observations_ref is not None):
+                raise ContractError("input source does not match pipeline input")
+            reference = observations_ref if name == "observations" else image_ref
+            if reference is not None:
+                if not isinstance(reference, dict) or set(reference) != {"artifact_id"}:
+                    raise ContractError("input reference must be an ArtifactRef")
+                image = ArtifactRef(**reference)
+            else:
+                if not isinstance(image_path, str) or not image_path.strip():
+                    raise ContractError("image path is required")
+                source_path = Path(image_path).expanduser()
+                if source_path.stat().st_size > 20 * 1024 * 1024:
+                    raise ContractError("image upload must be at most 20 MiB")
+                contract = plan.static_plan.inputs[name].contract
+                image = ArtifactRef(
+                    **self.upload_image(
+                        source_path.read_bytes(),
+                        rgba=tuple(contract["kinds"]) == ("rgba_image",),
+                    )["image_ref"]
+                )
+            actual_inputs = {name: image}
+        return actual_inputs
+
+    def _validate_actual_inputs(self, plan: BoundDagPlan, actual_inputs: PortMap) -> None:
+        for input_name, value in actual_inputs.items():
+            assert isinstance(value, ArtifactRef)
+            contract = plan.static_plan.inputs[input_name].contract
+            validate_port_value(
+                operator=plan.static_plan.pipeline_name,
+                port_name=input_name,
+                spec=_port_spec(thaw(contract)),
+                value=value,
+                store=self.engine.store,
+            )
+            identity = self.engine.store.get_manifest(value.artifact_id).identity
+            self.engine.repository.verify_reference_closure(value)
+            if identity.kind == "observation_bundle":
+                from .observations import observation_bundle_from_artifact
+
+                observation_bundle_from_artifact(value, self.engine.store)
+            if identity.kind == "rgba_image":
+                if (
+                    identity.schema_name,
+                    identity.schema_version,
+                    identity.identity_metadata,
+                ) != ("png", "1.0", {"media_type": "image/png", "channel_layout": "RGBA"}):
+                    raise ContractError("prepared RGBA Artifact has an invalid identity")
+                blob = self.engine.store.blob_path(value)
+                if blob.stat().st_size > 20 * 1024 * 1024:
+                    raise ContractError("image upload must be at most 20 MiB")
+                with Image.open(blob) as prepared:
+                    if (
+                        prepared.format != "PNG"
+                        or prepared.mode != "RGBA"
+                        or prepared.width * prepared.height > 25_000_000
+                        or getattr(prepared, "n_frames", 1) != 1
+                    ):
+                        raise ContractError("prepared RGBA input must be a bounded RGBA PNG")
+                    prepared.load()
+                    if prepared.getchannel("A").getextrema()[1] == 0:
+                        raise ContractError("prepared RGBA input contains no foreground")
+
+    def prepare_inputs(
+        self,
+        raw: dict[str, Any],
+        image_path: str | None = None,
+        *,
+        image_ref: dict[str, Any] | None = None,
+        observations_ref: dict[str, Any] | None = None,
+        input_refs: dict[str, dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        """Explicit input import/selection binding; never create or dispatch a run."""
+        with self._lock:
+            if self._closed:
+                raise ContractError("editor execution service is closing")
+            plan = self._compile_execution(raw)
+            actual = self._resolve_inputs(
+                plan,
+                image_path,
+                image_ref=image_ref,
+                observations_ref=observations_ref,
+                input_refs=input_refs,
+            )
+            self._validate_actual_inputs(plan, actual)
+            return {"input_refs": to_primitive(actual)}
+
+    def _exact_refs(self, input_refs: dict[str, dict[str, Any]]) -> PortMap:
+        if not isinstance(input_refs, dict) or any(
+            not isinstance(value, dict) or set(value) != {"artifact_id"}
+            for value in input_refs.values()
+        ):
+            raise ContractError("preflight requires prepared exact input_refs")
+        return {key: ArtifactRef(**value) for key, value in input_refs.items()}
+
+    def _preflight_report(
+        self,
+        plan: BoundDagPlan,
+        actual: PortMap,
+        reuse_ref: ArtifactRef | None,
+    ) -> dict[str, Any]:
+        report = analyze_execution(self.engine, plan, actual, reuse_ref)
+        try:
+            validate_editor_reference_inputs(plan.static_plan)
+            if set(actual) != set(plan.static_plan.inputs):
+                raise ContractError("preflight requires every named input")
+            self._validate_actual_inputs(plan, actual)
+            if reuse_ref is not None:
+                source = self.engine.store.read_structured(reuse_ref)
+                self._owned(source["run_id"])
+        except (ValueError, OSError, KeyError, TypeError) as error:
+            report["execution_ready"] = False
+            report["entry_error"] = str(error)
+            for row in report["nodes"].values():
+                row.update(status="blocked", reason="entry_input_invalid", detail=str(error))
+        report.pop("digest", None)
+        report["digest"] = digest(report)
+        return report
+
+    def preflight(
+        self,
+        raw: dict[str, Any],
+        *,
+        input_refs: dict[str, dict[str, Any]],
+        reuse_source: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Read-only explanation over already prepared immutable inputs."""
+        actual = self._exact_refs(input_refs)
+        if reuse_source is not None and (
+            not isinstance(reuse_source, dict) or set(reuse_source) != {"artifact_id"}
+        ):
+            raise ContractError("reuse source must be an immutable snapshot reference")
+        try:
+            plan = self._compile_execution(raw)
+        except (ValueError, OSError, KeyError, TypeError, AttributeError) as error:
+            report: dict[str, Any] = {
+                "schema_version": "execution_preflight@1",
+                "plan_id": None,
+                "pipeline": raw,
+                "inputs": to_primitive(actual),
+                "reuse_source": reuse_source,
+                "nodes": {},
+                "execution_ready": False,
+                "error": {"reason": "plan_invalid", "detail": str(error)},
+            }
+            report["digest"] = digest(report)
+            return report
+        return self._preflight_report(
+            plan,
+            actual,
+            ArtifactRef(**reuse_source) if reuse_source is not None else None,
+        )
+
+    def _replay_prepared_creation(
+        self,
+        raw: dict[str, Any],
+        input_refs: dict[str, dict[str, Any]],
+        reuse_source: dict[str, Any] | None,
+        key: str,
+    ) -> dict[str, Any] | None:
+        """Validate replay against persisted configuration, independent of live adapters.
+
+        Any ambiguity raises a normal error, preserving the caller's unresolved
+        creation request. It must never become a preflight-changed rejection.
+        """
+        repository = self.engine.repository
+        receipt = repository.creation_receipt("node-editor:" + key)
+        if receipt is None:
+            return None
+        index = self.engine.store.root / "runs" / f"{receipt.run_id}.json"
+        marker = repository.directory / "created_runs" / f"{receipt.run_id}.json"
+        if not index.exists():
+            if marker.exists():
+                raise ContractError("created run index is missing; refusing to recreate it")
+            return None
+        self._owned(receipt.run_id)
+        existing = repository.load(receipt.run_id)
+        if existing.dag is None:
+            raise ContractError("creation receipt references a non-DAG run")
+        reference = existing.dag.plan
+        if not self.engine.store.verify_digest(reference):
+            raise ContractError("created run plan evidence is missing or corrupt")
+        stored = self.engine.store.read_structured(reference)
+        identity = self.engine.store.get_manifest(reference.artifact_id).identity
+        if (identity.kind, identity.schema_name, identity.schema_version) != (
+            "dag_plan",
+            "BoundDagPlan",
+            "1.0",
+        ):
+            raise ContractError("invalid created run plan contract")
+        static = stored["static_plan"]
+        specs = _operator_specs_from_raw(
+            {
+                "operators": list(
+                    {
+                        node["operator"]: node["operator_contract"] for node in static["nodes"]
+                    }.values()
+                )
+            }
+        )
+        if not isinstance(raw, dict) or set(raw) - {"pipeline", "version", "inputs", "nodes"}:
+            raise ContractError("invalid pipeline object")
+        requested = compile_pipeline(
+            _pipeline_from_raw(raw),
+            specs,
+            relation_registry=self.relations,
+            require_explicit_joins=True,
+        )
+        actual = self._exact_refs(input_refs)
+        if reuse_source is not None and (
+            not isinstance(reuse_source, dict) or set(reuse_source) != {"artifact_id"}
+        ):
+            raise ContractError("reuse source must be an immutable snapshot reference")
+        request_digest = cache_key(
+            {
+                "plan": stored,
+                "inputs": to_primitive(actual),
+                **({"reuse_source": reuse_source} if reuse_source is not None else {}),
+            }
+        )
+        if (
+            canonical_json_bytes(requested.to_dict()) != canonical_json_bytes(static)
+            or existing.dag.named_actual_inputs != actual
+            or existing.dag.plan_id != stored["plan_id"]
+            or receipt.request_digest != request_digest
+        ):
+            raise ContractError("creation idempotency key conflict")
+        if not marker.exists():
+            repository._mutate(
+                lambda: repository.io.write(
+                    marker, canonical_json_bytes({"run_id": receipt.run_id}), exclusive=True
+                )
+            )
+        return self.snapshot(receipt.run_id)
+
     def start(
         self,
         raw: dict[str, Any],
@@ -612,6 +979,7 @@ class NodeEditorExecution:
         input_refs: dict[str, dict[str, Any]] | None = None,
         idempotency_key: str | None = None,
         reuse_source: dict[str, Any] | None = None,
+        preflight_digest: str | None = None,
     ) -> dict[str, Any]:
         with self._lock:
             if idempotency_key is not None and (
@@ -621,132 +989,74 @@ class NodeEditorExecution:
                 raise ContractError("invalid creation idempotency key")
             if self._closed:
                 raise ContractError("editor execution service is closing")
-            if not isinstance(raw, dict) or set(raw) - {"pipeline", "version", "inputs", "nodes"}:
-                raise ContractError("invalid pipeline object")
-            plan = self.engine.registry.bind_plan(
-                compile_pipeline(
-                    _pipeline_from_raw(raw),
-                    self.specs,
-                    relation_registry=self.relations,
-                    require_explicit_joins=True,
-                ),
-                relation_registry=self.relations,
-            )
-            actual_inputs: dict[str, PortValue | list[PortValue]]
-            if input_refs is not None:
+            if idempotency_key is not None and input_refs is not None:
                 if any(value is not None for value in (image_path, image_ref, observations_ref)):
-                    raise ContractError("multi-input refs cannot be combined with image sources")
-                validate_editor_reference_inputs(plan.static_plan)
-                name = None
-                if not isinstance(input_refs, dict) or set(input_refs) != set(
-                    plan.static_plan.inputs
-                ):
-                    raise ContractError(
-                        "multi-input run requires one ArtifactRef for every pipeline input"
-                    )
-                if any(
-                    not isinstance(value, dict)
-                    or set(value) not in ({"artifact_id"}, {"artifact_id", "source"})
+                    raise ContractError("prepared refs cannot be combined with image sources")
+                # Candidate source preparation is a legacy start feature, not an
+                # exact-reference replay. Checked requests never carry it.
+                if preflight_digest is not None or all(
+                    isinstance(value, dict) and set(value) == {"artifact_id"}
                     for value in input_refs.values()
                 ):
-                    raise ContractError("multi-input inputs must be ArtifactRef objects")
-                actual_inputs = {
-                    key: ArtifactRef(value["artifact_id"]) for key, value in input_refs.items()
-                }
-                for key, supplied in input_refs.items():
-                    if "source" in supplied:
-                        actual_inputs[key] = self._bind_candidate_input(supplied, actual_inputs)
-            else:
-                name = validate_editor_execution(plan.static_plan)
-                if sum(v is not None for v in (image_path, image_ref, observations_ref)) != 1:
-                    raise ContractError("provide exactly one input source")
-                if (name == "observations") != (observations_ref is not None):
-                    raise ContractError("input source does not match pipeline input")
-                reference = observations_ref if name == "observations" else image_ref
-                if reference is not None:
-                    if not isinstance(reference, dict) or set(reference) != {"artifact_id"}:
-                        raise ContractError("input reference must be an ArtifactRef")
-                    image = ArtifactRef(**reference)
-                else:
-                    if not isinstance(image_path, str) or not image_path.strip():
-                        raise ContractError("image path is required")
-                    source_path = Path(image_path).expanduser()
-                    if source_path.stat().st_size > 20 * 1024 * 1024:
-                        raise ContractError("image upload must be at most 20 MiB")
-                    contract = plan.static_plan.inputs[name].contract
-                    image = ArtifactRef(
-                        **self.upload_image(
-                            source_path.read_bytes(),
-                            rgba=tuple(contract["kinds"]) == ("rgba_image",),
-                        )["image_ref"]
+                    replay = self._replay_prepared_creation(
+                        raw, input_refs, reuse_source, idempotency_key
                     )
-                actual_inputs = {name: image}
-            for input_name, value in actual_inputs.items():
-                assert isinstance(value, ArtifactRef)
-                contract = plan.static_plan.inputs[input_name].contract
-                validate_port_value(
-                    operator=plan.static_plan.pipeline_name,
-                    port_name=input_name,
-                    spec=_port_spec(thaw(contract)),
-                    value=value,
-                    store=self.engine.store,
+                    if replay is not None:
+                        return replay
+            try:
+                plan = self._compile_execution(raw)
+            except (ValueError, OSError, KeyError, TypeError, AttributeError):
+                if preflight_digest is not None and input_refs is not None:
+                    raise PreflightChanged(
+                        self.preflight(raw, input_refs=input_refs, reuse_source=reuse_source)
+                    ) from None
+                raise
+            if preflight_digest is not None:
+                if not isinstance(preflight_digest, str) or not preflight_digest:
+                    raise ContractError("preflight_digest must be nonempty text")
+                if input_refs is None or any(
+                    value is not None for value in (image_path, image_ref, observations_ref)
+                ):
+                    raise ContractError("checked creation requires prepared input_refs")
+                actual_inputs = self._exact_refs(input_refs)
+            else:
+                actual_inputs = self._resolve_inputs(
+                    plan,
+                    image_path,
+                    image_ref=image_ref,
+                    observations_ref=observations_ref,
+                    input_refs=input_refs,
                 )
-                identity = self.engine.store.get_manifest(value.artifact_id).identity
-                self.engine.repository.verify_reference_closure(value)
-                if identity.kind == "observation_bundle":
-                    from .observations import observation_bundle_from_artifact
-
-                    observation_bundle_from_artifact(value, self.engine.store)
-                if identity.kind == "rgba_image":
-                    if (
-                        identity.schema_name,
-                        identity.schema_version,
-                        identity.identity_metadata,
-                    ) != ("png", "1.0", {"media_type": "image/png", "channel_layout": "RGBA"}):
-                        raise ContractError("prepared RGBA Artifact has an invalid identity")
-                    blob = self.engine.store.blob_path(value)
-                    if blob.stat().st_size > 20 * 1024 * 1024:
-                        raise ContractError("image upload must be at most 20 MiB")
-                    with Image.open(blob) as prepared:
-                        if (
-                            prepared.format != "PNG"
-                            or prepared.mode != "RGBA"
-                            or prepared.width * prepared.height > 25_000_000
-                            or getattr(prepared, "n_frames", 1) != 1
-                        ):
-                            raise ContractError("prepared RGBA input must be a bounded RGBA PNG")
-                        prepared.load()
-                        if prepared.getchannel("A").getextrema()[1] == 0:
-                            raise ContractError("prepared RGBA input contains no foreground")
+                self._validate_actual_inputs(plan, actual_inputs)
             reuse_ref = None
             if reuse_source is not None:
                 if not isinstance(reuse_source, dict) or set(reuse_source) != {"artifact_id"}:
                     raise ContractError("reuse source must be an immutable snapshot reference")
                 reuse_ref = ArtifactRef(**reuse_source)
-                self.engine.repository.verify_reference_closure(reuse_ref)
-                source = self.engine.store.read_structured(reuse_ref)
-                self._owned(source["run_id"])
-                if source.get("dag") is None:
-                    raise ContractError("reuse source must contain DAG state")
             run_id = None
             marker = None
             repository = self.engine.repository
             if idempotency_key is not None:
                 if repository.creation_receipt("node-editor:" + idempotency_key) is None:
                     self._idle()
-                receipt = repository.reserve_creation(
-                    CreationReceipt(
-                        "node-editor:" + idempotency_key,
-                        cache_key(
-                            {
-                                "plan": plan.to_dict(),
-                                "inputs": to_primitive(actual_inputs),
-                                **({"reuse_source": to_primitive(reuse_ref)} if reuse_ref else {}),
-                            }
-                        ),
-                        f"dag_{uuid.uuid4().hex}",
-                    )
+                requested_receipt = CreationReceipt(
+                    "node-editor:" + idempotency_key,
+                    cache_key(
+                        {
+                            "plan": plan.to_dict(),
+                            "inputs": to_primitive(actual_inputs),
+                            **({"reuse_source": to_primitive(reuse_ref)} if reuse_ref else {}),
+                        }
+                    ),
+                    f"dag_{uuid.uuid4().hex}",
                 )
+                receipt = repository.creation_receipt("node-editor:" + idempotency_key)
+                if (
+                    receipt is not None
+                    and receipt.request_digest != requested_receipt.request_digest
+                ):
+                    raise ContractError("creation idempotency key conflict")
+                receipt = receipt or requested_receipt
                 run_id = receipt.run_id
                 marker = repository.directory / "created_runs" / f"{run_id}.json"
                 index = self.engine.store.root / "runs" / f"{run_id}.json"
@@ -770,7 +1080,19 @@ class NodeEditorExecution:
                     return self.snapshot(run_id)
                 if marker.exists():
                     raise ContractError("created run index is missing; refusing to recreate it")
+            if preflight_digest is not None:
+                report = self._preflight_report(plan, actual_inputs, reuse_ref)
+                if report["digest"] != preflight_digest or not report["execution_ready"]:
+                    raise PreflightChanged(report)
+            elif reuse_ref is not None:
+                self.engine.repository.verify_reference_closure(reuse_ref)
+                source = self.engine.store.read_structured(reuse_ref)
+                self._owned(source["run_id"])
+                if source.get("dag") is None:
+                    raise ContractError("reuse source must contain DAG state")
             self._idle()
+            if idempotency_key is not None:
+                repository.reserve_creation(requested_receipt)
             self._stop_review()
             run = self.engine.create(
                 plan,

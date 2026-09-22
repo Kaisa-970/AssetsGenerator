@@ -24,7 +24,10 @@ const { chromium, expect } = require("@playwright/test");
         (r) => r.url().endsWith("/api/runs") && r.request().method() === "POST",
       );
       await page
-        .getByRole("button", { name: "启动新运行", exact: true })
+        .getByRole("button", { name: "启动新运行 · 检查执行范围", exact: true })
+        .click();
+      await page
+        .getByRole("button", { name: "确认执行上述范围", exact: true })
         .click();
       const r = await response;
       assert.equal(r.status(), 202);
@@ -36,7 +39,7 @@ const { chromium, expect } = require("@playwright/test");
     };
     await page.goto(url);
     await page
-      .getByRole("button", { name: "cpu-image-editor", exact: true })
+      .getByRole("button", { name: "cpu-image-editor", exact: false })
       .click();
     await page.getByRole("button", { name: "运行", exact: true }).click();
     await page.getByLabel("图片来源", { exact: true }).selectOption("upload");
@@ -49,7 +52,7 @@ const { chromium, expect } = require("@playwright/test");
     const reference =
       original.run.dag.node_states.encode.attempts[0].outputs.image;
     await page
-      .getByRole("button", { name: "cpu-image-mask", exact: true })
+      .getByRole("button", { name: "cpu-image-mask", exact: false })
       .click();
     await page.getByRole("button", { name: "编译校验", exact: true }).click();
     await expect(page.locator("footer[role=status]")).toContainText(

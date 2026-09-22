@@ -140,8 +140,22 @@ def test_async_start_frozen_plan_readonly_snapshots_and_review(tmp_path, monkeyp
             decision_release.set()
             completed = wait(service, run_id)
             assert completed["run"]["status"] == "succeeded", completed
+            revision_before = repo.load(run_id).dag.revision
+            files_before = sorted(str(p) for p in store.root.rglob("*") if p.is_file())
+            summary = service.decision_summary(run_id, "choose_object")
+            assert repo.load(run_id).dag.revision == revision_before
+            assert sorted(str(p) for p in store.root.rglob("*") if p.is_file()) == files_before
+            assert summary["recorded"] and summary["reviewer"] == "test"
+            assert summary["decision_time"] is None
+            assert summary["identity_verified"] is False
+            assert summary["node_finished_at"]
+            decision_ref = repo.load(run_id).dag.node_states["choose_object"].current().decision
+            assert summary["decision_ref"]["artifact_id"] == decision_ref.artifact_id
             assert len(completed["outputs"]) == 4
             assert service.output(run_id, "generate_asset", "glb").data[:4] == b"glTF"
+            store.blob_path(decision_ref).unlink()
+            with pytest.raises((ValueError, OSError)):
+                service.decision_summary(run_id, "choose_object")
         finally:
             release.set()
             decision_release.set()

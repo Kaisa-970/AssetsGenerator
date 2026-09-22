@@ -51,18 +51,24 @@ const { chromium, expect } = require("@playwright/test");
       );
     } else {
       await page
-        .getByRole("button", { name: "cpu-image-editor", exact: true })
+        .getByRole("button", { name: "cpu-image-editor", exact: false })
         .click();
     }
     await page.getByRole("button", { name: "运行", exact: true }).click();
     await page.getByLabel("图片来源").selectOption("upload");
     await page.getByLabel("上传运行图片").setInputFiles(process.argv[3]);
-    const start = page.getByRole("button", { name: "启动新运行", exact: true });
+    const start = page.getByRole("button", {
+      name: "启动新运行 · 检查执行范围",
+      exact: true,
+    });
     await expect(start).toBeEnabled();
     const response = page.waitForResponse(
       (r) => r.url().endsWith("/api/runs") && r.request().method() === "POST",
     );
     await start.click();
+    await page
+      .getByRole("button", { name: "确认执行上述范围", exact: true })
+      .click();
     const result = await response;
     assert.equal(result.status(), 202, await result.text());
     const id = (await result.json()).run.run_id;

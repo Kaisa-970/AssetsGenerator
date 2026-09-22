@@ -21,15 +21,19 @@ const { chromium, expect } = require("@playwright/test");
     let id;
     if (process.argv[3] === "start") {
       await page
-        .getByRole("button", { name: "comfy_image_chain_v1", exact: true })
+        .getByRole("button", { name: "comfy_image_chain_v1", exact: false })
         .click();
       await page.getByRole("button", { name: "运行", exact: true }).click();
+      await page.getByLabel("图片来源", { exact: true }).selectOption("path");
       await page.getByLabel("运行图片路径").fill(config.image);
       const response = page.waitForResponse(
         (r) => r.url().endsWith("/api/runs") && r.request().method() === "POST",
       );
       await page
-        .getByRole("button", { name: "启动新运行", exact: true })
+        .getByRole("button", { name: "启动新运行 · 检查执行范围", exact: true })
+        .click();
+      await page
+        .getByRole("button", { name: "确认执行上述范围", exact: true })
         .click();
       const r = await response;
       assert.equal(r.status(), 202, await r.text());

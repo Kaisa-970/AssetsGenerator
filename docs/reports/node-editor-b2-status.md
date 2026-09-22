@@ -13,6 +13,7 @@
 | 本地推理中断 | TRELLIS.2 执行器中断、孤儿门控、显式重试 | [执行器验收](trellis-executor-interruption.md)、[父 DAG 重试](parent-dag-retry-real.md) |
 | HTTP 服务中断 | 真实模型执行时监听服务 SIGKILL 后重连及原作业发布 | [HTTP 验收](http-listener-crash-real.md)；不证明主机或 GPU 驱动故障恢复 |
 | 输出与输入复用 | GLB 预览、下载、标量 Artifact 输入、历史输出复用 | [历史记录](node-editor-b2-history.md)；复杂压缩材质、集合表单未覆盖 |
+| 交互设计首片 | 独立 QA、资产边界和人工决定展示；无模型 CPU 图片入口 | [定向验证](node-editor-product-cpu-smoke.md)；[预检与启动复核已接入](node-editor-preflight-cpu-smoke.md)，自动编译及输入缩略图已实现；[继续提取与操作提示](node-editor-continuation-actions.md)已接入；主路径仍需简化 |
 | ComfyUI | 实验协议及 CPU 浏览器验证 | **真实部署验收延期**；有实际使用需求后再启动 |
 
 本轮已整理共享网格读取、provenance、release 边界，见 [改动与验证](shared-foundations-20260921.md)；

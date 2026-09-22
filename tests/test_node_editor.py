@@ -621,3 +621,12 @@ def test_http_mask_upload_returns_binary_mask_reference(tmp_path):
             server.shutdown()
             thread.join()
             execution.close()
+
+
+def test_catalog_reports_template_readiness_without_claiming_runtime_health(tmp_path):
+    editor = fixture(tmp_path)
+    template = editor.catalog()["templates"][0]
+    assert template["execution_ready"] is False
+    assert template["execution_reason"]
+    assert template["execution_level"] == "unconfigured"
+    assert template["service_status"] is None

@@ -39,7 +39,7 @@ const { chromium, expect } = require("@playwright/test");
     if (mode === "submit") {
       assert.notEqual(config.first, config.second);
       await page
-        .getByRole("button", { name: "remote-shape-compare", exact: true })
+        .getByRole("button", { name: "remote-shape-compare", exact: false })
         .click();
       for (const [node, backend] of [
         ["first_shape", config.first],
@@ -74,7 +74,10 @@ const { chromium, expect } = require("@playwright/test");
         (r) => r.url().endsWith("/api/runs") && r.request().method() === "POST",
       );
       await page
-        .getByRole("button", { name: "启动新运行", exact: true })
+        .getByRole("button", { name: "启动新运行 · 检查执行范围", exact: true })
+        .click();
+      await page
+        .getByRole("button", { name: "确认执行上述范围", exact: true })
         .click();
       const response = await started;
       assert.equal(response.status(), 202);

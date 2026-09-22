@@ -16,7 +16,7 @@ const { chromium, expect } = require("@playwright/test");
     page.on("dialog", (dialog) => dialog.accept());
     await page.goto(url);
     await page
-      .getByRole("button", { name: "cpu-image-mask", exact: true })
+      .getByRole("button", { name: "cpu-image-mask", exact: false })
       .click();
     const compiledResponse = page.waitForResponse((r) =>
       r.url().endsWith("/api/compile"),
@@ -25,7 +25,10 @@ const { chromium, expect } = require("@playwright/test");
     const compiled = await (await compiledResponse).json();
     assert.equal(compiled.execution_ready, true);
     await page.getByRole("button", { name: "运行", exact: true }).click();
-    const start = page.getByRole("button", { name: "启动新运行", exact: true });
+    const start = page.getByRole("button", {
+      name: "启动新运行 · 检查执行范围",
+      exact: true,
+    });
     await expect(start).toBeDisabled();
     for (const [name, file, endpoint] of [
       ["image", input, "image"],
@@ -44,6 +47,9 @@ const { chromium, expect } = require("@playwright/test");
       (r) => r.url().endsWith("/api/runs") && r.request().method() === "POST",
     );
     await start.click();
+    await page
+      .getByRole("button", { name: "确认执行上述范围", exact: true })
+      .click();
     const started = await response;
     assert.equal(started.status(), 202);
     const submitted = started.request().postDataJSON();

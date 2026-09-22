@@ -1,3 +1,4 @@
+import { executionStatus } from "./executionStatus";
 import { useEffect, useState } from "react";
 import {
   ReactFlow,
@@ -92,7 +93,7 @@ export function RunGraph({
         id,
         position: { x: levels[id] * 240, y: row * 130 },
         data: {
-          label: `${id}\n${node.operator}\n${states[id]?.status || "未知"}`,
+          label: `${id}\n${node.operator}\n${executionStatus(states[id]?.status)}`,
         },
         style: {
           whiteSpace: "pre-line",

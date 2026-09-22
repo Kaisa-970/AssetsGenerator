@@ -16,7 +16,7 @@ const { chromium, expect } = require("@playwright/test");
     page.on("dialog", (dialog) => dialog.accept());
     await page.goto(url);
     await page
-      .getByRole("button", { name: "cpu-image-editor", exact: true })
+      .getByRole("button", { name: "cpu-image-editor", exact: false })
       .click();
     for (const [index, size] of [
       [0, [64, 32]],
@@ -61,7 +61,12 @@ const { chromium, expect } = require("@playwright/test");
     const response = page.waitForResponse(
       (r) => r.url().endsWith("/api/runs") && r.request().method() === "POST",
     );
-    await page.getByRole("button", { name: "启动新运行", exact: true }).click();
+    await page
+      .getByRole("button", { name: "启动新运行 · 检查执行范围", exact: true })
+      .click();
+    await page
+      .getByRole("button", { name: "确认执行上述范围", exact: true })
+      .click();
     const started = await response;
     assert.equal(started.status(), 202);
     const created = await started.json();

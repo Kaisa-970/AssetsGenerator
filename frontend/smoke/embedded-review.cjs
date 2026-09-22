@@ -12,7 +12,12 @@ const { chromium, expect } = require("@playwright/test");
   p.on("dialog", (d) => d.accept());
   await p.goto(config.url);
   const remoteSubmit = process.argv.includes("--remote-submit");
-  await p.getByRole("button", { name: config.template || "dag-image-asset", exact: true }).click();
+  await p
+    .getByRole("button", {
+      name: config.template || "dag-image-asset",
+      exact: false,
+    })
+    .click();
   await p.getByRole("button", { name: "运行", exact: true }).click();
   let created;
   let uploaded;
@@ -27,9 +32,14 @@ const { chromium, expect } = require("@playwright/test");
       await route.fulfill({ response });
     });
     await p.getByLabel("上传运行图片").setInputFiles(config.image);
-    await expect(p.getByText("图片已上传；点击启动新运行才会执行模型。", { exact: true })).toBeVisible();
+    await expect(
+      p.getByText("图片已上传；点击启动新运行才会执行模型。", { exact: true }),
+    ).toBeVisible();
     assert.ok(uploaded.image_ref.artifact_id);
-    assert.deepEqual(await (await p.request.get(config.url + "/api/runs")).json(), { runs: [] });
+    assert.deepEqual(
+      await (await p.request.get(config.url + "/api/runs")).json(),
+      { runs: [] },
+    );
     // Let the real server commit and dispatch, then lose only the response.
     await p.route(config.url + "/api/runs", async (route) => {
       if (route.request().method() !== "POST") return route.continue();
@@ -39,26 +49,50 @@ const { chromium, expect } = require("@playwright/test");
       created = await response.json();
       await route.abort("failed");
     });
-    await p.getByRole("button", { name: "启动新运行", exact: true }).click();
-    await p.getByRole("button", { name: "重试原创建请求", exact: true }).waitFor();
-    await expect(p.getByRole("button", { name: "重试原创建请求", exact: true })).toBeEnabled();
+    await p
+      .getByRole("button", { name: "启动新运行 · 检查执行范围", exact: true })
+      .click();
+    await p
+      .getByRole("button", { name: "确认执行上述范围", exact: true })
+      .click();
+    await p
+      .getByRole("button", { name: "重试原创建请求", exact: true })
+      .waitFor();
+    await expect(
+      p.getByRole("button", { name: "重试原创建请求", exact: true }),
+    ).toBeEnabled();
     await p.unroute(config.url + "/api/runs");
     await p.reload();
     await p.getByRole("button", { name: "运行", exact: true }).click();
-    const replayResponse = p.waitForResponse((r) => r.url() === config.url + "/api/runs" && r.request().method() === "POST");
-    await p.getByRole("button", { name: "重试原创建请求", exact: true }).click();
+    const replayResponse = p.waitForResponse(
+      (r) =>
+        r.url() === config.url + "/api/runs" && r.request().method() === "POST",
+    );
+    await p
+      .getByRole("button", { name: "重试原创建请求", exact: true })
+      .click();
     const replay = await replayResponse;
     assert.deepEqual(replay.request().postDataJSON(), originalRequest);
-    assert.deepEqual(originalRequest.image_ref, uploaded.image_ref);
+    assert.deepEqual(originalRequest.input_refs.image, uploaded.image_ref);
+    assert.ok(originalRequest.preflight_digest);
+    assert.equal(originalRequest.image_ref, undefined);
     assert.equal((await replay.json()).run.run_id, created.run.run_id);
     const runs = await (await p.request.get(config.url + "/api/runs")).json();
     assert.equal(runs.runs.length, 1);
   } else {
+    await p.getByLabel("图片来源", { exact: true }).selectOption("path");
     await p.getByLabel("运行图片路径").fill(config.image);
     const creation = p.waitForResponse(
-      (response) => response.url() === config.url + "/api/runs" && response.request().method() === "POST",
+      (response) =>
+        response.url() === config.url + "/api/runs" &&
+        response.request().method() === "POST",
     );
-    await p.getByRole("button", { name: "启动新运行", exact: true }).click();
+    await p
+      .getByRole("button", { name: "启动新运行 · 检查执行范围", exact: true })
+      .click();
+    await p
+      .getByRole("button", { name: "确认执行上述范围", exact: true })
+      .click();
     created = await (await creation).json();
   }
   const runId = created.run.run_id;
@@ -92,14 +126,29 @@ const { chromium, expect } = require("@playwright/test");
     assert.equal(nodes.shape.attempts.length, 1);
     assert.equal(Object.keys(result.run.dag.receipts).length, 1);
     assert.deepEqual(errors, []);
-    assert.equal(nodes.shape.attempts[0].remote_binding.submission_key, await job.inputValue());
+    assert.equal(
+      nodes.shape.attempts[0].remote_binding.submission_key,
+      await job.inputValue(),
+    );
     // Save the exact parent and job before any separate service execution command.
-    fs.writeFileSync(config.root + "/browser-submitted.json", JSON.stringify({
-      result, errors, uploaded, originalRequest,
-      submission_key: await job.inputValue(),
-      reviewer: "Codex automated browser smoke (not user approval)",
-      acceptance: "submitted only; remote inference and release not verified",
-    }, null, 2), { flag: "wx" });
+    fs.writeFileSync(
+      config.root + "/browser-submitted.json",
+      JSON.stringify(
+        {
+          result,
+          errors,
+          uploaded,
+          originalRequest,
+          submission_key: await job.inputValue(),
+          reviewer: "Codex automated browser smoke (not user approval)",
+          acceptance:
+            "submitted only; remote inference and release not verified",
+        },
+        null,
+        2,
+      ),
+      { flag: "wx" },
+    );
     await p.screenshot({ path: config.root + "/browser-submitted.png" });
     console.log(runId, "submitted", await job.inputValue());
     await b.close();
@@ -128,7 +177,11 @@ const { chromium, expect } = require("@playwright/test");
     Object.keys(result.run.dag.receipts).length !== 1
   )
     throw Error(JSON.stringify({ result, errors }));
-  if (uploadRetry) assert.deepEqual(result.run.dag.named_actual_inputs.image, uploaded.image_ref);
+  if (uploadRetry)
+    assert.deepEqual(
+      result.run.dag.named_actual_inputs.image,
+      uploaded.image_ref,
+    );
   for (const output of result.outputs) {
     const response = await p.request.get(config.url + output.url);
     assert.equal(response.status(), 200);

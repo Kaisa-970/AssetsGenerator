@@ -1,3 +1,11 @@
+import { OutputComparison, type ComparisonSlot } from "./OutputComparison";
+import { NodeActionHint, type RunActionAdvice } from "./NodeActionHint";
+import { ContinueExtraction } from "./ContinueExtraction";
+import { ExecutionPreflight } from "./ExecutionPreflight";
+import { LocalInputPreview } from "./LocalInputPreview";
+import { QualityEvidencePanel } from "./QualityEvidencePanel";
+import { HumanDecisionSummary } from "./HumanDecisionSummary";
+import { executionStatus } from "./executionStatus";
 import { createPortal } from "react-dom";
 import { remoteStatusMessage } from "./remoteStatus";
 import { ImageOutput } from "./ImageOutput";
@@ -14,6 +22,8 @@ type NodeState = {
   recovery_blocked_reason?: string | null;
   dispatch_block_reason?: string | null;
   attempts?: {
+    request?: { artifact_id: string };
+    decision?: { artifact_id: string };
     reused_from?: { artifact_id: string };
     resolved_inputs?: Record<string, unknown>;
     outputs?: Record<string, unknown>;
@@ -45,6 +55,7 @@ type Run = {
   };
 };
 type Envelope = {
+  actions?: RunActionAdvice;
   snapshot_ref?: { artifact_id: string };
   run: Run;
   busy?: boolean;
@@ -67,6 +78,7 @@ type CreationRequest = {
   reuse_source?: { artifact_id: string };
   pipeline: Pipeline;
   idempotency_key: string;
+  preflight_digest?: string;
   image_path?: string;
   image_ref?: Record<string, unknown>;
   observations_ref?: Record<string, unknown>;
@@ -133,6 +145,10 @@ export function ExecutionPanel({
   previewHost?: HTMLElement | null;
   onLoadDraft: (pipeline: Pipeline) => void;
 }) {
+  const [comparison, setComparison] = useState<
+    Partial<Record<"A" | "B", ComparisonSlot>>
+  >({});
+  const [comparisonOpen, setComparisonOpen] = useState(false);
   const [reuseResults, setReuseResults] = useState(true);
   const [previewPort, setPreviewPort] = useState("");
   const [runToSelection, setRunToSelection] = useState(false);
@@ -197,6 +213,18 @@ export function ExecutionPanel({
   const [inputRefs, setInputRefs] = useState<
     Record<string, Record<string, unknown>>
   >({});
+  const [inputOrigins, setInputOrigins] = useState<
+    Record<
+      string,
+      {
+        artifactId: string;
+        snapshot?: string;
+        runId: string;
+        nodeId: string;
+        port: string;
+      }
+    >
+  >({});
   const inputSignature = JSON.stringify(effectivePipeline.inputs);
   const inputGeneration = useRef({ signature: inputSignature, revision: 0 });
   if (inputGeneration.current.signature !== inputSignature) {
@@ -207,6 +235,7 @@ export function ExecutionPanel({
   }
   useEffect(() => {
     setInputRefs({});
+    setInputOrigins({});
     setReusedImage(undefined);
   }, [inputSignature]);
   useEffect(() => {
@@ -217,12 +246,20 @@ export function ExecutionPanel({
     "observations" in effectivePipeline.inputs;
   const multiInput = Object.keys(effectivePipeline.inputs).length > 1;
   const rgbaInput = effectivePipeline.inputs.image?.kind === "rgba_image";
-  const [imageSource, setImageSource] = useState("path");
+  const [imageSource, setImageSource] = useState("upload");
   const [uploaded, setUploaded] = useState<{
     name: string;
     rgba: boolean;
     ref: Record<string, unknown>;
   }>();
+  const [inputFiles, setInputFiles] = useState<
+    Record<string, { file: File; artifactId: string }>
+  >({});
+  const [uploadedFile, setUploadedFile] = useState<File>();
+  useEffect(() => {
+    setInputFiles({});
+    setUploadedFile(undefined);
+  }, [inputSignature]);
   const [uploading, setUploading] = useState(false);
   const uploadPending = useRef(false);
   const [uploadMessage, setUploadMessage] = useState("");
@@ -310,7 +347,19 @@ export function ExecutionPanel({
     // Persist before sending so an uncertain response retains the original intent.
     sessionStorage.setItem(creationStorageKey, JSON.stringify(submitted));
     setCreation({ request: submitted });
-    const value: Envelope = await request("/api/runs", submitted);
+    const response = await fetch("/api/runs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(submitted),
+    });
+    const value = await response.json();
+    if (!response.ok) {
+      if (response.status === 409 && value.code === "preflight_changed") {
+        sessionStorage.removeItem(creationStorageKey);
+        setCreation({});
+      }
+      throw Error(value.error || `HTTP ${response.status}`);
+    }
     if (!value.run?.run_id) throw Error("服务未返回有效运行，原请求已保留");
     choose(value.run.run_id);
     accept(value);
@@ -328,6 +377,11 @@ export function ExecutionPanel({
   };
   const unresolvedCreation = !!creation.request || !!creation.error;
   const run = envelope?.run;
+  const actionAdvice =
+    envelope?.actions?.run_id === run?.run_id &&
+    envelope?.actions?.revision === run?.dag?.revision
+      ? envelope?.actions
+      : undefined;
   const reuseStates = run?.dag?.node_states;
   const [nodeFreshness, setNodeFreshness] = useState<Record<string, string>>(
     {},
@@ -405,6 +459,11 @@ export function ExecutionPanel({
 
   const executing = pending || !!envelope?.busy;
   const setInputArtifact = (name: string, artifactId: string) => {
+    setInputFiles((old) => {
+      const next = { ...old };
+      delete next[name];
+      return next;
+    });
     setInputRefs((old) => ({
       ...old,
       [name]: artifactId.trim() ? { artifact_id: artifactId.trim() } : {},
@@ -451,6 +510,10 @@ export function ExecutionPanel({
         return;
       }
       setInputArtifact(name, reference.artifact_id);
+      setInputFiles((old) => ({
+        ...old,
+        [name]: { file, artifactId: reference.artifact_id },
+      }));
       setUploadMessage(`输入 ${name} 已上传并绑定。`);
     } catch (error) {
       setUploadMessage(`输入 ${name} 上传失败：${String(error)}`);
@@ -462,6 +525,7 @@ export function ExecutionPanel({
   const upload = async (file?: File) => {
     if (uploadPending.current) return;
     setUploaded(undefined);
+    setUploadedFile(undefined);
     setUploadMessage("");
     if (!file) return;
     if (!file.size || file.size > 20 * 1024 * 1024) {
@@ -484,6 +548,7 @@ export function ExecutionPanel({
       if (!value.image_ref || typeof value.image_ref.artifact_id !== "string")
         throw Error("服务未返回有效的图片引用");
       setUploaded({ name: file.name, rgba: rgbaInput, ref: value.image_ref });
+      setUploadedFile(file);
       setUploadMessage("图片已上传；点击启动新运行才会执行模型。");
     } catch (error) {
       setUploadMessage(`上传失败：${String(error)}`);
@@ -535,6 +600,102 @@ export function ExecutionPanel({
   };
   return (
     <section className="execution-panel">
+      {(comparison.A || comparison.B) && (
+        <button onClick={() => setComparisonOpen(true)}>比较两次结果</button>
+      )}
+      {comparisonOpen && (
+        <div
+          className="run-graph-overlay"
+          role="dialog"
+          aria-label="比较两次结果"
+        >
+          <header>
+            <strong>比较两次结果</strong>
+            <button onClick={() => setComparisonOpen(false)}>关闭比较</button>
+          </header>
+          <OutputComparison
+            slots={comparison}
+            inputs={effectivePipeline.inputs}
+            disabled={executing || uploading || unresolvedCreation}
+            selectedInputs={Object.fromEntries(
+              Object.keys(effectivePipeline.inputs).map((name) => [
+                name,
+                {
+                  ...(inputOrigins[name] || {}),
+                  artifactId: String(
+                    multiInput
+                      ? inputRefs[name]?.artifact_id || ""
+                      : reusedImage?.artifact_id || "",
+                  ),
+                },
+              ]),
+            )}
+            onClear={(side) =>
+              setComparison((old) => ({ ...old, [side]: undefined }))
+            }
+            onUse={(slot, name) => {
+              const revision = inputGeneration.current.revision;
+              void mutate(async () => {
+                const source = await request(
+                  `/api/runs/${encodeURIComponent(slot.runId)}/snapshot-reference/${encodeURIComponent(slot.nodeId)}/${encodeURIComponent(slot.port)}?snapshot=${encodeURIComponent(slot.snapshot)}`,
+                );
+                if (revision !== inputGeneration.current.revision)
+                  throw Error("输入契约已变化，请重新选择");
+                const port = effectivePipeline.inputs[name];
+                if (
+                  source.reference?.artifact_id !==
+                    slot.reference.artifact_id ||
+                  source.source_run_id !== slot.runId ||
+                  source.node_id !== slot.nodeId ||
+                  source.port !== slot.port ||
+                  source.source_snapshot?.artifact_id !== slot.snapshot ||
+                  !port ||
+                  !(port.kinds || [port.kind]).includes(source.kind) ||
+                  (port.schema_name &&
+                    port.schema_name !== source.schema_name) ||
+                  (port.schema_version &&
+                    port.schema_version !== source.schema_version)
+                )
+                  throw Error("比较结果与输入绑定无法核实");
+                setInputOrigins((old) => ({
+                  ...old,
+                  [name]: {
+                    artifactId: source.reference.artifact_id,
+                    runId: slot.runId,
+                    nodeId: slot.nodeId,
+                    port: slot.port,
+                    snapshot: slot.snapshot,
+                  },
+                }));
+                if (multiInput)
+                  setInputRefs((old) => ({
+                    ...old,
+                    [name]: {
+                      ...source.reference,
+                      ...(slot.port.includes("~")
+                        ? {
+                            source: {
+                              run_id: slot.runId,
+                              node_id: slot.nodeId,
+                              port: slot.port,
+                              snapshot: { artifact_id: slot.snapshot },
+                            },
+                          }
+                        : {}),
+                    },
+                  }));
+                else {
+                  setReusedImage(source.reference);
+                  setImageSource("reference");
+                }
+                setMessage(
+                  `已明确选择 ${slot.runId}/${slot.nodeId}.${slot.port} 作为 ${name}，预览其他结果不会改变绑定。`,
+                );
+              });
+            }}
+          />
+        </div>
+      )}
       {previewHost &&
         createPortal(
           <section className="selected-node-preview" aria-label="选中节点预览">
@@ -639,7 +800,7 @@ export function ExecutionPanel({
         </section>
       )}
       <div className="section-label">创建新运行</div>
-      <p>已配置模型：{profile || "本地服务配置"}</p>
+      <p>执行环境：{profile || "本地服务配置"}</p>
       {multiInput ? (
         <div>
           <p>
@@ -668,6 +829,19 @@ export function ExecutionPanel({
                       void uploadInputArtifact(name, file);
                     }}
                   />
+                )}
+                {inputFiles[name]?.artifactId === artifactId && (
+                  <LocalInputPreview
+                    file={inputFiles[name].file}
+                    label={`输入 ${name}`}
+                  />
+                )}
+                {inputOrigins[name]?.artifactId === artifactId && (
+                  <p>
+                    下游输入来源：{inputOrigins[name].runId} /{" "}
+                    {inputOrigins[name].nodeId}.{inputOrigins[name].port}。
+                    切换查看其他运行不会改变此绑定。
+                  </p>
                 )}
                 <input
                   aria-label={`输入 ${name} Artifact ID`}
@@ -746,6 +920,14 @@ export function ExecutionPanel({
               {reusedImage && (
                 <p className="run-identity">{reusedImage.artifact_id}</p>
               )}
+              {reusedImage &&
+                inputOrigins.image?.artifactId === reusedImage.artifact_id && (
+                  <p>
+                    下游输入来源：{inputOrigins.image.runId} /{" "}
+                    {inputOrigins.image.nodeId}.{inputOrigins.image.port}。
+                    切换查看其他运行不会改变此绑定。
+                  </p>
+                )}
             </div>
           ) : imageSource === "path" ? (
             <label>
@@ -774,6 +956,9 @@ export function ExecutionPanel({
                   }}
                 />
               </label>
+              {uploadedFile && uploaded?.rgba === rgbaInput && (
+                <LocalInputPreview file={uploadedFile} label="运行图片" />
+              )}
               {uploading && <p>正在上传并验证图片…</p>}
               {uploaded && (
                 <p className="run-identity">
@@ -813,8 +998,7 @@ export function ExecutionPanel({
           。本次创建独立运行，不执行下游。
         </p>
       )}
-      <button
-        className="primary"
+      <ExecutionPreflight
         disabled={
           (runToSelection &&
             (!selectedNode || !pipeline.nodes[selectedNode])) ||
@@ -834,36 +1018,38 @@ export function ExecutionPanel({
                   : !uploaded || uploaded.rgba !== rgbaInput) ||
           !!effectiveReason
         }
-        onClick={() =>
-          void mutate(() =>
+        intent={{
+          pipeline: structuredClone(effectivePipeline),
+          ...(reuseResults && envelope?.snapshot_ref
+            ? { reuse_source: envelope.snapshot_ref }
+            : {}),
+          ...(multiInput
+            ? {
+                input_refs: Object.fromEntries(
+                  Object.keys(effectivePipeline.inputs).map((name) => [
+                    name,
+                    structuredClone(inputRefs[name]),
+                  ]),
+                ),
+              }
+            : multiView
+              ? { observations_ref: { artifact_id: observationsId.trim() } }
+              : imageSource === "reference"
+                ? { image_ref: structuredClone(reusedImage!) }
+                : imageSource === "path"
+                  ? { image_path: imagePath.trim() }
+                  : { image_ref: structuredClone(uploaded?.ref || {}) }),
+        }}
+        onConfirm={(prepared) =>
+          mutate(() =>
             submitCreation({
-              pipeline: structuredClone(effectivePipeline),
+              ...prepared,
               idempotency_key: crypto.randomUUID(),
-              ...(reuseResults && envelope?.snapshot_ref
-                ? { reuse_source: envelope.snapshot_ref }
-                : {}),
-              ...(multiInput
-                ? {
-                    input_refs: Object.fromEntries(
-                      Object.keys(effectivePipeline.inputs).map((name) => [
-                        name,
-                        structuredClone(inputRefs[name]),
-                      ]),
-                    ),
-                  }
-                : multiView
-                  ? { observations_ref: { artifact_id: observationsId.trim() } }
-                  : imageSource === "reference"
-                    ? { image_ref: structuredClone(reusedImage!) }
-                    : imageSource === "path"
-                      ? { image_path: imagePath.trim() }
-                      : { image_ref: structuredClone(uploaded!.ref) }),
             }),
           )
         }
-      >
-        {runToSelection ? "运行到这里" : "启动新运行"}
-      </button>
+        label={runToSelection ? "运行到这里" : "启动新运行"}
+      />
       {unresolvedCreation && (
         <div className="run-node">
           <p role="alert">
@@ -923,7 +1109,7 @@ export function ExecutionPanel({
         <option value="">选择运行…</option>
         {runs.map((item) => (
           <option key={item.run_id} value={item.run_id}>
-            {item.run_id} · {item.status}
+            {item.run_id} · {executionStatus(item.status)}
           </option>
         ))}
       </select>
@@ -970,10 +1156,14 @@ export function ExecutionPanel({
           )}
 
           <strong>
-            运行状态：{run.status}
+            执行状态：{executionStatus(run.status)}
             {envelope.busy ? " · 后台处理中" : ""}
           </strong>
           <p>状态仅对应此运行的固定计划，画布仍是可编辑草稿。</p>
+          <QualityEvidencePanel
+            runId={run.run_id}
+            outputs={envelope.outputs || []}
+          />
           {snapshot?.runId === run.run_id &&
             snapshot.pipeline !== JSON.stringify(pipeline) && (
               <p>草稿已修改，与此运行的计划不同。</p>
@@ -996,8 +1186,9 @@ export function ExecutionPanel({
               </pre>
             </div>
           )}
+          <NodeActionHint advice={actionAdvice?.resume} />
           <button
-            disabled={executing}
+            disabled={executing || !actionAdvice?.resume?.can_request}
             onClick={() =>
               void mutate(async () =>
                 accept(
@@ -1039,6 +1230,83 @@ export function ExecutionPanel({
                     预览模型 · {output.node_id}
                   </button>
                 ))}
+              {envelope.snapshot_ref &&
+                envelope.outputs
+                  .filter(
+                    (output) =>
+                      output.kind === "binary_mask" && output.port === "mask",
+                  )
+                  .map((output) => (
+                    <ContinueExtraction
+                      key={`${run.run_id}:${output.node_id}:${envelope.snapshot_ref!.artifact_id}`}
+                      runId={run.run_id}
+                      nodeId={output.node_id}
+                      snapshot={envelope.snapshot_ref!.artifact_id}
+                      disabled={executing || uploading || unresolvedCreation}
+                      onConfirm={(prepared) =>
+                        mutate(() =>
+                          submitCreation({
+                            ...prepared,
+                            idempotency_key: crypto.randomUUID(),
+                          }),
+                        )
+                      }
+                    />
+                  ))}
+              {envelope.snapshot_ref &&
+                envelope.outputs
+                  .filter((output) =>
+                    [
+                      "rgb_image",
+                      "rgba_image",
+                      "binary_mask",
+                      "gltf_asset",
+                    ].includes(output.kind || ""),
+                  )
+                  .flatMap((output) =>
+                    (["A", "B"] as const).map((side) => (
+                      <button
+                        key={`compare:${side}:${output.node_id}:${output.port}`}
+                        disabled={pending || uploading}
+                        onClick={() => {
+                          const snapshot = envelope.snapshot_ref!.artifact_id;
+                          void mutate(async () => {
+                            const source = await request(
+                              `/api/runs/${encodeURIComponent(run.run_id)}/snapshot-reference/${encodeURIComponent(output.node_id)}/${encodeURIComponent(output.port)}?snapshot=${encodeURIComponent(snapshot)}`,
+                            );
+                            if (
+                              source.source_run_id !== run.run_id ||
+                              source.node_id !== output.node_id ||
+                              source.port !== output.port ||
+                              source.source_snapshot?.artifact_id !==
+                                snapshot ||
+                              source.kind !== output.kind ||
+                              typeof source.reference?.artifact_id !== "string"
+                            )
+                              throw Error("比较输出来源无法核实");
+                            setComparison((old) => ({
+                              ...old,
+                              [side]: {
+                                runId: run.run_id,
+                                nodeId: output.node_id,
+                                port: output.port,
+                                kind: source.kind,
+                                snapshot,
+                                reference: source.reference,
+                                schema_name: source.schema_name,
+                                schema_version: source.schema_version,
+                              },
+                            }));
+                            setMessage(
+                              `已固定比较项 ${side}，不改变下游输入。`,
+                            );
+                          });
+                        }}
+                      >
+                        加入比较 {side} · {output.node_id} · {output.port}
+                      </button>
+                    )),
+                  )}
               {envelope.outputs
                 .filter((output) => output.kind === "asset_release")
                 .map((output) => (
@@ -1100,6 +1368,15 @@ export function ExecutionPanel({
                               typeof source.reference?.artifact_id !== "string"
                             )
                               throw Error("输出引用与目标输入契约不匹配");
+                            setInputOrigins((old) => ({
+                              ...old,
+                              [name]: {
+                                artifactId: source.reference.artifact_id,
+                                runId: source.source_run_id,
+                                nodeId: source.node_id,
+                                port: source.port,
+                              },
+                            }));
                             if (multiInput) {
                               setInputRefs((old) => ({
                                 ...old,
@@ -1147,7 +1424,17 @@ export function ExecutionPanel({
           {Object.entries(run.dag?.node_states || {}).map(([id, state]) => (
             <div className="run-node" key={id}>
               <strong>{id}</strong>
-              <span>{state.status}</span>
+              <span>{executionStatus(state.status)}</span>
+              {(state.attempts?.at(-1)?.request ||
+                state.attempts?.at(-1)?.decision ||
+                state.status === "waiting_for_input") && (
+                <HumanDecisionSummary
+                  runId={run.run_id}
+                  nodeId={id}
+                  decisionId={state.attempts?.at(-1)?.decision?.artifact_id}
+                  nodeFinishedAt={state.attempts?.at(-1)?.finished_at}
+                />
+              )}
               {state.status === "running" &&
                 state.attempts?.at(-1)?.remote_binding && (
                   <div>
@@ -1195,7 +1482,8 @@ export function ExecutionPanel({
                   {state.attempts.map((attempt, index) => (
                     <div key={index}>
                       <p>
-                        #{attempt.attempt || index + 1} · {attempt.status}
+                        #{attempt.attempt || index + 1} ·{" "}
+                        {executionStatus(attempt.status)}
                         <br />
                         {attempt.error_code} {attempt.error_detail}
                       </p>
@@ -1260,21 +1548,36 @@ export function ExecutionPanel({
               {["failed", "interrupted", "recovery_blocked"].includes(
                 state.status,
               ) && (
-                <button
-                  disabled={executing}
-                  onClick={() =>
-                    void mutate(async () =>
-                      accept(
-                        await request(
-                          `/api/runs/${encodeURIComponent(run.run_id)}/retry`,
-                          { node_id: id, expected_revision: run.dag!.revision },
+                <>
+                  <NodeActionHint
+                    advice={
+                      actionAdvice?.nodes[id]?.retry && {
+                        ...actionAdvice.nodes[id].retry!,
+                        guidance: actionAdvice.nodes[id].guidance,
+                      }
+                    }
+                  />
+                  <button
+                    disabled={
+                      executing || !actionAdvice?.nodes[id]?.retry?.can_request
+                    }
+                    onClick={() =>
+                      void mutate(async () =>
+                        accept(
+                          await request(
+                            `/api/runs/${encodeURIComponent(run.run_id)}/retry`,
+                            {
+                              node_id: id,
+                              expected_revision: run.dag!.revision,
+                            },
+                          ),
                         ),
-                      ),
-                    )
-                  }
-                >
-                  显式重试 · {id}
-                </button>
+                      )
+                    }
+                  >
+                    请求核验并重试 · {id}
+                  </button>
+                </>
               )}
               {review?.runId === run.run_id &&
                 review.nodeId === id &&

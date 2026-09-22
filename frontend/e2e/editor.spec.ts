@@ -1,6 +1,59 @@
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { test, expect } from "@playwright/test";
+import { test, expect, type Route } from "@playwright/test";
+
+async function executionBoundary(route: Route, compileDefault = false) {
+  const path = new URL(route.request().url()).pathname;
+  if (path === "/api/compile" && compileDefault) {
+    await route.fulfill({
+      json: { ok: true, execution_ready: true, plan: {} },
+    });
+    return true;
+  }
+  if (path === "/api/prepare-inputs") {
+    const body = route.request().postDataJSON();
+    const input_refs =
+      body.input_refs ||
+      (body.observations_ref
+        ? { observations: body.observations_ref }
+        : {
+            image: body.image_ref || {
+              artifact_id: `prepared:${body.image_path}`,
+            },
+          });
+    await route.fulfill({ json: { input_refs } });
+    return true;
+  }
+  if (path === "/api/preflight") {
+    const body = route.request().postDataJSON();
+    expect(body.input_refs).toBeDefined();
+    await route.fulfill({
+      json: {
+        digest: "checked-execution-digest",
+        execution_ready: true,
+        nodes: Object.fromEntries(
+          Object.keys(body.pipeline.nodes).map((id) => [
+            id,
+            {
+              status: "execute",
+              reason: "new",
+              detail: "Explicit test execution",
+            },
+          ]),
+        ),
+        source_evidence_policy: "complete_snapshot",
+      },
+    });
+    return true;
+  }
+  return false;
+}
+
+async function confirmExecution(page: import("@playwright/test").Page) {
+  await page
+    .getByRole("button", { name: "确认执行上述范围", exact: true })
+    .click();
+}
 test("uploaded images bind exact references only after explicit run creation", async ({
   page,
 }) => {
@@ -10,6 +63,7 @@ test("uploaded images bind exact references only after explicit run creation", a
   let rejectUpload = false;
   const bytes = Buffer.from("encoded image fixture");
   await page.route("**/api/**", async (route) => {
+    if (await executionBoundary(route, true)) return;
     const path = new URL(route.request().url()).pathname;
     let body: unknown = {};
     if (path === "/api/catalog")
@@ -56,9 +110,13 @@ test("uploaded images bind exact references only after explicit run creation", a
   });
   await page.goto("/");
   await page.getByRole("button", { name: "运行", exact: true }).click();
+  await page.getByLabel("图片来源", { exact: true }).selectOption("path");
   await page.getByLabel("运行图片路径").fill("/data/previous.png");
   await page.getByLabel("图片来源", { exact: true }).selectOption("upload");
-  const start = page.getByRole("button", { name: "启动新运行", exact: true });
+  const start = page.getByRole("button", {
+    name: "启动新运行 · 检查执行范围",
+    exact: true,
+  });
   await expect(start).toBeDisabled();
   const file = { name: "robot.png", mimeType: "image/png", buffer: bytes };
   await page.getByLabel("上传运行图片").setInputFiles(file);
@@ -68,10 +126,12 @@ test("uploaded images bind exact references only after explicit run creation", a
   expect(uploads).toBe(1);
   expect(starts).toEqual([]);
   await start.click();
+  await confirmExecution(page);
   await expect(
     page.getByText("运行已创建；请在下方查看真实节点状态。"),
   ).toBeVisible();
-  expect(starts[0].image_ref).toEqual(imageRef);
+  expect(starts[0].input_refs.image).toEqual(imageRef);
+  expect(starts[0].preflight_digest).toBe("checked-execution-digest");
   expect(starts[0]).not.toHaveProperty("image_path");
   rejectUpload = true;
   await page.getByLabel("上传运行图片").setInputFiles(file);
@@ -82,8 +142,11 @@ test("uploaded images bind exact references only after explicit run creation", a
   expect(starts).toHaveLength(1);
   await page.getByLabel("图片来源", { exact: true }).selectOption("path");
   await start.click();
+  await confirmExecution(page);
   await expect.poll(() => starts.length).toBe(2);
-  expect(starts[1].image_path).toBe("/data/previous.png");
+  expect(starts[1].input_refs.image.artifact_id).toBe(
+    "prepared:/data/previous.png",
+  );
   expect(starts[1]).not.toHaveProperty("image_ref");
 });
 
@@ -116,6 +179,7 @@ test("edits a template, saves layout, compiles and reloads a draft", async ({
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.route("**/api/**", async (route) => {
+    if (await executionBoundary(route, false)) return;
     const url = new URL(route.request().url());
     let body: unknown = {};
     if (url.pathname === "/api/catalog") body = catalog;
@@ -137,6 +201,7 @@ test("edits a template, saves layout, compiles and reloads a draft", async ({
   await page.goto("/");
   page.on("dialog", (d) => d.accept());
   await page.getByRole("button", { name: "单图测试", exact: true }).click();
+  await page.getByRole("button", { name: "配置", exact: true }).click();
   await expect(page.locator(".react-flow__node")).toHaveCount(2);
   await expect(page.locator(".react-flow__edge")).toHaveCount(1);
   await page.locator('.react-flow__node[data-id="copy"]').click();
@@ -158,7 +223,9 @@ test("edits a template, saves layout, compiles and reloads a draft", async ({
     },
   });
   await page.getByRole("button", { name: "编译校验", exact: true }).click();
-  await expect(page.getByRole("status")).toContainText("编译通过");
+  await expect(
+    page.getByLabel("当前配置编译状态", { exact: true }),
+  ).toContainText("编译通过");
   await expect(page.locator(".inspector pre")).toContainText(
     "static_contracts_only",
   );
@@ -184,6 +251,7 @@ test("combined deletion persists and dragging keeps canvas stable", async ({
   };
   let saved: any;
   await page.route("**/api/**", async (route) => {
+    if (await executionBoundary(route, true)) return;
     const path = new URL(route.request().url()).pathname;
     const body =
       path === "/api/catalog"
@@ -210,6 +278,7 @@ test("combined deletion persists and dragging keeps canvas stable", async ({
   page.on("dialog", (d) => d.accept());
   await page.goto("/");
   await page.getByRole("button", { name: "删除测试", exact: true }).click();
+  await page.getByRole("button", { name: "配置", exact: true }).click();
   const c = page.locator('.react-flow__node[data-id="C"]');
   await c.click();
   const viewport = await page
@@ -281,6 +350,7 @@ test("execution uses frozen server runs and explicit revisioned actions", async 
     },
   });
   await page.route("**/api/**", async (route) => {
+    if (await executionBoundary(route, true)) return;
     const path = new URL(route.request().url()).pathname;
     if (route.request().method() === "POST")
       calls.push({ path, body: route.request().postDataJSON() });
@@ -301,6 +371,26 @@ test("execution uses frozen server runs and explicit revisioned actions", async 
       body = {
         run: run(),
         busy: false,
+        actions: {
+          run_id: "dag_test",
+          revision: 7,
+          resume: {
+            can_request: true,
+            eligibility: "requires_command_validation",
+            reason_code: "resume_requires_validation",
+            detail: "恢复需命令核验",
+          },
+          nodes: {
+            choose: {
+              retry: {
+                can_request: status === "failed",
+                eligibility: "requires_command_validation",
+                reason_code: "retry_requires_validation",
+                detail: "重试需命令核验",
+              },
+            },
+          },
+        },
         outputs: [{ node_id: "generate", port: "glb", url: "/output.glb" }],
       };
     await route.fulfill({ json: body });
@@ -317,13 +407,18 @@ test("execution uses frozen server runs and explicit revisioned actions", async 
   page.on("close", () => reviewServer.close());
   await page.goto("/");
   await page.getByRole("button", { name: "运行", exact: true }).click();
-  await expect(page.getByText("已配置模型：trellis-local")).toBeVisible();
+  await expect(page.getByText("执行环境：trellis-local")).toBeVisible();
+  await page.getByLabel("图片来源", { exact: true }).selectOption("path");
   await page.getByLabel("运行图片路径").fill("/data/robot.png");
-  await page.getByRole("button", { name: "启动新运行", exact: true }).click();
+  await page
+    .getByRole("button", { name: "启动新运行 · 检查执行范围", exact: true })
+    .click();
+  await confirmExecution(page);
   expect(calls[0]).toMatchObject({
     path: "/api/runs",
     body: {
-      image_path: "/data/robot.png",
+      input_refs: { image: { artifact_id: "prepared:/data/robot.png" } },
+      preflight_digest: "checked-execution-digest",
       pipeline: { pipeline: "my_asset_pipeline" },
     },
   });
@@ -355,12 +450,12 @@ test("execution uses frozen server runs and explicit revisioned actions", async 
   });
   status = "failed";
   await expect(
-    page.getByRole("button", { name: "显式重试 · choose", exact: true }),
+    page.getByRole("button", { name: "请求核验并重试 · choose", exact: true }),
   ).toBeVisible();
   await page.getByText("执行记录 · 1 次").click();
   await expect(page.getByText(/backend_failed specific failure/)).toBeVisible();
   await page
-    .getByRole("button", { name: "显式重试 · choose", exact: true })
+    .getByRole("button", { name: "请求核验并重试 · choose", exact: true })
     .click();
   expect(calls.find((c) => c.path.endsWith("/retry"))?.body).toEqual({
     expected_revision: 7,
@@ -376,6 +471,7 @@ test("lost create response is never automatically resubmitted", async ({
 }) => {
   let creates = 0;
   await page.route("**/api/**", async (route) => {
+    if (await executionBoundary(route, true)) return;
     const path = new URL(route.request().url()).pathname;
     if (path === "/api/runs" && route.request().method() === "POST") {
       creates++;
@@ -398,8 +494,12 @@ test("lost create response is never automatically resubmitted", async ({
   });
   await page.goto("/");
   await page.getByRole("button", { name: "运行", exact: true }).click();
+  await page.getByLabel("图片来源", { exact: true }).selectOption("path");
   await page.getByLabel("运行图片路径").fill("/data/robot.png");
-  await page.getByRole("button", { name: "启动新运行", exact: true }).click();
+  await page
+    .getByRole("button", { name: "启动新运行 · 检查执行范围", exact: true })
+    .click();
+  await confirmExecution(page);
   await expect(page.getByText(/未自动重发/)).toBeVisible();
   await page.waitForTimeout(1800);
   expect(creates).toBe(1);
@@ -411,6 +511,7 @@ test("compiled graph can be ineligible for the current execution endpoint", asyn
   const reason =
     "canvas execution currently requires exactly one input named image";
   await page.route("**/api/**", async (route) => {
+    if (await executionBoundary(route, false)) return;
     const path = new URL(route.request().url()).pathname;
     const body =
       path === "/api/catalog"
@@ -429,12 +530,18 @@ test("compiled graph can be ineligible for the current execution endpoint", asyn
   });
   await page.goto("/");
   await page.getByRole("button", { name: "编译校验", exact: true }).click();
-  await expect(page.getByRole("status")).toContainText(reason);
+  await expect(
+    page.getByLabel("当前配置编译状态", { exact: true }),
+  ).toContainText(reason);
   await page.getByRole("button", { name: "运行", exact: true }).click();
+  await page.getByLabel("图片来源", { exact: true }).selectOption("path");
   await page.getByLabel("运行图片路径").fill("/tmp/photo.png");
   await expect(page.getByRole("alert")).toContainText(reason);
   await expect(
-    page.getByRole("button", { name: "启动新运行", exact: true }),
+    page.getByRole("button", {
+      name: "启动新运行 · 检查执行范围",
+      exact: true,
+    }),
   ).toBeDisabled();
 });
 
@@ -449,6 +556,7 @@ test("parameter form sends typed values and preserves other instances", async ({
     parameters: {},
   };
   await page.route("**/api/**", async (route) => {
+    if (await executionBoundary(route, false)) return;
     const path = new URL(route.request().url()).pathname;
     if (path === "/api/compile")
       submitted = route.request().postDataJSON().pipeline;
@@ -507,6 +615,7 @@ test("parameter form sends typed values and preserves other instances", async ({
   page.on("dialog", (d) => d.accept());
   await page.getByRole("button", { name: "forms", exact: true }).click();
   await page.locator('.react-flow__node[data-id="first"]').click();
+  await page.getByRole("button", { name: "配置", exact: true }).click();
   await expect(page.getByLabel("参数 seed", { exact: true })).toHaveValue("42");
   await page.getByLabel("参数 seed", { exact: true }).fill("1.5");
   await page.getByLabel("参数 seed", { exact: true }).press("Tab");
@@ -514,6 +623,7 @@ test("parameter form sends typed values and preserves other instances", async ({
   await page
     .getByRole("button", { name: "放弃字段编辑 · seed", exact: true })
     .click();
+  await page.getByRole("button", { name: "配置", exact: true }).click();
   await expect(page.getByLabel("参数 seed", { exact: true })).toHaveValue("42");
   await expect(page.getByRole("alert")).toHaveCount(0);
   await page.getByLabel("参数 matrix JSON", { exact: true }).fill("{}");
@@ -585,6 +695,7 @@ test("parameter form sends typed values and preserves other instances", async ({
   ).toHaveValue('{"label":"pending"}');
   await page.getByLabel("参数 seed", { exact: true }).fill("099");
   await page.getByLabel("参数 seed", { exact: true }).press("Tab");
+  await page.getByRole("button", { name: "配置", exact: true }).click();
   await expect(page.getByLabel("参数 seed", { exact: true })).toHaveValue("99");
   await page.getByLabel("参数 options JSON", { exact: true }).fill("null");
   await page
@@ -624,6 +735,7 @@ test("parameter form sends typed values and preserves other instances", async ({
   await expect(
     page.locator('.react-flow__node[data-id="first_copy"]'),
   ).toBeVisible();
+  await page.getByRole("button", { name: "配置", exact: true }).click();
   await expect(page.getByLabel("参数 seed", { exact: true })).toHaveValue("99");
   await page.getByLabel("参数 seed", { exact: true }).fill("123");
   await page.getByLabel("参数 seed", { exact: true }).press("Tab");
@@ -641,6 +753,7 @@ test("fixed run graph displays persisted plan instead of edited draft", async ({
   page,
 }) => {
   await page.route("**/api/**", async (route) => {
+    if (await executionBoundary(route, false)) return;
     const path = new URL(route.request().url()).pathname;
     const plan = {
       plan_id: "fixed-id",
@@ -715,7 +828,7 @@ test("fixed run graph displays persisted plan instead of edited draft", async ({
   const dialog = page.getByRole("dialog", { name: "固定运行图" });
   await expect(
     dialog.locator('.react-flow__node[data-id="original"]'),
-  ).toContainText("succeeded");
+  ).toContainText("完成");
   await dialog.locator('.react-flow__node[data-id="original"]').click();
   const binding = dialog.locator(".run-binding-details pre");
   await expect(binding).toBeVisible();
@@ -759,6 +872,7 @@ for (const implementation of ["local", "remote"]) {
       },
     };
     await page.route("**/api/**", async (route) => {
+      if (await executionBoundary(route, false)) return;
       const path = new URL(route.request().url()).pathname;
       if (path === "/api/compile")
         saved = route.request().postDataJSON().pipeline;
@@ -832,6 +946,7 @@ for (const implementation of ["local", "remote"]) {
     await page.goto("/");
     page.on("dialog", (d) => d.accept());
     await page.getByRole("button", { name: "pair", exact: true }).click();
+    await page.getByRole("button", { name: "配置", exact: true }).click();
     await page.locator('.react-flow__node[data-id="left"]').click();
     await expect(page.getByRole("alert")).toContainText("stale-deployment");
     await expect(page.getByRole("alert")).toContainText('当前要求："old"');
@@ -882,6 +997,7 @@ test("lost creation response preserves exact intent through reload and explicit 
   const starts: any[] = [];
   let loseResponse = true;
   await page.route("**/api/**", async (route) => {
+    if (await executionBoundary(route, true)) return;
     const path = new URL(route.request().url()).pathname;
     if (path === "/api/runs" && route.request().method() === "POST") {
       starts.push(route.request().postDataJSON());
@@ -914,9 +1030,14 @@ test("lost creation response preserves exact intent through reload and explicit 
   });
   await page.goto("/");
   await page.getByRole("button", { name: "运行", exact: true }).click();
+  await page.getByLabel("图片来源", { exact: true }).selectOption("path");
   await page.getByLabel("运行图片路径").fill("/data/original.png");
-  const start = page.getByRole("button", { name: "启动新运行", exact: true });
+  const start = page.getByRole("button", {
+    name: "启动新运行 · 检查执行范围",
+    exact: true,
+  });
   await start.click();
+  await confirmExecution(page);
   const retry = page.getByRole("button", {
     name: "重试原创建请求",
     exact: true,
@@ -930,6 +1051,7 @@ test("lost creation response preserves exact intent through reload and explicit 
   await page.getByRole("button", { name: "运行", exact: true }).click();
   await expect(retry).toBeEnabled();
   expect(starts).toHaveLength(1);
+  await page.getByLabel("图片来源", { exact: true }).selectOption("path");
   await page.getByLabel("运行图片路径").fill("/data/changed.png");
   await page.getByLabel("管线名称").fill("changed_after_submission");
   loseResponse = false;
@@ -947,15 +1069,19 @@ test("lost creation response preserves exact intent through reload and explicit 
   ).toBeNull();
 
   await start.click();
+  await confirmExecution(page);
   await expect.poll(() => starts.length).toBe(3);
   expect(starts[2].idempotency_key).not.toBe(starts[0].idempotency_key);
-  expect(starts[2].image_path).toBe("/data/changed.png");
+  expect(starts[2].input_refs.image.artifact_id).toBe(
+    "prepared:/data/changed.png",
+  );
   expect(starts[2].pipeline.pipeline).toBe("changed_after_submission");
 
   // A failed next intent can only be replaced by explicit discard.
   await expect(start).toBeEnabled();
   loseResponse = true;
   await start.click();
+  await confirmExecution(page);
   await expect(retry).toBeEnabled();
   expect(starts).toHaveLength(4);
   await page
@@ -965,6 +1091,7 @@ test("lost creation response preserves exact intent through reload and explicit 
   expect(starts).toHaveLength(4);
   loseResponse = false;
   await start.click();
+  await confirmExecution(page);
   await expect.poll(() => starts.length).toBe(5);
   expect(starts[4].idempotency_key).not.toBe(starts[3].idempotency_key);
 });
@@ -979,6 +1106,7 @@ test("creation is not sent if browser cannot persist its receipt", async ({
     };
   });
   await page.route("**/api/**", async (route) => {
+    if (await executionBoundary(route, true)) return;
     const path = new URL(route.request().url()).pathname;
     if (path === "/api/runs" && route.request().method() === "POST") starts++;
     await route.fulfill({
@@ -997,8 +1125,12 @@ test("creation is not sent if browser cannot persist its receipt", async ({
   });
   await page.goto("/");
   await page.getByRole("button", { name: "运行", exact: true }).click();
+  await page.getByLabel("图片来源", { exact: true }).selectOption("path");
   await page.getByLabel("运行图片路径").fill("/data/robot.png");
-  await page.getByRole("button", { name: "启动新运行", exact: true }).click();
+  await page
+    .getByRole("button", { name: "启动新运行 · 检查执行范围", exact: true })
+    .click();
+  await confirmExecution(page);
   await expect(page.getByText(/storage disabled/)).toBeVisible();
   expect(starts).toBe(0);
 });
@@ -1011,6 +1143,7 @@ test("multi-view creation preserves observation reference across reload retry", 
   let fail = true;
   let uploads = 0;
   await page.route("**/api/**", async (route) => {
+    if (await executionBoundary(route, true)) return;
     const path = new URL(route.request().url()).pathname;
     if (path === "/api/inputs/image") {
       uploads++;
@@ -1081,11 +1214,14 @@ test("multi-view creation preserves observation reference across reload retry", 
   expect(uploads).toBe(2);
   expect(requests).toHaveLength(0);
   await expect(page.getByLabel("运行图片路径")).toHaveCount(0);
-  await page.getByRole("button", { name: "启动新运行", exact: true }).click();
+  await page
+    .getByRole("button", { name: "启动新运行 · 检查执行范围", exact: true })
+    .click();
+  await confirmExecution(page);
   await expect(
     page.getByRole("button", { name: "重试原创建请求", exact: true }),
   ).toBeEnabled();
-  expect(requests[0].observations_ref).toEqual({
+  expect(requests[0].input_refs.observations).toEqual({
     artifact_id: "sha256:" + "a".repeat(64),
   });
   expect(requests[0].image_ref).toBeUndefined();
@@ -1172,6 +1308,7 @@ test("published GLB preview loads geometry and closes without mutation", async (
   let outputEntered = false;
   const output = "/api/runs/dag_preview/outputs/generate/glb";
   await page.route("**/api/**", async (route) => {
+    if (await executionBoundary(route, true)) return;
     if (route.request().method() !== "GET") mutations++;
     const path = new URL(route.request().url()).pathname;
     if (path === output && delayOutput) {
@@ -1304,6 +1441,7 @@ test("RGBA canvas upload uses the explicit endpoint and preserves returned refer
     nodes: {},
   };
   await page.route("**/api/**", async (route) => {
+    if (await executionBoundary(route, true)) return;
     const path = new URL(route.request().url()).pathname;
     let body: any = {};
     if (path === "/api/catalog")
@@ -1431,13 +1569,17 @@ test("RGBA canvas upload uses the explicit endpoint and preserves returned refer
   ).toBeVisible();
   expect(uploads).toEqual(["/api/inputs/rgba"]);
   expect(starts).toEqual([]);
-  await page.getByRole("button", { name: "启动新运行", exact: true }).click();
+  await page
+    .getByRole("button", { name: "启动新运行 · 检查执行范围", exact: true })
+    .click();
+  await confirmExecution(page);
   await expect.poll(() => starts.length).toBe(1);
   await expect(page.getByText(/上次报告作业已排队/)).toBeVisible();
   await expect(page.getByLabel("远程作业标识 · shape")).toHaveValue(
     "job-exact-one",
   );
-  expect(starts[0].image_ref).toEqual(imageRef);
+  expect(starts[0].input_refs.image).toEqual(imageRef);
+  expect(starts[0].preflight_digest).toBe("checked-execution-digest");
   expect(starts[0].pipeline.inputs.image.kind).toBe("rgba_image");
   await page
     .getByRole("button", {
@@ -1452,14 +1594,22 @@ test("RGBA canvas upload uses the explicit endpoint and preserves returned refer
     page.getByText("historical_rgba_exact", { exact: true }),
   ).toBeVisible();
   expect(starts).toHaveLength(1);
-  await page.getByRole("button", { name: "启动新运行", exact: true }).click();
+  await page
+    .getByRole("button", { name: "启动新运行 · 检查执行范围", exact: true })
+    .click();
+  await confirmExecution(page);
   await expect.poll(() => starts.length).toBe(2);
-  expect(starts[1].image_ref).toEqual({ artifact_id: "historical_rgba_exact" });
+  expect(starts[1].input_refs.image).toEqual({
+    artifact_id: "historical_rgba_exact",
+  });
   expect(uploads).toEqual(["/api/inputs/rgba"]);
   await page.getByRole("button", { name: "普通 RGB", exact: true }).click();
   await page.getByRole("button", { name: "运行", exact: true }).click();
   await expect(
-    page.getByRole("button", { name: "启动新运行", exact: true }),
+    page.getByRole("button", {
+      name: "启动新运行 · 检查执行范围",
+      exact: true,
+    }),
   ).toBeDisabled();
   expect(starts).toHaveLength(2);
 });
@@ -1477,6 +1627,7 @@ for (const editDuringLoad of [false, true]) {
       nodes: {},
     };
     await page.route("**/api/**", async (route) => {
+      if (await executionBoundary(route, true)) return;
       const path = new URL(route.request().url()).pathname;
       if (route.request().method() === "POST") writes++;
       let body: unknown = {};
@@ -1551,6 +1702,7 @@ test("image outputs preview on demand and report errors without dispatch", async
     "base64",
   );
   await page.route("**/api/**", async (route) => {
+    if (await executionBoundary(route, true)) return;
     if (route.request().method() !== "GET") mutations++;
     const path = new URL(route.request().url()).pathname;
     if (path === output) {
@@ -1639,6 +1791,7 @@ test("compile diagnostics locate known nodes without changing the graph", async 
   };
   const compiled: unknown[] = [];
   await page.route("**/api/**", async (route) => {
+    if (await executionBoundary(route, false)) return;
     const path = new URL(route.request().url()).pathname;
     if (path === "/api/compile")
       compiled.push(route.request().postDataJSON().pipeline);
@@ -1686,8 +1839,8 @@ test("compile diagnostics locate known nodes without changing the graph", async 
     .click();
   await expect(page.getByLabel("实例 ID")).toHaveValue("broken");
   await page.getByRole("button", { name: "编译校验", exact: true }).click();
-  await expect.poll(() => compiled.length).toBe(2);
-  expect(compiled[0]).toEqual(compiled[1]);
+  await expect.poll(() => compiled.filter(value => JSON.stringify(value) === JSON.stringify(graph)).length).toBeGreaterThanOrEqual(2);
+  expect(compiled.at(-1)).toEqual(graph);
 });
 
 test("current failure is visible while old successful-retry errors remain in history", async ({
@@ -1701,6 +1854,7 @@ test("current failure is visible while old successful-retry errors remain in his
     error_detail: "Backend exceeded the configured deadline",
   };
   await page.route("**/api/**", async (route) => {
+    if (await executionBoundary(route, true)) return;
     if (route.request().method() !== "GET") mutations++;
     const path = new URL(route.request().url()).pathname;
     await route.fulfill({
@@ -1759,6 +1913,7 @@ test("operator catalog distinguishes registered implementations from contracts",
     outputs: {},
   });
   await page.route("**/api/**", async (route) => {
+    if (await executionBoundary(route, true)) return;
     const path = new URL(route.request().url()).pathname;
     await route.fulfill({
       json:
@@ -1815,6 +1970,7 @@ test("new nodes do not choose between ambiguous adapters by catalog order", asyn
 }) => {
   let compiled: any;
   await page.route("**/api/**", async (route) => {
+    if (await executionBoundary(route, false)) return;
     const path = new URL(route.request().url()).pathname;
     if (path === "/api/compile")
       compiled = route.request().postDataJSON().pipeline;
@@ -1871,6 +2027,7 @@ test("pending dispatch blockers are visible without inventing attempts or pollin
 }) => {
   let mutations = 0;
   await page.route("**/api/**", async (route) => {
+    if (await executionBoundary(route, true)) return;
     if (route.request().method() !== "GET") mutations++;
     const path = new URL(route.request().url()).pathname;
     await route.fulfill({
@@ -1912,7 +2069,10 @@ test("pending dispatch blockers are visible without inventing attempts or pollin
   await expect(status).toContainText("old worker process still alive");
   await expect(status).toContainText("已保存的检查结果");
   await expect(
-    page.getByRole("button", { name: "显式重试 · generate", exact: true }),
+    page.getByRole("button", {
+      name: "请求核验并重试 · generate",
+      exact: true,
+    }),
   ).toHaveCount(0);
   expect(mutations).toBe(0);
 });
@@ -1921,17 +2081,23 @@ test("graph edits invalidate successful and in-flight compilation feedback", asy
   page,
 }) => {
   let release: (() => void) | undefined;
-  let calls = 0;
+  const requests: any[] = [];
   await page.route("**/api/**", async (route) => {
+    if (await executionBoundary(route, false)) return;
     const path = new URL(route.request().url()).pathname;
     if (path === "/api/compile") {
-      calls++;
-      if (calls === 2)
+      const graph = route.request().postDataJSON().pipeline;
+      requests.push(graph);
+      if (graph.pipeline === "changed_graph" && graph.version === "1")
         await new Promise<void>((resolve) => {
           release = resolve;
         });
       await route.fulfill({
-        json: { ok: true, execution_ready: true, plan: { marker: "old-plan" } },
+        json: {
+          ok: true,
+          execution_ready: true,
+          plan: { marker: `${graph.pipeline}:${graph.version}` },
+        },
       });
       return;
     }
@@ -1950,26 +2116,24 @@ test("graph edits invalidate successful and in-flight compilation feedback", asy
     });
   });
   await page.goto("/");
-  const compile = page.getByRole("button", { name: "编译校验", exact: true });
-  await compile.click();
-  await expect(page.getByRole("status")).toContainText("编译通过");
+  const status = page.getByLabel("当前配置编译状态", { exact: true });
+  await expect(status).toContainText("编译通过");
   await page.getByLabel("管线名称").fill("changed_graph");
-  await expect(page.getByRole("status")).toContainText("请重新编译");
-  await expect(
-    page.getByText("尚无当前图的编译结果。", { exact: true }),
-  ).toBeVisible();
-  await compile.click();
+  await expect(status).toContainText("正在检查当前配置");
   await expect.poll(() => !!release).toBe(true);
   await page.getByLabel("管线版本").fill("2");
   release!();
-  await expect(page.getByRole("status")).toContainText("忽略旧版本的编译结果");
-  await expect(
-    page.getByText("尚无当前图的编译结果。", { exact: true }),
-  ).toBeVisible();
-  await expect(compile).toBeEnabled();
-  await compile.click();
-  await expect(page.getByRole("status")).toContainText("编译通过");
-  expect(calls).toBe(3);
+  await expect(status).toContainText("编译通过");
+  await page.getByRole("button", { name: "编译结果", exact: true }).click();
+  await expect(page.locator(".inspector pre")).toContainText("changed_graph:2");
+  await expect(page.locator(".inspector pre")).not.toContainText(
+    "changed_graph:1",
+  );
+  expect(
+    requests.some(
+      (graph) => graph.pipeline === "changed_graph" && graph.version === "2",
+    ),
+  ).toBe(true);
 });
 
 test("slow draft load preserves newer edits and save reports its snapshot", async ({
@@ -1979,6 +2143,7 @@ test("slow draft load preserves newer edits and save reports its snapshot", asyn
   let finishSave: (() => void) | undefined;
   let saved: any;
   await page.route("**/api/**", async (route) => {
+    if (await executionBoundary(route, true)) return;
     const path = new URL(route.request().url()).pathname;
     let body: unknown = {};
     if (path === "/api/catalog")
@@ -2102,6 +2267,7 @@ test("node inspector exposes authoritative input and output port contracts", asy
   page.on("dialog", (dialog) => dialog.accept());
   await page.goto("/");
   await page.getByRole("button", { name: "contracts", exact: true }).click();
+  await page.getByRole("button", { name: "配置", exact: true }).click();
   await page.locator('.react-flow__node[data-id="reconstruct"]').click();
   await page.getByText("输入输出端口契约", { exact: true }).click();
   const panel = page
@@ -2150,6 +2316,7 @@ test("repeated catalog additions keep distinct instances clear of existing nodes
 }) => {
   let saved: any;
   await page.route("**/api/**", async (route) => {
+    if (await executionBoundary(route, true)) return;
     const path = new URL(route.request().url()).pathname;
     if (route.request().method() === "PUT")
       saved = route.request().postDataJSON();
@@ -2294,6 +2461,7 @@ test("multi-input editor uploads RGB and mask and submits complete bindings", as
     },
   };
   await page.route("**/api/**", async (route) => {
+    if (await executionBoundary(route, true)) return;
     const path = new URL(route.request().url()).pathname;
     let body: unknown = {};
     if (path === "/api/catalog")
@@ -2402,9 +2570,13 @@ test("multi-input editor uploads RGB and mask and submits complete bindings", as
     mimeType: "image/png",
     buffer: Buffer.from("mask"),
   });
-  const start = page.getByRole("button", { name: "启动新运行", exact: true });
+  const start = page.getByRole("button", {
+    name: "启动新运行 · 检查执行范围",
+    exact: true,
+  });
   await expect(start).toBeEnabled();
   await start.click();
+  await confirmExecution(page);
   await expect.poll(() => starts.length).toBe(1);
   expect(starts[0].input_refs).toEqual({
     image: { artifact_id: "image_ref" },
@@ -2458,11 +2630,12 @@ test("multi-input editor uploads RGB and mask and submits complete bindings", as
   expect(starts).toHaveLength(1);
 });
 
-test("changing selected run clears historical input bindings", async ({
+test("changing previewed run preserves explicitly selected historical input", async ({
   page,
 }) => {
   const runs = ["run_a", "run_b"];
   await page.route("**/api/**", async (route) => {
+    if (await executionBoundary(route, true)) return;
     const path = new URL(route.request().url()).pathname;
     let body: any = {};
     if (path === "/api/catalog") {
@@ -2564,10 +2737,17 @@ test("changing selected run clears historical input bindings", async ({
     .click();
   await expect(page.getByLabel("输入 image Artifact ID")).toHaveValue("old");
   await page.getByLabel("选择运行").selectOption("run_b");
-  await expect(page.getByLabel("输入 image Artifact ID")).toHaveValue("");
+  // Product §3.3: changing the viewed run is not an explicit input selection.
+  await expect(
+    page.getByText(/下游输入来源：run_a \/ encode.image/),
+  ).toBeVisible();
+  await expect(page.getByLabel("输入 image Artifact ID")).toHaveValue("old");
   await expect(page.getByLabel("输入 mask Artifact ID")).toHaveValue("");
   await expect(
-    page.getByRole("button", { name: "启动新运行", exact: true }),
+    page.getByRole("button", {
+      name: "启动新运行 · 检查执行范围",
+      exact: true,
+    }),
   ).toBeDisabled();
 });
 
@@ -2590,6 +2770,7 @@ test("backend-only node exposes the unique adapter parameter form", async ({
     },
   };
   await page.route("**/api/**", async (route) => {
+    if (await executionBoundary(route, false)) return;
     const path = new URL(route.request().url()).pathname;
     let body: any = {};
     if (path === "/api/catalog")
@@ -2628,6 +2809,7 @@ test("backend-only node exposes the unique adapter parameter form", async ({
     .locator(".react-flow__node")
     .filter({ hasText: "text_segmentation@1" })
     .click();
+  await page.getByRole("button", { name: "配置", exact: true }).click();
   await page.getByLabel("参数 prompt", { exact: true }).fill("robot");
   await page.getByLabel("参数 prompt", { exact: true }).blur();
   await page.getByRole("button", { name: "编译校验", exact: true }).click();
@@ -2672,6 +2854,7 @@ test("run to selection omits downstream and node preview stays visible in config
     },
   };
   await page.route("**/api/**", async (route) => {
+    if (await executionBoundary(route, false)) return;
     const path = new URL(route.request().url()).pathname;
     let body: any = {};
     if (path === "/api/catalog")
@@ -2733,9 +2916,13 @@ test("run to selection omits downstream and node preview stays visible in config
   await page
     .getByRole("checkbox", { name: "只运行到选中节点（包含必要上游）" })
     .check();
+  await page.getByLabel("图片来源", { exact: true }).selectOption("path");
   await page.getByLabel("运行图片路径").fill("/image.png");
   await expect(page.getByLabel("上传输入 unrelated_mask")).toHaveCount(0);
-  await page.getByRole("button", { name: "运行到这里", exact: true }).click();
+  await page
+    .getByRole("button", { name: "运行到这里 · 检查执行范围", exact: true })
+    .click();
+  await confirmExecution(page);
   expect(Object.keys(submitted?.pipeline.inputs || {})).toEqual(["image"]);
   await expect
     .poll(() => Object.keys(submitted?.pipeline.nodes || {}))
@@ -2763,6 +2950,7 @@ test("reuse fixes the selected immutable snapshot in the creation request", asyn
     dag: { revision: 1, named_actual_inputs: { image }, node_states: {} },
   };
   await page.route("**/api/**", async (route) => {
+    if (await executionBoundary(route, true)) return;
     const path = new URL(route.request().url()).pathname;
     let body: any = {};
     if (path === "/api/catalog")
@@ -2787,7 +2975,163 @@ test("reuse fixes the selected immutable snapshot in the creation request", asyn
   await page
     .getByRole("button", { name: "使用所选运行的原图", exact: true })
     .click();
-  await page.getByRole("button", { name: "启动新运行", exact: true }).click();
+  await page
+    .getByRole("button", { name: "启动新运行 · 检查执行范围", exact: true })
+    .click();
+  await confirmExecution(page);
   await expect.poll(() => submitted?.reuse_source).toEqual(source);
-  expect(submitted.image_ref).toEqual(image);
+  expect(submitted.input_refs.image).toEqual(image);
+  expect(submitted.preflight_digest).toBe("checked-execution-digest");
+});
+
+test("execution completion remains distinct from QA warnings and relative scale", async ({
+  page,
+}) => {
+  const run = {
+    run_id: "quality_run",
+    status: "succeeded",
+    dag: { revision: 1, node_states: {} },
+  };
+  await page.route("**/api/**", async (route) => {
+    if (await executionBoundary(route, true)) return;
+    const path = new URL(route.request().url()).pathname;
+    let body: any = {};
+    if (path === "/api/catalog")
+      body = {
+        execution_enabled: true,
+        operators: {},
+        adapters: [],
+        templates: [],
+      };
+    else if (path === "/api/drafts") body = { drafts: [] };
+    else if (path === "/api/runs")
+      body = { runs: [{ run_id: "quality_run", status: "succeeded" }] };
+    else if (path.endsWith("/outputs/qa/report"))
+      body = {
+        overall_status: "warn",
+        profile: "geometry-v1",
+        checks: [
+          {
+            check_id: "render_back",
+            status: "skipped",
+            applicable: false,
+            value: null,
+            reason: "没有相机注册",
+            threshold_profile: "geometry-v1",
+          },
+        ],
+      };
+    else if (path.endsWith("/outputs/assemble/asset"))
+      body = {
+        asset_id: "asset-test",
+        asset_version: "1",
+        spatial: {
+          scale_status: "relative",
+          unit: "relative",
+          forward_status: "estimated",
+        },
+        component_provenance: [{ component_id: "body", source: "generated" }],
+      };
+    else
+      body = {
+        run,
+        outputs: [
+          {
+            node_id: "qa",
+            port: "report",
+            kind: "quality_report",
+            url: "/api/runs/quality_run/outputs/qa/report",
+          },
+          {
+            node_id: "assemble",
+            port: "asset",
+            kind: "asset_definition",
+            url: "/api/runs/quality_run/outputs/assemble/asset",
+          },
+        ],
+      };
+    await route.fulfill({ json: body });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "运行", exact: true }).click();
+  await page.getByLabel("选择运行").selectOption("quality_run");
+  await expect(page.getByText("执行状态：完成", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("QA 报告汇总：warn · 警告", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("render_back：skipped · 未执行该项检查", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("尺度：相对尺度，未标定为米制", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("质量合格", { exact: true })).toHaveCount(0);
+});
+
+test("human decision summary refreshes when its node finishes later", async ({
+  page,
+}) => {
+  let finished = false;
+  const decision = { artifact_id: "decision_same" };
+  await page.route("**/api/**", async (route) => {
+    if (await executionBoundary(route, true)) return;
+    const path = new URL(route.request().url()).pathname;
+    let body: any = {};
+    if (path === "/api/catalog")
+      body = {
+        execution_enabled: true,
+        operators: {},
+        adapters: [],
+        templates: [],
+      };
+    else if (path === "/api/drafts") body = { drafts: [] };
+    else if (path === "/api/runs")
+      body = { runs: [{ run_id: "human", status: "running" }] };
+    else if (path.endsWith("/decisions/choose"))
+      body = {
+        recorded: true,
+        run_id: "human",
+        node_id: "choose",
+        decision_ref: decision,
+        reviewer: "tester",
+        payload: { candidate: 0 },
+        node_finished_at: finished ? "2026-09-21T09:00:00Z" : null,
+      };
+    else
+      body = {
+        run: {
+          run_id: "human",
+          status: finished ? "succeeded" : "running",
+          dag: {
+            revision: finished ? 2 : 1,
+            node_states: {
+              choose: {
+                status: finished ? "succeeded" : "running",
+                attempts: [
+                  {
+                    decision,
+                    finished_at: finished ? "2026-09-21T09:00:00Z" : null,
+                  },
+                ],
+              },
+            },
+          },
+        },
+        outputs: [],
+      };
+    await route.fulfill({ json: body });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "运行", exact: true }).click();
+  await page.getByLabel("选择运行").selectOption("human");
+  await expect(
+    page.getByText("节点完成时间：未记录", { exact: true }),
+  ).toBeVisible();
+  finished = true;
+  await expect(
+    page.getByText("节点完成时间：2026-09-21T09:00:00Z", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("确认时间：未记录", { exact: true }),
+  ).toBeVisible();
 });

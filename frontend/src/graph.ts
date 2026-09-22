@@ -44,7 +44,15 @@ export type Catalog = {
   operators: Record<string, Operator>;
   adapters: Adapter[];
   backends?: (Adapter & { backend: string; adapter: string })[];
-  templates: { id: string; label: string; pipeline: Pipeline }[];
+  templates: {
+    id: string;
+    label: string;
+    pipeline: Pipeline;
+    execution_ready?: boolean;
+    execution_reason?: string;
+    execution_level?: string;
+    service_status?: string;
+  }[];
 };
 export const inputId = (name: string) => `input:${name}`;
 export function parseReference(
