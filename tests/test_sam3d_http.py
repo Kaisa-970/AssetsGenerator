@@ -331,3 +331,19 @@ def test_invalid_expiration_body_is_bounded_and_redacted(upstream, mode):
         )
     assert "private-test-key" not in str(error.value)
     assert state["posts"] == 0
+
+
+def test_optional_baking_options_preserve_legacy_identity():
+    from assets_generator.sam3d_http import validate_options
+
+    assert "bake_filter" not in validate_options({})
+    updated = validate_options({"bake_filter": "mipmap", "bake_view_resolution": 512})
+    assert updated["bake_filter"] == "mipmap"
+    assert updated["bake_view_resolution"] == 512
+    for bad in (
+        {"bake_filter": "unknown"},
+        {"bake_view_resolution": True},
+        {"bake_view_resolution": 256},
+    ):
+        with pytest.raises(ValueError):
+            validate_options(bad)

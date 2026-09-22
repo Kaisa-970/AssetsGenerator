@@ -42,6 +42,8 @@ class RemoteMaskedShapeAdapter(RemoteNodeAdapter):
                     "cfg1": {"type": "number", "minimum": 0, "maximum": 15},
                     "cfg2": {"type": "number", "minimum": 0, "maximum": 15},
                     "bake": {"type": "boolean"},
+                    "bake_view_resolution": {"type": "integer", "enum": [512, 1024]},
+                    "bake_filter": {"type": "string", "enum": ["mipmap", "legacy"]},
                     "texture": {"type": "integer", "enum": [512, 1024, 2048]},
                     "reduction": {"type": "number", "minimum": 0, "maximum": 0.95},
                 },
@@ -77,7 +79,11 @@ class RemoteMaskedShapeAdapter(RemoteNodeAdapter):
                 for name, ref in refs.items()
             },
             "parameters": validate_options(
-                {name: context.parameters[name] for name in validate_options({})}
+                {
+                    name: context.parameters[name]
+                    for name in (*validate_options({}), "bake_view_resolution", "bake_filter")
+                    if name in context.parameters
+                }
             ),
             "backend_digest": context.parameters["upstream_digest"],
         }

@@ -114,7 +114,9 @@ def validate_options(options: dict[str, Any]) -> dict[str, Any]:
         "texture": 1024,
         "reduction": 0,
     }
-    if not isinstance(options, dict) or set(options) - set(defaults):
+    if not isinstance(options, dict) or set(options) - (
+        set(defaults) | {"bake_view_resolution", "bake_filter"}
+    ):
         raise ValueError("unknown SAM3D options")
     result = {**defaults, **options}
     for key, lo, hi in (("seed", 0, 2**32 - 1), ("steps1", 1, 100), ("steps2", 1, 100)):
@@ -130,6 +132,13 @@ def validate_options(options: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("invalid SAM3D texture")
     for key in ("cfg1", "cfg2", "reduction"):
         result[key] = float(result[key])
+    if "bake_view_resolution" in result and (
+        type(result["bake_view_resolution"]) is not int
+        or result["bake_view_resolution"] not in (512, 1024)
+    ):
+        raise ValueError("invalid SAM3D bake_view_resolution")
+    if "bake_filter" in result and result["bake_filter"] not in ("mipmap", "legacy"):
+        raise ValueError("invalid SAM3D bake_filter")
     return result
 
 
