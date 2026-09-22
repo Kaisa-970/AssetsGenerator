@@ -35,7 +35,7 @@ from .pipeline import (
     load_default_operator_specs,
 )
 from .relations import RelationValidatorRegistry
-from .serialization import cache_key, canonical_json_bytes, read_json, to_primitive
+from .serialization import cache_key, canonical_json_bytes, read_json, sha256_bytes, to_primitive
 from .workbench_http import OutputPayload
 from .workbench_persistence import CreationReceipt
 
@@ -618,6 +618,45 @@ class NodeEditorExecution:
                 else metadata,
             )
         return {"image_ref": to_primitive(ref)}
+
+    def read_text_input(self, artifact_id: str) -> dict[str, str]:
+        """Read only verified, bounded text; never accept a filesystem path."""
+        ref = ArtifactRef(artifact_id)
+        store = self.engine.store
+        identity = store.get_manifest(ref.artifact_id).identity
+        if (identity.kind, identity.schema_name, identity.schema_version) != (
+            "text",
+            "plain_text",
+            "1.0",
+        ):
+            raise ContractError("input is not a plain text Artifact")
+        path = store.blob_path(ref)
+        if not 0 < path.stat().st_size <= 65536:
+            raise ContractError("text input must be at most 64 KiB")
+        data = path.read_bytes()
+        if sha256_bytes(data) != identity.blob_digest:
+            raise ContractError("text input digest mismatch")
+        text = data.decode("utf-8")
+        if not text.strip():
+            raise ContractError("text input must be nonempty")
+        return {"artifact_id": artifact_id, "text": text}
+
+    def upload_text(self, data: bytes) -> dict[str, Any]:
+        if not 0 < len(data) <= 65536:
+            raise ContractError("text input must be at most 64 KiB")
+        if not data.decode("utf-8").strip():
+            raise ContractError("text input must be nonempty UTF-8")
+        with self._lock:
+            if self._closed:
+                raise ContractError("editor execution service is closing")
+            ref = self.engine.store.persist_bytes(
+                data,
+                kind="text",
+                schema_name="plain_text",
+                schema_version="1.0",
+                identity_metadata={"media_type": "text/plain; charset=utf-8"},
+            )
+        return {"text_ref": to_primitive(ref)}
 
     def upload_mask(self, data: bytes) -> dict[str, Any]:
         """Import a strict binary PNG mask without creating a run."""

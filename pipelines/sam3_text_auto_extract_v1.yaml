@@ -1,0 +1,19 @@
+pipeline: sam3_text_auto_extract_v1
+version: 1
+inputs:
+  image: {kind: rgb_image, carriers: [artifact_ref]}
+  text: {kind: text, carriers: [artifact_ref], schema_name: plain_text, schema_version: "1.0"}
+nodes:
+  segment:
+    operator: text_segmentation@2
+    backend: sam3
+    parameters: {confidence: 0.5}
+    inputs:
+      image: pipeline.inputs.image
+      text: pipeline.inputs.text
+  extract:
+    operator: apply_binary_mask@1
+    adapter: apply_binary_mask@1
+    inputs:
+      image: pipeline.inputs.image
+      mask: segment.outputs.mask

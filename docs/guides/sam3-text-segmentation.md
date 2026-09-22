@@ -2,6 +2,7 @@
 
 新增 text_segmentation@1（图片输入，prompt/confidence 节点参数）与 select_text_mask@1。
 模板 `pipelines/sam3_text_to_asset_v1.yaml`：文字分割（联合遮罩）→ SAM3D → canonicalize → QA → 组装 → 发布。
+如果不需要人工确认，使用 `pipelines/sam3_text_auto_extract_v1.yaml`：文字分割完成后，模型返回的全部候选会自动取并集，`segment.mask` 直接进入提取节点；整条路径不会创建人工等待或选择节点。
 文字分割默认输出所有候选的并集 mask，同时保留 candidates。零候选明确失败；不生成整图遮罩。
 只有需要逐个处理对象时才使用 select_text_mask，通过 candidate_index 指定候选序号。
 当前不是可视人工审查节点，不能将该序号选择声称为用户质量批准。联合遮罩使用 all_candidates_union@1 策略，证据绑定原图与候选包。
@@ -28,7 +29,7 @@ runner 增加 float 转换后使用新身份、新数据库重跑；旧失败保
 
 ## 只分割或提取图片
 
-画布可分别加载 sam3_text_masks_v1（只分割）与 extract_masked_image_v1（只提取）。
+画布可分别加载 sam3_text_masks_v1（只分割）、sam3_text_auto_extract_v1（自动并集后提取）与 extract_masked_image_v1（只提取）。
 分割成功后，“可查看的节点输出”会逐个显示 candidates~0、candidates~1 等遮罩，
 可展开预览和下载 PNG。空候选时不会虚构遮罩。
 加载提取模板后，在运行列表选择已完成的分割记录，点击目标候选“用作输入 mask”；
@@ -99,3 +100,13 @@ BuildRun Artifact，provenance 引用该快照；执行摘要标记 cached。源
 segment 没有 remote_binding 或 worker execution，extract 正常执行并输出 RGBA。
 恢复后仍成功，截图位于 `<DATASET_ROOT>/sam3-text-validation-20260921/node-reuse.png`。
 本轮未重新运行 GPU 推理，使用之前真实 GPU 输出验证复用。
+
+
+## 用输入节点提供文字
+
+`sam3_text_auto_extract_v1` 使用 `text_segmentation@2`，有 image、text 两个输入。
+加载模板后，在运行面板上传原图，在文本框填写 `chair`，点击“应用文本”，再启动。
+text 输入的格式是 text / plain_text@1.0，载体为 ArtifactRef；也能连接其他节点输出的同契约文本。
+文本以 UTF-8 保存，分割提示词必须非空且最多 256 字符。修改文本会改变输入身份，不能复用旧文字的分割结果。
+V2 没有 prompt 参数；旧的 text_segmentation@1 及其 prompt 参数仍保留。
+这是自动分割，不需要人工选择 mask。

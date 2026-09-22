@@ -6,6 +6,7 @@ from PIL import Image
 
 from assets_generator.artifact_store import LocalArtifactStore
 from assets_generator.dag_adapters import AdapterRegistry, NodeExecutionContext
+from assets_generator.dag_image_mask import ApplyBinaryMaskAdapter
 from assets_generator.dag_remote_profiles import register_remote_shape_profiles
 from assets_generator.dag_text_segmentation import SelectTextMaskAdapter
 from assets_generator.models import StructuredValue
@@ -44,6 +45,37 @@ def test_text_asset_template_binds():
         )
     )
     assert plan.bindings["segment"].parameters["prompt"] == "robot"
+
+
+def test_auto_extract_template_routes_union_mask_without_selection_node():
+    registry = AdapterRegistry()
+    registry.register(ApplyBinaryMaskAdapter())
+    register_remote_shape_profiles(
+        registry,
+        {
+            "default_profile": "sam3",
+            "profiles": {
+                "sam3": {
+                    "endpoint": "http://127.0.0.1:8773",
+                    "service_id": "sam3",
+                    "backend_digest": "sha256:" + "c" * 64,
+                    "operator": "text_segmentation@1",
+                }
+            },
+        },
+    )
+    plan = registry.bind_plan(
+        compile_pipeline(
+            load_pipeline(Path("pipelines/sam3_text_auto_extract_v1.yaml")),
+            load_default_operator_specs(),
+            require_explicit_joins=True,
+        )
+    )
+    nodes = {node.node_id: node for node in plan.static_plan.nodes}
+    assert nodes["segment"].operator == "text_segmentation@2"
+    binding = nodes["extract"].inputs["mask"]
+    assert (binding.node_id, binding.port) == ("segment", "mask")
+    assert "select" not in plan.static_plan.nodes
 
 
 @pytest.mark.parametrize("count", [0, 1, 2])
@@ -242,3 +274,58 @@ def test_idle_worker_does_not_hash_and_changed_deployment_never_executes(tmp_pat
         assert not calls
     finally:
         store.close()
+
+
+def test_text_port_payload_uses_verified_text_artifact(tmp_path):
+    import threading
+    from types import SimpleNamespace
+
+    from assets_generator.dag_text_segmentation import RemoteTextInputSegmentationAdapter
+    from assets_generator.node_editor_execution import NodeEditorExecution
+    from assets_generator.remote_protocol import RemoteIdentity
+
+    store = LocalArtifactStore(tmp_path)
+    service = SimpleNamespace(
+        engine=SimpleNamespace(store=store), _lock=threading.RLock(), _closed=False
+    )
+    from assets_generator.models import ArtifactRef
+
+    ref = ArtifactRef(**NodeEditorExecution.upload_text(service, b"chair")["text_ref"])
+    assert store.verify_digest(ref)
+    adapter = RemoteTextInputSegmentationAdapter(
+        "http://127.0.0.1:8773", RemoteIdentity("sam3", "sha256:" + "a" * 64)
+    )
+    context = NodeExecutionContext(
+        "run", "segment", {"text": ref}, adapter.spec.normalize_parameters({}), store
+    )
+    assert adapter.prepare_payload(context)["parameters"]["prompt"] == "chair"
+    assert "prompt" not in adapter.spec.defaults
+    for bad in (b"", b"   ", b"\xff"):
+        with pytest.raises(ValueError):
+            NodeEditorExecution.upload_text(service, bad)
+    store.blob_path(ref).unlink()
+    with pytest.raises(ValueError, match="intact text"):
+        adapter.prepare_payload(context)
+
+
+def test_read_bound_text_checks_content_and_contract(tmp_path):
+    import threading
+    from types import SimpleNamespace
+
+    from assets_generator.models import ArtifactRef
+    from assets_generator.node_editor_execution import NodeEditorExecution
+
+    store = LocalArtifactStore(tmp_path)
+    service = SimpleNamespace(
+        engine=SimpleNamespace(store=store), _lock=threading.RLock(), _closed=False
+    )
+    ref = NodeEditorExecution.upload_text(service, b"table")["text_ref"]
+    assert NodeEditorExecution.read_text_input(service, ref["artifact_id"])["text"] == "table"
+    wrong = store.persist_bytes(
+        b"table", kind="binary_mask", schema_name="png", schema_version="1.0"
+    )
+    with pytest.raises(ValueError, match="plain text"):
+        NodeEditorExecution.read_text_input(service, wrong.artifact_id)
+    store.blob_path(ArtifactRef(**ref)).write_bytes(b"chair")
+    with pytest.raises(ValueError, match="digest mismatch"):
+        NodeEditorExecution.read_text_input(service, ref["artifact_id"])

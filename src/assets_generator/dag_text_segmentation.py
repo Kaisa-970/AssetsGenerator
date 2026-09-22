@@ -227,3 +227,44 @@ class SelectTextMaskAdapter:
             image_size(context.store.blob_path(image).read_bytes()),
         )
         return NodeExecutionResult({"mask": mask})
+
+
+class RemoteTextInputSegmentationAdapter(RemoteTextSegmentationAdapter):
+    """V2 consumes a text Artifact while retaining the deployed SAM3 wire protocol."""
+
+    def __init__(self, endpoint: str, identity: RemoteIdentity):
+        from dataclasses import replace
+
+        super().__init__(endpoint, identity)
+        properties = dict(self._spec.parameter_schema["properties"])
+        properties.pop("prompt")
+        defaults = dict(self._spec.defaults)
+        defaults.pop("prompt")
+        self._spec = replace(
+            self._spec,
+            version="2",
+            operators=("text_segmentation@2",),
+            parameter_schema={"type": "object", "properties": properties},
+            defaults=defaults,
+        )
+
+    def prepare_payload(self, context: NodeExecutionContext) -> dict[str, Any]:
+        ref = context.inputs.get("text")
+        if not isinstance(ref, ArtifactRef) or not context.store.verify_digest(ref):
+            raise ContractError("text segmentation requires intact text")
+        identity = context.store.get_manifest(ref.artifact_id).identity
+        if (identity.kind, identity.schema_name, identity.schema_version) != (
+            "text",
+            "plain_text",
+            "1.0",
+        ):
+            raise ContractError("invalid text input contract")
+        data = context.store.blob_path(ref).read_bytes()
+        if len(data) > 1024:
+            raise ContractError("text segmentation prompt exceeds limit")
+        return {
+            "operation": "text_segmentation@1",
+            "parameters": parameters(
+                {"prompt": data.decode("utf-8"), "confidence": context.parameters["confidence"]}
+            ),
+        }

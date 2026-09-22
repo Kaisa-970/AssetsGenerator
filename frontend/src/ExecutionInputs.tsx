@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import type { Pipeline } from "./graph";
 import { LocalInputPreview } from "./LocalInputPreview";
 type Props = {
@@ -36,6 +37,48 @@ type Props = {
   uploadedFile?: File;
   upload: (file?: File) => Promise<void>;
 };
+function TextInput({ name, artifactId, disabled, apply, invalidate }: {
+  name: string; artifactId: string; disabled: boolean;
+  apply: (file: File) => void; invalidate: () => void;
+}) {
+  const [text, setText] = useState("");
+  const [bound, setBound] = useState<{ id: string; text?: string; error?: string }>();
+  useEffect(() => {
+    if (!artifactId) { setBound(undefined); return; }
+    setText("");
+    setBound(undefined);
+    const controller = new AbortController();
+    let active = true;
+    void (async () => {
+      try {
+        const response = await fetch(`/api/inputs/text?artifact_id=${encodeURIComponent(artifactId)}`, { signal: controller.signal });
+        const value = await response.json();
+        if (!response.ok || value.artifact_id !== artifactId || typeof value.text !== "string")
+          throw Error("无法核实文本内容");
+        if (active) setBound({ id: artifactId, text: value.text });
+      } catch {
+        if (active) setBound({ id: artifactId, error: "无法读取已绑定文本，请检查引用或重新输入并应用文本。" });
+      }
+    })();
+    return () => { active = false; controller.abort(); };
+  }, [artifactId]);
+  return <div>
+    <label>编辑中的文本（应用后生效）
+      <textarea aria-label={`文本输入 ${name}`} value={text} disabled={disabled}
+        placeholder="例如 chair"
+        onChange={(event) => { setText(event.target.value); invalidate(); }} />
+    </label>
+    <button disabled={disabled || !text.trim()} onClick={() => apply(new File([text], "input.txt", { type: "text/plain" }))}>应用文本</button>
+    <section aria-label={`已绑定文本 ${name}`}>
+      <strong>实际运行使用的文本</strong>
+      {!artifactId ? <p>尚未绑定；编辑中的文本尚未应用。</p>
+        : bound?.id !== artifactId ? <p>正在读取已绑定文本…</p>
+        : bound.error ? <p role="alert">{bound.error}</p>
+        : <pre>{bound.text}</pre>}
+    </section>
+  </div>;
+}
+
 export function ExecutionInputs({
   pipeline: effectivePipeline,
   multiInput,
@@ -69,7 +112,7 @@ export function ExecutionInputs({
         <div>
           <p>
             为每个输入上传文件，或从下方历史运行选择“用作输入”。 支持 RGB/RGBA
-            图片和二值 PNG 遮罩。
+            图片、二值 PNG 遮罩和文本。
           </p>
           {Object.entries(effectivePipeline.inputs).map(([name, port]) => {
             const artifactId = String(inputRefs[name]?.artifact_id || "");
@@ -77,6 +120,11 @@ export function ExecutionInputs({
               <div className="run-node" key={name}>
                 <strong>{name}</strong> ·{" "}
                 {port.kind || port.kinds?.join(" | ") || "未声明类型"}
+                {(port.kind === "text" || port.kinds?.[0] === "text") && (
+                  <TextInput name={name} artifactId={artifactId} disabled={pending || uploading}
+                    invalidate={() => setInputArtifact(name, "")}
+                    apply={(file) => { void uploadInputArtifact(name, file); }} />
+                )}
                 {(port.kind === "rgb_image" ||
                   port.kind === "rgba_image" ||
                   port.kind === "binary_mask") && (

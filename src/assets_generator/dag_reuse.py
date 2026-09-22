@@ -24,6 +24,7 @@ if TYPE_CHECKING:
 # These adapters produce artifacts, not human decisions or publication side effects.
 REUSABLE = {
     "remote_text_segmentation@1",
+    "remote_text_segmentation@2",
     "remote_masked_shape@1",
     "remote_shape@1",
     "apply_binary_mask@1",

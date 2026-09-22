@@ -48,7 +48,10 @@ def continue_extraction(
             raise ContractError("source snapshot does not belong to the selected run")
         plan = service.engine._plan(run)
         nodes = {node.node_id: node for node in plan.static_plan.nodes}
-        if node_id not in nodes or nodes[node_id].operator != "text_segmentation@1":
+        if node_id not in nodes or nodes[node_id].operator not in {
+            "text_segmentation@1",
+            "text_segmentation@2",
+        }:
             raise ContractError("continue extraction requires a text_segmentation node")
         state = run.dag.node_states[node_id]
         if state.status != "succeeded" or not state.attempts:

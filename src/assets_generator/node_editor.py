@@ -276,6 +276,11 @@ def create_editor_server(editor: DraftEditor, port: int = 8767) -> ThreadingHTTP
                         self.respond(200, editor.execution.snapshot(parts[0]))
                     else:
                         raise ValueError("invalid run route")
+                elif path == "/api/inputs/text" and editor.execution:
+                    query = parse_qs(urlsplit(self.path).query)
+                    if set(query) != {"artifact_id"} or len(query["artifact_id"]) != 1:
+                        raise ValueError("text preview requires one Artifact ID")
+                    self.respond(200, editor.execution.read_text_input(query["artifact_id"][0]))
                 elif path == "/api/drafts":
                     self.respond(
                         200,
@@ -320,7 +325,13 @@ def create_editor_server(editor: DraftEditor, port: int = 8767) -> ThreadingHTTP
                 path = urlsplit(self.path).path
                 if (
                     self.command == "POST"
-                    and path in {"/api/inputs/image", "/api/inputs/rgba", "/api/inputs/mask"}
+                    and path
+                    in {
+                        "/api/inputs/image",
+                        "/api/inputs/rgba",
+                        "/api/inputs/mask",
+                        "/api/inputs/text",
+                    }
                     and editor.execution
                 ):
                     if self.headers.get("Content-Type") != "application/octet-stream":
@@ -334,7 +345,9 @@ def create_editor_server(editor: DraftEditor, port: int = 8767) -> ThreadingHTTP
                         raise ValueError("incomplete image upload")
                     self.respond(
                         201,
-                        editor.execution.upload_mask(data)
+                        editor.execution.upload_text(data)
+                        if path == "/api/inputs/text"
+                        else editor.execution.upload_mask(data)
                         if path == "/api/inputs/mask"
                         else editor.execution.upload_image(data, rgba=path == "/api/inputs/rgba"),
                     )

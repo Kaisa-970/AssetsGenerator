@@ -404,3 +404,15 @@ operators:
       candidates: {kind: remote_job_result, carriers: [artifact_ref], schema_name: TextMaskCandidates, schema_version: "1.0"}
     outputs:
       mask: {kind: binary_mask, carriers: [artifact_ref], schema_name: png, schema_version: "1.0"}
+
+  - name: text_segmentation
+    version: 2
+    relations:
+      - validator: independent_inputs@1
+        inputs: [image, text]
+    inputs:
+      image: {kind: rgb_image, carriers: [artifact_ref]}
+      text: {kind: text, carriers: [artifact_ref], schema_name: plain_text, schema_version: "1.0"}
+    outputs:
+      mask: {kind: binary_mask, carriers: [artifact_ref], schema_name: png, schema_version: "1.0"}
+      candidates: {kind: remote_job_result, carriers: [artifact_ref], schema_name: TextMaskCandidates, schema_version: "1.0"}

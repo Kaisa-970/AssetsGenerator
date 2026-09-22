@@ -11,7 +11,11 @@ from .dag_remote_adapter import RemoteNodeAdapter
 from .dag_remote_masked_shape import RemoteMaskedShapeAdapter
 from .dag_remote_shape import RemoteShapeAdapter
 from .dag_selection_prepare import SelectionPrepareAdapter
-from .dag_text_segmentation import RemoteTextSegmentationAdapter, SelectTextMaskAdapter
+from .dag_text_segmentation import (
+    RemoteTextInputSegmentationAdapter,
+    RemoteTextSegmentationAdapter,
+    SelectTextMaskAdapter,
+)
 from .remote_protocol import RemoteIdentity
 
 
@@ -58,6 +62,14 @@ def register_remote_shape_profiles(registry: AdapterRegistry, raw: dict[str, Any
     registry.register(adapters[default])
     for name, adapter in adapters.items():
         registry.register_backend(name, adapter)
+        if isinstance(adapter, RemoteTextSegmentationAdapter):
+            registry.register_backend(
+                name,
+                RemoteTextInputSegmentationAdapter(
+                    profiles[name]["endpoint"],
+                    RemoteIdentity(profiles[name]["service_id"], profiles[name]["backend_digest"]),
+                ),
+            )
     for core in (
         SelectionPrepareAdapter(),
         CanonicalizeAdapter(),

@@ -11,6 +11,7 @@ SCHEMA_VERSION = "1.0"
 
 ARTIFACT_KINDS = frozenset(
     {
+        "text",
         "rgb_image",
         "rgba_image",
         "binary_mask",

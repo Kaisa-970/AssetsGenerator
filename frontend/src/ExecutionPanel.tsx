@@ -139,7 +139,7 @@ export function ExecutionPanel({
   const multiView =
     Object.keys(effectivePipeline.inputs).length === 1 &&
     "observations" in effectivePipeline.inputs;
-  const multiInput = Object.keys(effectivePipeline.inputs).length > 1;
+  const multiInput = Object.keys(effectivePipeline.inputs).length > 1 || Object.values(effectivePipeline.inputs).some((port) => port.kind === "text" || port.kinds?.[0] === "text");
   const rgbaInput = effectivePipeline.inputs.image?.kind === "rgba_image";
   const [imageSource, setImageSource] = useState("upload");
   const [uploaded, setUploaded] = useState<{
@@ -284,9 +284,11 @@ export function ExecutionPanel({
       setUploadMessage("请选择非空且不超过 20 MiB 的图片。");
       return;
     }
-    const kind = effectivePipeline.inputs[name]?.kind;
+    const kind = effectivePipeline.inputs[name]?.kind || effectivePipeline.inputs[name]?.kinds?.[0];
     const endpoint =
-      kind === "binary_mask"
+      kind === "text"
+        ? "/api/inputs/text"
+        : kind === "binary_mask"
         ? "/api/inputs/mask"
         : kind === "rgba_image"
           ? "/api/inputs/rgba"
@@ -308,7 +310,7 @@ export function ExecutionPanel({
         body: file,
       });
       const value = await response.json();
-      const reference = value.image_ref || value.mask_ref;
+      const reference = value.image_ref || value.mask_ref || value.text_ref;
       if (!response.ok || typeof reference?.artifact_id !== "string")
         throw Error(value.error || "服务未返回有效 Artifact 引用");
       if (inputGeneration.current.revision !== revision) {
@@ -316,7 +318,7 @@ export function ExecutionPanel({
         return;
       }
       setInputArtifact(name, reference.artifact_id);
-      setInputFiles((old) => ({
+      if (kind !== "text") setInputFiles((old) => ({
         ...old,
         [name]: { file, artifactId: reference.artifact_id },
       }));

@@ -24,6 +24,7 @@ export function InputContractForm({
     ...new Set(
       [
         singleKind,
+        "text",
         "rgb_image",
         "rgba_image",
         "binary_mask",
@@ -32,6 +33,7 @@ export function InputContractForm({
     ),
   ];
   const presets = [
+    { label: "文本", contract: catalog.operators["text_segmentation@2"]?.inputs.text },
     {
       label: "普通 RGB 图片（上传 JPG / PNG）",
       contract: catalog.operators["encode_png@1"]?.inputs.image,
