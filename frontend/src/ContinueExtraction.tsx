@@ -135,16 +135,36 @@ export function ContinueExtraction({
       {proposal?.eligible && (
         <>
           <p>
-            来源：{runId} / {nodeId}
-            。新运行只运行提取，不再运行分割；旧运行保持不变。
+            已找到可继续处理的分割结果。新运行会保留当前分割，直接执行提取；原运行不会改变。
           </p>
-          {Object.entries(proposal.preflight.nodes).map(([id, node]) => (
-            <p key={id}>
-              {id} · {node.status === "reuse" ? "将复用" : "将执行提取"} ·{" "}
-              {node.detail}
+          <div aria-label="继续提取执行范围">
+            <strong>这次会做什么</strong>
+            <ul>
+              {Object.entries(proposal.preflight.nodes).map(([id, node]) => (
+                <li key={id}>
+                  {node.status === "reuse" ? "保留" : "执行"}：
+                  {id === nodeId
+                    ? "分割结果"
+                    : id === proposal.extract_node_id
+                      ? "对象提取"
+                      : "前置处理"}
+                </li>
+              ))}
+            </ul>
+          </div>
+          <details>
+            <summary>查看核验详情</summary>
+            <p>
+              来源运行：{runId}；分割节点：{nodeId}
             </p>
-          ))}
-          <p>启动时再次核验；本入口不自动继承人工决定。</p>
+            {Object.entries(proposal.preflight.nodes).map(([id, node]) => (
+              <p key={id}>
+                {id} · {node.status === "reuse" ? "已核验可复用" : "将执行"} ·{" "}
+                {node.detail}
+              </p>
+            ))}
+            <p>启动时会再次核验；不会自动继承人工决定。</p>
+          </details>
           <button
             disabled={disabled || busy}
             onClick={() => {

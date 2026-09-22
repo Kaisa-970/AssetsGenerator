@@ -101,15 +101,16 @@ export function OutputComparison({
           return (
             <article key={`${side}:${identity}`} aria-label={`比较 ${side}`}>
               <h4>{side} · 历史结果</h4>
-              <p>
-                {slot.runId} / {slot.nodeId} / {slot.port}
-              </p>
-              <p className="comparison-artifact">
-                Artifact：{slot.reference.artifact_id}
-              </p>
+              <p>这份结果来自已完成的运行，可单独预览。</p>
               <details>
-                <summary>固定快照</summary>
-                <p className="comparison-artifact">{slot.snapshot}</p>
+                <summary>查看来源详情</summary>
+                <p>
+                  {slot.runId} / {slot.nodeId} / {slot.port}
+                </p>
+                <p className="comparison-artifact">
+                  Artifact：{slot.reference.artifact_id}
+                </p>
+                <p className="comparison-artifact">固定快照：{slot.snapshot}</p>
               </details>
               {["rgb_image", "rgba_image", "binary_mask"].includes(
                 slot.kind,

@@ -99,12 +99,16 @@ test("continue extraction checks fixed snapshot and confirms exact independent c
   await page
     .getByRole("button", { name: "继续提取 · segment", exact: true })
     .click();
-  await expect(page.getByText(/新运行只运行提取，不再运行分割/)).toBeVisible();
+  await expect(
+    page.getByText(
+      "已找到可继续处理的分割结果。新运行会保留当前分割，直接执行提取；原运行不会改变。",
+      { exact: true },
+    ),
+  ).toBeVisible();
   expect(gets).toEqual([snapshot.artifact_id]);
   expect(starts).toEqual([]);
-  await expect(
-    page.getByText("segment · 将复用 · verified", { exact: true }),
-  ).toBeVisible();
+  await expect(page.getByText("保留：分割结果", { exact: true })).toBeVisible();
+  await expect(page.getByText("执行：对象提取", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "确认继续提取", exact: true }).click();
   await expect.poll(() => starts.length).toBe(1);
   expect(starts[0]).toEqual({
