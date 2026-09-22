@@ -4,16 +4,19 @@ import { request } from "./executionApi";
 export function useResultFreshness(
   effectivePipeline: Pipeline,
   selected: string,
-  reuseResults: boolean,
 ) {
-  const [nodeFreshness, setNodeFreshness] = useState<Record<string, string>>(
-    {},
-  );
+  const key = JSON.stringify([selected, effectivePipeline]);
+  const [checked, setChecked] = useState<{
+    key: string;
+    statuses: Record<string, string>;
+  }>();
+  const setNodeFreshness = (statuses: Record<string, string>) =>
+    setChecked({ key, statuses });
   const sourcePlan = useRef<{ runId: string; plan: any } | undefined>(
     undefined,
   );
   useEffect(() => {
-    if (!selected || !reuseResults) {
+    if (!selected) {
       setNodeFreshness({});
       return;
     }
@@ -78,7 +81,7 @@ export function useResultFreshness(
       clearTimeout(timer);
       controller.abort();
     };
-  }, [effectivePipeline, selected, reuseResults]);
+  }, [effectivePipeline, selected]);
 
-  return nodeFreshness;
+  return checked?.key === key ? checked.statuses : {};
 }

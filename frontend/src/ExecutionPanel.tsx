@@ -260,11 +260,7 @@ export function ExecutionPanel({
       ? envelope?.actions
       : undefined;
   const reuseStates = run?.dag?.node_states;
-  const nodeFreshness = useResultFreshness(
-    effectivePipeline,
-    selected,
-    reuseResults,
-  );
+  const nodeFreshness = useResultFreshness(effectivePipeline, selected);
 
   const executing = pending || !!envelope?.busy;
   const setInputArtifact = (name: string, artifactId: string) => {
@@ -511,8 +507,14 @@ export function ExecutionPanel({
             <div className="section-label">
               节点预览 · {selectedNode || "请选择节点"}
             </div>
-            <p>
-              显示所选运行的历史结果；画布或输入改变后，启动时逐节点核验是否可复用。
+            <p>来源运行：{run?.run_id || "未选择运行"}。历史结果保持不变。</p>
+            <p aria-label="预览配置状态">
+              {selectedNode && nodeFreshness[selectedNode]
+                ? nodeFreshness[selectedNode].includes("需要更新") ||
+                  nodeFreshness[selectedNode].includes("上游需更新")
+                  ? "结果过期：配置或上游已变化；保留旧预览供比较。"
+                  : nodeFreshness[selectedNode]
+                : "待核验：尚未确认此结果是否对应当前配置。"}
             </p>
             <label>
               输出端口
@@ -606,6 +608,25 @@ export function ExecutionPanel({
                   : "尚无成功结果"}
             </p>
           ))}
+        </section>
+      )}
+      {Object.values(nodeFreshness).some(
+        (value) => value.includes("需要更新") || value.includes("上游需更新"),
+      ) && (
+        <section aria-label="配置变化影响">
+          <p>
+            受影响节点：
+            {Object.entries(nodeFreshness)
+              .filter(
+                ([, value]) =>
+                  value.includes("需要更新") || value.includes("上游需更新"),
+              )
+              .map(([id]) => id)
+              .join("、")}
+          </p>
+          <p>
+            旧运行和预览保留。下方启动将创建新运行；是否复用其他节点，以执行预检为准。
+          </p>
         </section>
       )}
       <div className="section-label">创建新运行</div>
@@ -717,7 +738,18 @@ export function ExecutionPanel({
             }),
           )
         }
-        label={runToSelection ? "运行到这里" : "启动新运行"}
+        label={
+          runToSelection
+            ? "运行到这里"
+            : reuseResults &&
+                envelope?.snapshot_ref &&
+                Object.values(nodeFreshness).some(
+                  (value) =>
+                    value.includes("需要更新") || value.includes("上游需更新"),
+                )
+              ? "重新执行受影响节点"
+              : "启动新运行"
+        }
       />
       {unresolvedCreation && (
         <div className="run-node">
