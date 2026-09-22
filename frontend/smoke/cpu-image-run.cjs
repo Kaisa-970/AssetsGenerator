@@ -66,9 +66,6 @@ const { chromium, expect } = require("@playwright/test");
       (r) => r.url().endsWith("/api/runs") && r.request().method() === "POST",
     );
     await start.click();
-    await page
-      .getByRole("button", { name: "确认执行上述范围", exact: true })
-      .click();
     const result = await response;
     assert.equal(result.status(), 202, await result.text());
     const id = (await result.json()).run.run_id;
@@ -130,7 +127,12 @@ const { chromium, expect } = require("@playwright/test");
     }
     let inspectionMutations = 0;
     const countMutation = (request) => {
-      if (request.method() !== "GET") inspectionMutations++;
+      // Auto compilation is read-only; it is not an execution mutation.
+      if (
+        request.method() !== "GET" &&
+        new URL(request.url()).pathname !== "/api/compile"
+      )
+        inspectionMutations++;
     };
     page.on("request", countMutation);
     await page

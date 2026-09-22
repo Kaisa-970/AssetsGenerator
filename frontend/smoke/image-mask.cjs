@@ -47,9 +47,6 @@ const { chromium, expect } = require("@playwright/test");
       (r) => r.url().endsWith("/api/runs") && r.request().method() === "POST",
     );
     await start.click();
-    await page
-      .getByRole("button", { name: "确认执行上述范围", exact: true })
-      .click();
     const started = await response;
     assert.equal(started.status(), 202);
     const submitted = started.request().postDataJSON();

@@ -23,9 +23,6 @@ const { chromium, expect } = require("@playwright/test");
       await page
         .getByRole("button", { name: "启动新运行 · 检查执行范围", exact: true })
         .click();
-      await page
-        .getByRole("button", { name: "确认执行上述范围", exact: true })
-        .click();
       const result = await response;
       assert.equal(result.status(), 202);
       const created = await result.json();
@@ -43,6 +40,24 @@ const { chromium, expect } = require("@playwright/test");
     await page.getByLabel("上传运行图片").setInputFiles(input);
     const original = await start();
     const sourceId = original.run.run_id;
+    // Explicit PNG consumer: encode_png consumes raster_image, not its own PNG output.
+    await page
+      .locator('input[type="file"][accept=".yaml,.yml"]')
+      .setInputFiles({
+        name: "consume-png.yaml",
+        mimeType: "application/yaml",
+        buffer: Buffer.from(`pipeline: consume_png
+version: 1
+inputs:
+  image: {kind: rgb_image, carriers: [artifact_ref], schema_name: png, schema_version: "1.0"}
+nodes:
+  resize:
+    operator: resize_image@1
+    parameters: {width: 128, height: 128, resampling: lanczos}
+    inputs: {image: pipeline.inputs.image}
+`),
+      });
+    await page.getByRole("button", { name: "运行", exact: true }).click();
     const reference =
       original.run.dag.node_states.encode.attempts[0].outputs.image;
     await page.getByLabel("选择运行").selectOption(sourceId);
@@ -68,14 +83,19 @@ const { chromium, expect } = require("@playwright/test");
     await expect(
       page.getByText(reference.artifact_id, { exact: true }),
     ).toBeVisible();
+    await page
+      .getByRole("checkbox", {
+        name: "复用所选运行的有效节点结果（后端核对身份与证据）",
+      })
+      .uncheck();
     const second = await start();
     assert.notEqual(second.run.run_id, sourceId);
     assert.deepEqual(second.run.dag.named_actual_inputs.image, reference);
     assert.deepEqual(
-      second.run.dag.node_states.encode.attempts[0].resolved_inputs.image,
+      second.run.dag.node_states.resize.attempts[0].resolved_inputs.image,
       reference,
     );
-    assert.equal(second.run.dag.node_states.encode.attempts.length, 1);
+    assert.equal(second.run.dag.node_states.resize.attempts.length, 1);
     assert.deepEqual((await read(sourceId)).run, original.run);
     assert.deepEqual(errors, []);
     fs.writeFileSync(

@@ -26,9 +26,6 @@ const { chromium, expect } = require("@playwright/test");
       await page
         .getByRole("button", { name: "启动新运行 · 检查执行范围", exact: true })
         .click();
-      await page
-        .getByRole("button", { name: "确认执行上述范围", exact: true })
-        .click();
       const r = await response;
       assert.equal(r.status(), 202);
       const created = await r.json();
@@ -46,6 +43,9 @@ const { chromium, expect } = require("@playwright/test");
     await page.getByLabel("上传运行图片").setInputFiles(input);
     const original = await start();
     const id = original.run.run_id;
+    const initialRuns = await (
+      await page.request.get(`${url}/api/runs`)
+    ).json();
     fs.writeFileSync(evidence, JSON.stringify({ original }, null, 2), {
       flag: "wx",
     });
@@ -54,10 +54,6 @@ const { chromium, expect } = require("@playwright/test");
     await page
       .getByRole("button", { name: "cpu-image-mask", exact: false })
       .click();
-    await page.getByRole("button", { name: "编译校验", exact: true }).click();
-    await expect(page.locator("footer[role=status]")).toContainText(
-      "编译通过；可在运行页创建新运行",
-    );
     await page.getByRole("button", { name: "运行", exact: true }).click();
     const lookup = page.waitForResponse((r) =>
       r.url().endsWith(`/api/runs/${id}/references/encode/image`),
@@ -74,8 +70,17 @@ const { chromium, expect } = require("@playwright/test");
     );
     assert.deepEqual((await read(id)).run, original.run);
     const listed = await (await page.request.get(`${url}/api/runs`)).json();
-    assert.equal(listed.runs.length, 1, "binding must not create another run");
+    assert.deepEqual(
+      listed.runs.map((r) => r.run_id).sort(),
+      initialRuns.runs.map((r) => r.run_id).sort(),
+      "binding must not create another run",
+    );
     await page.getByLabel("上传输入 mask").setInputFiles(mask);
+    await page
+      .getByRole("checkbox", {
+        name: "复用所选运行的有效节点结果（后端核对身份与证据）",
+      })
+      .uncheck();
     const completed = await start();
     assert.notEqual(completed.run.run_id, id);
     assert.deepEqual(completed.run.dag.named_actual_inputs.image, reference);

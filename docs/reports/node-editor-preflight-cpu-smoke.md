@@ -65,3 +65,22 @@ Ruff check/format、mypy、前端构建及 Python 打包通过。模型 smoke �
 不作为新版一次点击路径的自动化证据。`92fd4c2` 的定向验证记录为前端
 单测 55 passed、预检浏览器回归 3 passed、前端构建和 Prettier 通过；
 未据此声称全部浏览器测试、Python 检查或 GPU 验收通过。
+
+## 2026-09-22 启动回归收口
+
+文档施工基线 `557088f` 后的脚本同步提交：全量 Playwright 54 passed，
+前端单测 55 passed，前端构建通过。新增预检失败、检查中改配置、重复点击回归。
+普通启动不再等待确认按钮；历史节点复用和子图测试继续明确确认。
+所有 smoke 脚本通过 Node 语法检查；未重跑 GPU smoke。
+
+实际 CPU HTTP 浏览器走查（不 mock）：一次启动 EncodePng、预览、刷新及记录检查成功，
+运行 `dag_ebbd476801504f0daba4e873d3d7aa27`，一次 attempt。
+单输入历史 PNG → 显式 resize 消费者成功；原运行不变。
+多输入历史图片 + 上传 mask → composite 成功；原运行不变。
+此处复用的是输入 Artifact，显式关闭历史节点复用；不是人工决定复用验收。
+证据：`<DATASET_ROOT>/cpu2.log`、`reuse-single-browser.json`、
+`multi3/reuse-browser.json`。不新增性能或六步预算结论。
+
+实际走查发现并修正旧脚本的假设：自动编译 POST 不是执行变更；
+encode_png 输出的 PNG 不能回接只接收 raster_image 的端口，改用明确的 PNG 消费者；
+运行列表允许已有记录，验证绑定前后 ID 集合不变。失败尝试日志保留在仓库外。

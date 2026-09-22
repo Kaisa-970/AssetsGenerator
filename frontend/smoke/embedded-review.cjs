@@ -53,9 +53,6 @@ const { chromium, expect } = require("@playwright/test");
       .getByRole("button", { name: "启动新运行 · 检查执行范围", exact: true })
       .click();
     await p
-      .getByRole("button", { name: "确认执行上述范围", exact: true })
-      .click();
-    await p
       .getByRole("button", { name: "重试原创建请求", exact: true })
       .waitFor();
     await expect(
@@ -89,9 +86,6 @@ const { chromium, expect } = require("@playwright/test");
     );
     await p
       .getByRole("button", { name: "启动新运行 · 检查执行范围", exact: true })
-      .click();
-    await p
-      .getByRole("button", { name: "确认执行上述范围", exact: true })
       .click();
     created = await (await creation).json();
   }

@@ -32,9 +32,6 @@ const { chromium, expect } = require("@playwright/test");
       await page
         .getByRole("button", { name: "启动新运行 · 检查执行范围", exact: true })
         .click();
-      await page
-        .getByRole("button", { name: "确认执行上述范围", exact: true })
-        .click();
       const r = await response;
       assert.equal(r.status(), 202, await r.text());
       id = (await r.json()).run.run_id;

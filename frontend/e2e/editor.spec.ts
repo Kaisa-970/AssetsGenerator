@@ -126,7 +126,6 @@ test("uploaded images bind exact references only after explicit run creation", a
   expect(uploads).toBe(1);
   expect(starts).toEqual([]);
   await start.click();
-  await confirmExecution(page);
   await expect(
     page.getByText("运行已创建；请在下方查看真实节点状态。"),
   ).toBeVisible();
@@ -142,7 +141,6 @@ test("uploaded images bind exact references only after explicit run creation", a
   expect(starts).toHaveLength(1);
   await page.getByLabel("图片来源", { exact: true }).selectOption("path");
   await start.click();
-  await confirmExecution(page);
   await expect.poll(() => starts.length).toBe(2);
   expect(starts[1].input_refs.image.artifact_id).toBe(
     "prepared:/data/previous.png",
@@ -413,15 +411,16 @@ test("execution uses frozen server runs and explicit revisioned actions", async 
   await page
     .getByRole("button", { name: "启动新运行 · 检查执行范围", exact: true })
     .click();
-  await confirmExecution(page);
-  expect(calls[0]).toMatchObject({
-    path: "/api/runs",
-    body: {
-      input_refs: { image: { artifact_id: "prepared:/data/robot.png" } },
-      preflight_digest: "checked-execution-digest",
-      pipeline: { pipeline: "my_asset_pipeline" },
-    },
-  });
+  await expect
+    .poll(() => calls[0])
+    .toMatchObject({
+      path: "/api/runs",
+      body: {
+        input_refs: { image: { artifact_id: "prepared:/data/robot.png" } },
+        preflight_digest: "checked-execution-digest",
+        pipeline: { pipeline: "my_asset_pipeline" },
+      },
+    });
   await page
     .getByRole("button", { name: "准备人工审查 · choose", exact: true })
     .click();
@@ -499,7 +498,6 @@ test("lost create response is never automatically resubmitted", async ({
   await page
     .getByRole("button", { name: "启动新运行 · 检查执行范围", exact: true })
     .click();
-  await confirmExecution(page);
   await expect(page.getByText(/未自动重发/)).toBeVisible();
   await page.waitForTimeout(1800);
   expect(creates).toBe(1);
@@ -1037,7 +1035,6 @@ test("lost creation response preserves exact intent through reload and explicit 
     exact: true,
   });
   await start.click();
-  await confirmExecution(page);
   const retry = page.getByRole("button", {
     name: "重试原创建请求",
     exact: true,
@@ -1069,7 +1066,6 @@ test("lost creation response preserves exact intent through reload and explicit 
   ).toBeNull();
 
   await start.click();
-  await confirmExecution(page);
   await expect.poll(() => starts.length).toBe(3);
   expect(starts[2].idempotency_key).not.toBe(starts[0].idempotency_key);
   expect(starts[2].input_refs.image.artifact_id).toBe(
@@ -1081,7 +1077,6 @@ test("lost creation response preserves exact intent through reload and explicit 
   await expect(start).toBeEnabled();
   loseResponse = true;
   await start.click();
-  await confirmExecution(page);
   await expect(retry).toBeEnabled();
   expect(starts).toHaveLength(4);
   await page
@@ -1091,7 +1086,6 @@ test("lost creation response preserves exact intent through reload and explicit 
   expect(starts).toHaveLength(4);
   loseResponse = false;
   await start.click();
-  await confirmExecution(page);
   await expect.poll(() => starts.length).toBe(5);
   expect(starts[4].idempotency_key).not.toBe(starts[3].idempotency_key);
 });
@@ -1130,7 +1124,6 @@ test("creation is not sent if browser cannot persist its receipt", async ({
   await page
     .getByRole("button", { name: "启动新运行 · 检查执行范围", exact: true })
     .click();
-  await confirmExecution(page);
   await expect(page.getByText(/storage disabled/)).toBeVisible();
   expect(starts).toBe(0);
 });
@@ -1217,7 +1210,6 @@ test("multi-view creation preserves observation reference across reload retry", 
   await page
     .getByRole("button", { name: "启动新运行 · 检查执行范围", exact: true })
     .click();
-  await confirmExecution(page);
   await expect(
     page.getByRole("button", { name: "重试原创建请求", exact: true }),
   ).toBeEnabled();
@@ -1572,7 +1564,6 @@ test("RGBA canvas upload uses the explicit endpoint and preserves returned refer
   await page
     .getByRole("button", { name: "启动新运行 · 检查执行范围", exact: true })
     .click();
-  await confirmExecution(page);
   await expect.poll(() => starts.length).toBe(1);
   await expect(page.getByText(/上次报告作业已排队/)).toBeVisible();
   await expect(page.getByLabel("远程作业标识 · shape")).toHaveValue(
@@ -1597,7 +1588,6 @@ test("RGBA canvas upload uses the explicit endpoint and preserves returned refer
   await page
     .getByRole("button", { name: "启动新运行 · 检查执行范围", exact: true })
     .click();
-  await confirmExecution(page);
   await expect.poll(() => starts.length).toBe(2);
   expect(starts[1].input_refs.image).toEqual({
     artifact_id: "historical_rgba_exact",
@@ -1839,7 +1829,14 @@ test("compile diagnostics locate known nodes without changing the graph", async 
     .click();
   await expect(page.getByLabel("实例 ID")).toHaveValue("broken");
   await page.getByRole("button", { name: "编译校验", exact: true }).click();
-  await expect.poll(() => compiled.filter(value => JSON.stringify(value) === JSON.stringify(graph)).length).toBeGreaterThanOrEqual(2);
+  await expect
+    .poll(
+      () =>
+        compiled.filter(
+          (value) => JSON.stringify(value) === JSON.stringify(graph),
+        ).length,
+    )
+    .toBeGreaterThanOrEqual(2);
   expect(compiled.at(-1)).toEqual(graph);
 });
 
@@ -2576,7 +2573,6 @@ test("multi-input editor uploads RGB and mask and submits complete bindings", as
   });
   await expect(start).toBeEnabled();
   await start.click();
-  await confirmExecution(page);
   await expect.poll(() => starts.length).toBe(1);
   expect(starts[0].input_refs).toEqual({
     image: { artifact_id: "image_ref" },

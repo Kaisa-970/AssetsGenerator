@@ -137,3 +137,73 @@ test("a definite changed-preflight rejection does not leave an unknown creation 
     }),
   ).toBeEnabled();
 });
+
+test("failed preflight never creates a run", async ({ page }) => {
+  const state = await setup(page);
+  await page.route("**/api/preflight", (route) =>
+    route.fulfill({ status: 400, json: { error: "输入证据无法核实" } }),
+  );
+  await page
+    .getByRole("button", { name: "启动新运行 · 检查执行范围", exact: true })
+    .click();
+  await expect(page.getByText(/输入证据无法核实/)).toBeVisible();
+  expect(state.starts).toHaveLength(0);
+});
+
+test("configuration change while preflight is pending discards its response", async ({
+  page,
+}) => {
+  const state = await setup(page);
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let entered = false;
+  await page.route("**/api/preflight", async (route) => {
+    entered = true;
+    await gate;
+    await route.fulfill({
+      json: {
+        digest: "stale",
+        execution_ready: true,
+        nodes: {},
+        source_evidence_policy: "whole_snapshot_closure",
+      },
+    });
+  });
+  await page
+    .getByRole("button", { name: "启动新运行 · 检查执行范围", exact: true })
+    .click();
+  await expect.poll(() => entered).toBe(true);
+  await page
+    .getByLabel("管线名称", { exact: true })
+    .fill("changed_during_preflight");
+  release();
+  await expect(
+    page.getByRole("button", {
+      name: "启动新运行 · 检查执行范围",
+      exact: true,
+    }),
+  ).toBeEnabled();
+  expect(state.starts).toHaveLength(0);
+});
+
+test("repeated click during preparation submits only once", async ({
+  page,
+}) => {
+  const state = await setup(page);
+  await expect(
+    page.getByRole("button", {
+      name: "启动新运行 · 检查执行范围",
+      exact: true,
+    }),
+  ).toBeEnabled();
+  await page
+    .getByRole("button", { name: "启动新运行 · 检查执行范围", exact: true })
+    .evaluate((button: HTMLButtonElement) => {
+      button.click();
+      button.click();
+    });
+  await expect.poll(() => state.starts.length).toBe(1);
+  expect(state.checks).toHaveLength(1);
+});
