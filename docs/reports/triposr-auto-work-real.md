@@ -24,3 +24,16 @@ submitted.json、completed.json、restored.json、verify.py、validation.json、
 服务数据库之间不共享 GPU 锁，多模型 GPU 验收仍需串行。部署身份校验失败时，当前任务记录 failed/deployment_invalid，work 停止领取，后续任务保持 queued；需要管理员核实部署后重启。进程状态未知保持 running 并阻塞；持久化异常不擅自改写状态。
 
 审查后补充身份失效回归：校验返回另一身份或抛出资源变化异常，均停止领取；不会把队列逐个标记失败。此修正为 CPU 测试验证，未重新运行真实 GPU。
+
+## 自动循环进程重启回归
+
+基于提交 `30fa63a` 补充 `tests/test_remote_shape_loop_restart.py`，由测试启动独立 Python
+执行循环并实际 SIGKILL，再启动新循环读取相同 SQLite 数据库：
+
+- 首任务已成功：新循环仅执行第二项，调用记录为 first、second，首项不重复。
+- 首任务正在执行：新循环拒绝领取并退出，首项保持 running、第二项保持 queued，
+  调用记录只有 first。
+
+该文件与 loop/CLI/已有 process 回归合计 25 项通过，新增文件 Ruff、git diff --check
+通过。CPU 回调用于精确控制中断窗口，没有启动或杀死用户 GPU 模型；不将此测试解释为
+真实模型推理续算、遗留模型子进程清理或双 Backend benchmark 完成。测试进程均已清理。
