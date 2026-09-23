@@ -91,7 +91,7 @@ PYTHONPATH=src python examples/shape_model_service_cpu.py \
 
 发现页声明 `triposr_glb_native / +Z / relative_unit`。seed 和 pipeline_type 为旧请求
 协议保留的固定值，对 TripoSR 推理不生效；chunk_size、mc_resolution 等仍在部署 profile 配置。
-该服务的推理由服务端显式 `execute` 或 `drain` 执行；只启动 HTTP 监听不会自动领取任务。
+部署时同时启动 `serve` 和 `work` 后，任务会自动串行执行；也保留显式 `execute` / `drain`。只启动 HTTP 监听不会自动领取任务。
 具体部署命令见[远程 shape 服务指南](remote-shape-service.md)。
 
 新发现入口的真实验收见 [TripoSR 服务发现发布验收](../reports/triposr-discovery-real.md)。

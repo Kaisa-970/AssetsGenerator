@@ -1,18 +1,23 @@
-"""Explicit local shape service commands; no background queue or implicit inference."""
+"""Explicit shape listener and opt-in serial service worker commands."""
 
 from __future__ import annotations
 
 import argparse
 import json
+import math
+import signal
 import sqlite3
 import sys
+import threading
 from pathlib import Path
 
+from .errors import DeploymentIdentityError
 from .model_service_descriptor import shape_service_descriptor
 from .models import BackendNativeFrame
 from .remote_service_http import create_remote_server
 from .remote_service_store import RemoteServiceStore
 from .remote_service_worker import execute_next_service_job, execute_service_job
+from .remote_shape_loop import run_loop
 from .remote_shape_profile import shape_handler_from_profile
 from .serialization import to_primitive
 from .workbench_profiles import load_shape_profiles
@@ -22,13 +27,23 @@ def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description=__doc__)
     result.add_argument(
         "action",
-        choices=("serve", "execute", "observe", "inspect", "drain", "list", "abandon-exited"),
+        choices=(
+            "serve",
+            "execute",
+            "observe",
+            "inspect",
+            "drain",
+            "work",
+            "list",
+            "abandon-exited",
+        ),
     )
     result.add_argument("--config", type=Path, required=True)
     result.add_argument("--profile", required=True)
     result.add_argument("--service-id", required=True)
     result.add_argument("--database", type=Path, required=True)
     result.add_argument("--workspace", type=Path, required=True)
+    result.add_argument("--poll-interval", type=float, default=1.0)
     result.add_argument("--job")
     result.add_argument("--max-jobs", type=int, default=1)
     result.add_argument("--limit", type=int, default=100)
@@ -40,7 +55,7 @@ def parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     cli = parser()
     args = cli.parse_args(argv)
-    if args.action not in {"serve", "drain", "list"} and not args.job:
+    if args.action not in {"serve", "drain", "work", "list"} and not args.job:
         cli.error("--job is required for execute, observe, inspect and abandon-exited")
     if args.max_jobs < 1 or args.max_jobs > 1000:
         cli.error("--max-jobs must be in 1..1000")
@@ -48,6 +63,8 @@ def main(argv: list[str] | None = None) -> int:
         cli.error("--limit must be in 1..1000 and --before must be positive")
     if not 0 <= args.port <= 65535:
         cli.error("--port must be in 0..65535")
+    if not math.isfinite(args.poll_interval) or not 0.1 <= args.poll_interval <= 60:
+        cli.error("--poll-interval must be in 0.1..60")
     store = None
     try:
         profiles = load_shape_profiles(
@@ -60,6 +77,26 @@ def main(argv: list[str] | None = None) -> int:
             profiles[args.profile], service_id=args.service_id, workspace=args.workspace
         )
         store = RemoteServiceStore(args.database, handler.identity)
+        if args.action == "work":
+            import fcntl
+
+            with args.database.with_suffix(args.database.suffix + ".worker.lock").open("a") as lock:
+                try:
+                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    raise ValueError("shape worker already running for this database") from None
+                stop = threading.Event()
+                previous = {
+                    sig: signal.signal(sig, lambda *_: stop.set())
+                    for sig in (signal.SIGINT, signal.SIGTERM)
+                }
+                try:
+                    print("shape worker ready (serial)", flush=True)
+                    run_loop(store, handler, stop=stop, interval=args.poll_interval)
+                finally:
+                    for sig, callback in previous.items():
+                        signal.signal(sig, callback)
+            return 0
         if args.action == "list":
             print(json.dumps(store.list_jobs(limit=args.limit, before=args.before)))
             return 0
@@ -156,7 +193,7 @@ def main(argv: list[str] | None = None) -> int:
                     )
                 )
         return 0
-    except (OSError, ValueError, sqlite3.Error) as error:
+    except (OSError, ValueError, sqlite3.Error, DeploymentIdentityError) as error:
         print(f"shape service: {error}", file=sys.stderr)
         return 1
     finally:

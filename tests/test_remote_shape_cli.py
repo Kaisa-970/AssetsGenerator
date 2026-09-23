@@ -118,3 +118,65 @@ def test_drain_loads_once_and_stops_at_limit(tmp_path, monkeypatch, capsys):
         assert store.lookup(RemoteRequest.create(Handler.identity, "c", {})).state == "queued"
     finally:
         store.close()
+
+
+def test_work_uses_one_profile_load_and_restores_signal_handlers(tmp_path, monkeypatch):
+    import signal
+
+    config = tmp_path / "config.json"
+    config.write_text("{}")
+    monkeypatch.setattr(cli, "load_shape_profiles", lambda *_a, **_k: {"test": object()})
+    monkeypatch.setattr(cli, "shape_handler_from_profile", lambda *_a, **_k: Handler())
+    previous = {sig: signal.getsignal(sig) for sig in (signal.SIGINT, signal.SIGTERM)}
+    calls = []
+
+    def loop(store, handler, *, stop, interval):
+        calls.append(interval)
+        signal.getsignal(signal.SIGTERM)(signal.SIGTERM, None)
+        assert stop.is_set()
+
+    monkeypatch.setattr(cli, "run_loop", loop)
+    assert (
+        cli.main(
+            [
+                "work",
+                "--config",
+                str(config),
+                "--profile",
+                "test",
+                "--service-id",
+                "test",
+                "--database",
+                str(tmp_path / "db"),
+                "--workspace",
+                str(tmp_path),
+                "--poll-interval",
+                "0.5",
+            ]
+        )
+        == 0
+    )
+    assert calls == [0.5]
+    assert all(signal.getsignal(sig) == callback for sig, callback in previous.items())
+
+
+@pytest.mark.parametrize("interval", ["nan", "inf", "0", "61"])
+def test_work_rejects_invalid_poll_interval_before_loading(interval):
+    with pytest.raises(SystemExit):
+        cli.main(
+            [
+                "work",
+                "--config",
+                "missing",
+                "--profile",
+                "test",
+                "--service-id",
+                "test",
+                "--database",
+                "missing",
+                "--workspace",
+                "missing",
+                "--poll-interval",
+                interval,
+            ]
+        )

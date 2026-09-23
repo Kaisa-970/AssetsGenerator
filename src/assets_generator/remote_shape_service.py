@@ -9,6 +9,7 @@ from pathlib import Path
 
 from .artifact_store import LocalArtifactStore
 from .backend_registry import ShapeBackend
+from .errors import DeploymentIdentityError, ServiceExecutionUncertain
 from .operators import ShapeOutput
 from .remote_protocol import RemoteIdentity, RemoteRequest
 from .remote_service_process import ServiceProcessWorker
@@ -39,6 +40,17 @@ class ShapeServiceHandler:
         self.verify_identity = verify_identity
         self.validate_output_identity = validate_output_identity
 
+    def _verify_deployment(self) -> None:
+        try:
+            if self.verify_identity() != self.identity:
+                raise ValueError("shape deployment identity changed")
+        except ServiceExecutionUncertain:
+            raise
+        except Exception as error:
+            raise DeploymentIdentityError(
+                f"shape deployment verification failed: {error}"
+            ) from error
+
     def __call__(
         self, request: RemoteRequest, service: RemoteServiceStore
     ) -> dict[str, ServiceOutput]:
@@ -58,18 +70,23 @@ class ShapeServiceHandler:
             raise ValueError("invalid shape seed")
         if parameters["pipeline_type"] not in ("512", "1024", "1024_cascade", "1536_cascade"):
             raise ValueError("unsupported shape pipeline_type")
-        if self.verify_identity() != self.identity:
-            raise ValueError("shape deployment identity changed")
+        self._verify_deployment()
         self.workspace.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(prefix="shape-service-", dir=self.workspace) as temporary:
             store = LocalArtifactStore(Path(temporary) / "store")
             rgba = import_shape_rgba(request, service, store)
             backend = self.factory(ServiceProcessWorker(service, request))
             output = backend.generate(store, rgba, **parameters)
-            if self.verify_identity() != self.identity:
-                raise ValueError("shape deployment identity changed during inference")
+            self._verify_deployment()
             if self.validate_output_identity is not None:
-                self.validate_output_identity(output)
+                try:
+                    self.validate_output_identity(output)
+                except ServiceExecutionUncertain:
+                    raise
+                except Exception as error:
+                    raise DeploymentIdentityError(
+                        f"shape output deployment identity invalid: {error}"
+                    ) from error
             raw_worker = service.worker_record(request)
             if raw_worker is None:
                 raise ValueError("shape Backend did not register its process")

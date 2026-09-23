@@ -323,3 +323,27 @@ node frontend/smoke/shape-compare.cjs <CONFIG>.json complete
 本脚本已通过实际编辑器与双 HTTP 服务的 CPU Backend 浏览器 smoke，
 随后同一脚本已完成 TRELLIS.2/TripoSR 的[真实浏览器全链验收](../reports/dual-shape-browser-real.md)。
 API 层的独立证据见[双模型报告](../reports/dual-shape-real.md)。
+
+## 持续自动执行（work）
+
+`serve` 仍只负责 HTTP 监听。部署者在模型服务器另开一个终端，以相同配置、profile、
+service-id、database 和 workspace 启动正式执行循环：
+
+```bash
+PYTHONPATH=src python -m assets_generator.remote_shape_cli work \
+  --config /path/to/profiles.json --profile triposr-local \
+  --service-id triposr-service --database /path/to/service.sqlite \
+  --workspace /path/to/work --poll-interval 1
+```
+
+`serve` 与 `work` 都启动后，浏览器点击运行即可自动排队、推理和收取结果，不需要逐次
+执行 drain。循环位于模型服务器，编辑器不会控制远端 shell 或把模型放进 Core 环境。
+每个数据库只允许一个合作式 work 循环，SQLite 领取仍是任务串行执行的权威。
+不同数据库之间不构成全局 GPU 门控；同 GPU 多模型验收仍须手动串行安排。
+
+空闲轮询不重新哈希权重，实际任务仍由已有 handler 在推理前后核验部署身份。
+已确认的单任务失败进入 failed 并允许下一任务。部署身份校验失败单独记录为
+failed/deployment_invalid，并停止领取，后续任务保持 queued，提示管理员核实部署。
+running 遗留、进程不确定或存储异常使循环退出，
+不会自动重提或解除阻塞。SIGINT/SIGTERM 停止继续领取并等待当前调用结束；强制杀死则
+保留运行记录，之后需要显式核查。重启不会重新执行 succeeded 作业。

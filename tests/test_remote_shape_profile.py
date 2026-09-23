@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 from test_workbench_profiles import _config
 
+from assets_generator.errors import DeploymentIdentityError
 from assets_generator.remote_protocol import RemoteRequest
 from assets_generator.remote_service_process import ServiceProcessWorker
 from assets_generator.remote_service_store import RemoteServiceStore
@@ -26,7 +27,7 @@ def test_profile_service_identity_and_worker_injection(tmp_path, monkeypatch):
         assert copied.worker is worker
         assert backend.worker is original_worker
         backend.mc_resolution += 1
-        with pytest.raises(ValueError, match="resources changed"):
+        with pytest.raises(DeploymentIdentityError, match="resources changed"):
             handler.verify_identity()
     finally:
         store.close()
@@ -41,7 +42,7 @@ def test_profile_changes_rejected_before_factory(tmp_path, monkeypatch):
         )
     handler = shape_handler_from_profile(profile, service_id="shape", workspace=tmp_path)
     Path(config["profiles"]["local-triposr"]["model"], "model.ckpt").write_bytes(b"changed")
-    with pytest.raises(ValueError, match="changed"):
+    with pytest.raises(DeploymentIdentityError, match="changed"):
         handler.verify_identity()
 
 

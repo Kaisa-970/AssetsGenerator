@@ -7,6 +7,7 @@ from pathlib import Path
 
 from .backend_registry import ShapeBackend
 from .compiled_plan import digest
+from .errors import DeploymentIdentityError
 from .operators import ShapeOutput, Trellis2Backend, TripoSRBackend
 from .remote_protocol import RemoteIdentity
 from .remote_service_process import ServiceProcessWorker
@@ -43,7 +44,7 @@ def shape_handler_from_profile(
         ),
     )
 
-    def verify() -> RemoteIdentity:
+    def check_identity() -> RemoteIdentity:
         assert profile.identity_check is not None
         profile.identity_check()
         if canonical_json_bytes(profile.shape_identity) != expected:
@@ -56,6 +57,12 @@ def shape_handler_from_profile(
         ):
             raise ValueError("shape Backend configuration changed")
         return identity
+
+    def verify() -> RemoteIdentity:
+        try:
+            return check_identity()
+        except Exception as error:
+            raise DeploymentIdentityError(f"shape profile identity invalid: {error}") from error
 
     def factory(worker: ServiceProcessWorker) -> ShapeBackend:
         verify()

@@ -6,6 +6,7 @@ from enum import Enum
 class ErrorCode(str, Enum):
     INPUT_ERROR = "input_error"
     CONTRACT_ERROR = "contract_error"
+    DEPLOYMENT_INVALID = "deployment_invalid"
     BACKEND_UNAVAILABLE = "backend_unavailable"
     BACKEND_TIMEOUT = "backend_timeout"
     BACKEND_FAILED = "backend_failed"
@@ -20,6 +21,13 @@ class PipelineError(RuntimeError):
         super().__init__(message)
         self.code = code
         self.retryable = retryable
+
+
+class DeploymentIdentityError(PipelineError):
+    """Deployment cannot be verified; stop service admission after this task."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(ErrorCode.DEPLOYMENT_INVALID, message)
 
 
 class ServiceExecutionUncertain(ValueError):
