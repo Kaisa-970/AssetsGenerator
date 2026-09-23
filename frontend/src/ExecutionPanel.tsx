@@ -7,6 +7,7 @@ import { NodeActionHint } from "./NodeActionHint";
 import { ContinueExtraction } from "./ContinueExtraction";
 import { ExecutionPreflight } from "./ExecutionPreflight";
 import { ExecutionInputs } from "./ExecutionInputs";
+import { MeshAppearancePanel } from "./MeshAppearancePanel";
 import { QualityEvidencePanel } from "./QualityEvidencePanel";
 import { HumanDecisionSummary } from "./HumanDecisionSummary";
 import { executionStatus } from "./executionStatus";
@@ -139,7 +140,11 @@ export function ExecutionPanel({
   const multiView =
     Object.keys(effectivePipeline.inputs).length === 1 &&
     "observations" in effectivePipeline.inputs;
-  const multiInput = Object.keys(effectivePipeline.inputs).length > 1 || Object.values(effectivePipeline.inputs).some((port) => port.kind === "text" || port.kinds?.[0] === "text");
+  const multiInput =
+    Object.keys(effectivePipeline.inputs).length > 1 ||
+    Object.values(effectivePipeline.inputs).some(
+      (port) => port.kind === "text" || port.kinds?.[0] === "text",
+    );
   const rgbaInput = effectivePipeline.inputs.image?.kind === "rgba_image";
   const [imageSource, setImageSource] = useState("upload");
   const [uploaded, setUploaded] = useState<{
@@ -284,17 +289,19 @@ export function ExecutionPanel({
       setUploadMessage("请选择非空且不超过 20 MiB 的图片。");
       return;
     }
-    const kind = effectivePipeline.inputs[name]?.kind || effectivePipeline.inputs[name]?.kinds?.[0];
+    const kind =
+      effectivePipeline.inputs[name]?.kind ||
+      effectivePipeline.inputs[name]?.kinds?.[0];
     const endpoint =
       kind === "text"
         ? "/api/inputs/text"
         : kind === "binary_mask"
-        ? "/api/inputs/mask"
-        : kind === "rgba_image"
-          ? "/api/inputs/rgba"
-          : kind === "rgb_image"
-            ? "/api/inputs/image"
-            : undefined;
+          ? "/api/inputs/mask"
+          : kind === "rgba_image"
+            ? "/api/inputs/rgba"
+            : kind === "rgb_image"
+              ? "/api/inputs/image"
+              : undefined;
     if (!endpoint) {
       setUploadMessage(
         `输入 ${name} 暂不支持浏览器上传，请填写已有 Artifact ID。`,
@@ -318,10 +325,11 @@ export function ExecutionPanel({
         return;
       }
       setInputArtifact(name, reference.artifact_id);
-      if (kind !== "text") setInputFiles((old) => ({
-        ...old,
-        [name]: { file, artifactId: reference.artifact_id },
-      }));
+      if (kind !== "text")
+        setInputFiles((old) => ({
+          ...old,
+          [name]: { file, artifactId: reference.artifact_id },
+        }));
       setUploadMessage(`输入 ${name} 已上传并绑定。`);
     } catch (error) {
       setUploadMessage(`输入 ${name} 上传失败：${String(error)}`);
@@ -558,7 +566,8 @@ export function ExecutionPanel({
                       url={output.url}
                       defaultOpen
                     />
-                  ) : output.kind === "gltf_asset" ? (
+                  ) : output.kind === "gltf_asset" ||
+                    output.kind === "triangle_mesh" ? (
                     <button
                       key={output.port}
                       onClick={() =>
@@ -863,6 +872,10 @@ export function ExecutionPanel({
             {envelope.busy ? " · 后台处理中" : ""}
           </strong>
           <p>状态仅对应此运行的固定计划，画布仍是可编辑草稿。</p>
+          <MeshAppearancePanel
+            runId={run.run_id}
+            outputs={envelope.outputs || []}
+          />
           <QualityEvidencePanel
             runId={run.run_id}
             outputs={envelope.outputs || []}
@@ -917,6 +930,7 @@ export function ExecutionPanel({
                 .filter(
                   (output) =>
                     output.kind === "gltf_asset" ||
+                    output.kind === "triangle_mesh" ||
                     (!output.kind && output.port === "glb"),
                 )
                 .map((output) => (
@@ -964,6 +978,7 @@ export function ExecutionPanel({
                       "rgba_image",
                       "binary_mask",
                       "gltf_asset",
+                      "triangle_mesh",
                     ].includes(output.kind || ""),
                   )
                   .flatMap((output) =>

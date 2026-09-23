@@ -193,6 +193,7 @@ class NodeEditorExecution:
             return False
         return self.engine.store.get_manifest(ref.artifact_id).identity.kind in {
             "gltf_asset",
+            "triangle_mesh",
             "asset_release",
             "asset_definition",
             "quality_report",
@@ -461,6 +462,26 @@ class NodeEditorExecution:
             "media_type", "application/octet-stream"
         )
         return OutputPayload(self.engine.store.blob_path(ref).read_bytes(), str(media))
+
+    def appearance(self, run_id: str, node_id: str, port: str) -> dict[str, Any]:
+        from .mesh_appearance import describe_mesh_appearance
+
+        self._owned(run_id)
+        run = self.engine.repository.load(run_id)
+        assert run.dag is not None
+        state = run.dag.node_states[node_id]
+        if state.status != "succeeded":
+            raise ContractError("appearance requires successful node")
+        ref = self._resolve_output(state, port)
+        if not isinstance(ref, ArtifactRef):
+            raise ContractError("appearance requires mesh artifact")
+        identity = self.engine.store.get_manifest(ref.artifact_id).identity
+        if identity.kind not in {"triangle_mesh", "gltf_asset"}:
+            raise ContractError("appearance requires GLB mesh")
+        self.engine.repository.verify_reference_closure(ref)
+        return describe_mesh_appearance(
+            self.engine.store.blob_path(ref).read_bytes(), identity.identity_metadata
+        )
 
     def release_archive(self, run_id: str, node_id: str, port: str) -> OutputPayload:
         """Download declared release files; never re-export or regenerate evidence."""

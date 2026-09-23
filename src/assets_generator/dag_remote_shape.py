@@ -69,6 +69,19 @@ class RemoteShapeAdapter(RemoteNodeAdapter):
             if RemoteOutput.from_job(job, name).media_type != media:
                 raise ContractError("remote shape output media mismatch")
         output = import_shape_output(context.store, blobs)
+        # Preserve the bounded Backend declaration on a new immutable mesh identity.
+        # The wire mesh identity remains validated by import_shape_output above.
+        mesh = output.mesh
+        mode = output.backend_metadata.get("postprocess_mode")
+        if mode in ("textured_glb", "geometry_fallback_no_texture"):
+            identity = context.store.get_manifest(mesh.artifact_id).identity
+            mesh = context.store.persist_bytes(
+                blobs["mesh"],
+                kind=identity.kind,
+                schema_name=identity.schema_name,
+                schema_version=identity.schema_version,
+                identity_metadata={**identity.identity_metadata, "postprocess_mode": mode},
+            )
         return NodeExecutionResult(
-            {"mesh": output.mesh, "material": output.material, "native_frame": output.native_frame}
+            {"mesh": mesh, "material": output.material, "native_frame": output.native_frame}
         )
