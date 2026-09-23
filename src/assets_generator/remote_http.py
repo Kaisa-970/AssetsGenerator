@@ -114,6 +114,10 @@ class RemoteJobClient:
         except (OSError, HTTPException, ValueError) as error:
             raise RemoteTransportUnknown("remote upload outcome unknown") from error
 
+    def service_descriptor(self) -> object:
+        """Read discoverable service metadata without submitting a job."""
+        return self._exchange("/v1/service-descriptor")
+
     def submit(self, request: RemoteRequest) -> RemoteJob:
         raw = self._exchange("/v1/jobs", request.to_dict())
         return self._parse(raw, request)

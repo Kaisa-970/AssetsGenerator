@@ -33,10 +33,17 @@ export function InputContractForm({
     ),
   ];
   const presets = [
-    { label: "文本", contract: catalog.operators["text_segmentation@2"]?.inputs.text },
+    {
+      label: "文本",
+      contract: catalog.operators["text_segmentation@2"]?.inputs.text,
+    },
     {
       label: "普通 RGB 图片（上传 JPG / PNG）",
       contract: catalog.operators["encode_png@1"]?.inputs.image,
+    },
+    {
+      label: "透明 RGBA 图片（图生 Mesh 输入）",
+      contract: catalog.operators["shape_generation@1"]?.inputs.image,
     },
     {
       label: "已编码的 RGB PNG（历史节点输出）",
@@ -69,7 +76,8 @@ export function InputContractForm({
         </select>
       </label>
       <p>
-        快捷设置会替换此输入的完整契约，不转换文件；普通上传图片请选择第一项。已有连线会重新编译检查。
+        快捷设置会替换此输入的完整契约，不转换文件；普通 RGB 上传请选择“普通 RGB
+        图片”，图生 Mesh 请选“透明 RGBA 图片”。已有连线会重新编译检查。
       </p>
       <label>
         数据类型

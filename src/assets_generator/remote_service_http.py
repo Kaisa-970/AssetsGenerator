@@ -12,8 +12,22 @@ from .remote_service_store import RemoteServiceStore
 from .serialization import canonical_json_bytes
 
 
-def create_remote_server(store: RemoteServiceStore, *, port: int = 0) -> ThreadingHTTPServer:
+def create_remote_server(
+    store: RemoteServiceStore, *, port: int = 0, descriptor: dict[str, Any] | None = None
+) -> ThreadingHTTPServer:
     """No public bind/authentication or implicit inference side effects in this slice."""
+
+    descriptor_bytes = None
+    if descriptor is not None:
+        from .model_service_descriptor import validate_descriptor
+
+        checked = validate_descriptor(descriptor)
+        if (
+            checked["service_id"] != store.identity.service_id
+            or checked["backend_digest"] != store.identity.backend_digest
+        ):
+            raise ValueError("service descriptor differs from store identity")
+        descriptor_bytes = canonical_json_bytes(checked)
 
     class Handler(BaseHTTPRequestHandler):
         def setup(self) -> None:
@@ -63,6 +77,11 @@ def create_remote_server(store: RemoteServiceStore, *, port: int = 0) -> Threadi
                 self._send(403, b"{}")
                 return
             try:
+                if method == "GET" and self.path == "/v1/service-descriptor":
+                    self._send(
+                        200 if descriptor_bytes is not None else 404, descriptor_bytes or b"{}"
+                    )
+                    return
                 if method == "PUT" and self.path.startswith("/v1/blobs/"):
                     if (
                         self.headers.get("X-Service-Id") != store.identity.service_id

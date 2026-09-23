@@ -71,10 +71,21 @@ export function ParameterForm({
   );
   if (!fields.length) return null;
   const effective = { ...adapter?.defaults, ...parameters };
+  const required = new Set(
+    ((adapter?.parameter_schema?.required || []) as unknown[]).filter(
+      (name): name is string => typeof name === "string",
+    ),
+  );
+  const missing = fields
+    .filter(([name]) => required.has(name) && effective[name] === undefined)
+    .map(([name]) => name);
   return (
     <section aria-label="参数表单">
       <div className="section-label">参数表单</div>
       <p>未覆盖的字段使用 Adapter 默认值。后端编译仍是最终校验。</p>
+      {missing.length > 0 && (
+        <p role="alert">缺少必填参数：{missing.join("、")}。填写并应用后才能运行。</p>
+      )}
       {fields.map(([name, field]) => {
         const value = effective[name];
         const fixed = field.enum?.length === 1;
@@ -82,7 +93,7 @@ export function ParameterForm({
           fixed && JSON.stringify(value) !== JSON.stringify(field.enum![0]);
         return (
           <label key={name}>
-            {name}
+            {name}{required.has(name) ? "（必填）" : ""}
             {fixed ? "（固定契约）" : ""}
             {field.enum ? (
               <select

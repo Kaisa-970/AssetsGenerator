@@ -154,7 +154,7 @@ header {
 }
 .workspace {
   display: grid;
-  grid-template-columns: 244px minmax(300px, 1fr) 300px;
+  grid-template-columns: 280px minmax(300px, 1fr) 300px;
   flex: 1;
   min-height: 0;
 }
@@ -182,7 +182,10 @@ header {
 }
 .catalog-list {
   overflow-y: auto;
-  flex: 1;
+  min-height: 0;
+  flex: 1 1 0;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
 }
 .catalog-item {
   display: block;
@@ -531,4 +534,24 @@ footer {
 }
 .connection-issue p {
   margin: 6px 0;
+}
+
+.model-services {
+  margin: 14px 0;
+}
+.model-service-form {
+  padding: 10px;
+  border: 1px solid #ccd9e4;
+  border-radius: 8px;
+}
+.model-service-form input {
+  width: 100%;
+  box-sizing: border-box;
+}
+.model-service-form p {
+  overflow-wrap: anywhere;
+}
+.model-services > .catalog-item {
+  width: 100%;
+  margin-top: 8px;
 }

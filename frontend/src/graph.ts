@@ -39,6 +39,16 @@ export type Pipeline = {
 };
 export type Layout = Record<string, { x: number; y: number }>;
 export type Catalog = {
+  model_services?: {
+    backend: string;
+    display_name: string;
+    endpoint: string;
+    operator: string;
+    descriptor_digest: string;
+    frame_id: string;
+    up_axis: string;
+    unit: string;
+  }[];
   execution_enabled?: boolean;
   execution_profile?: string;
   operators: Record<string, Operator>;

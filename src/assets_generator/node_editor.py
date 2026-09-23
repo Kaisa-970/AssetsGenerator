@@ -68,6 +68,12 @@ class DraftEditor:
         ]
         self.io = DurableIO()
         self.lock = threading.RLock()
+        from .node_editor_services import ModelServices
+
+        self.model_services = ModelServices(self.directory)
+        if self.execution:
+            self.execution.install_model_registry(self.model_services.restore)
+            self.adapters = self.execution.engine.registry
 
     def catalog(self) -> dict[str, Any]:
         templates = []
@@ -103,9 +109,37 @@ class DraftEditor:
             "adapters": self.adapters.catalog() if self.adapters else [],
             "backends": self.adapters.backend_catalog() if self.adapters else [],
             "templates": templates,
+            "model_services": self.model_services.summaries(),
             "execution_enabled": self.execution is not None,
-            "execution_profile": self.execution_profile,
+            "execution_profile": (
+                "已配置模型服务"
+                if self.execution_profile == "CPU · 未配置模型" and self.model_services.summaries()
+                else self.execution_profile
+            ),
         }
+
+    def detect_model_service(self, body: Any) -> dict[str, Any]:
+        if not self.execution:
+            raise ContractError("请使用 --store 启用执行服务后添加模型")
+        if not isinstance(body, dict) or set(body) != {"endpoint"}:
+            raise ContractError("服务检测需要 endpoint")
+        return self.model_services.detect(body["endpoint"])
+
+    def add_model_service(self, body: Any) -> dict[str, Any]:
+        if not self.execution:
+            raise ContractError("请使用 --store 启用执行服务后添加模型")
+        if not isinstance(body, dict) or set(body) != {"endpoint", "descriptor_digest"}:
+            raise ContractError("请先检测服务再确认添加")
+        with self.lock:
+            entry = self.model_services.add(
+                body["endpoint"], body["descriptor_digest"], self.execution
+            )
+            self.adapters = self.execution.engine.registry
+            return {
+                "backend": entry["backend"],
+                "display_name": entry["descriptor"]["display_name"],
+                "catalog": self.catalog(),
+            }
 
     def compile(self, raw: Any) -> dict[str, Any]:
         try:
@@ -360,7 +394,11 @@ def create_editor_server(editor: DraftEditor, port: int = 8767) -> ThreadingHTTP
                 self.connection.settimeout(10)
                 body = json.loads(self.rfile.read(length))
                 path = urlsplit(self.path).path
-                if self.command == "POST" and path == "/api/compile":
+                if self.command == "POST" and path == "/api/model-services/detect":
+                    self.respond(200, editor.detect_model_service(body))
+                elif self.command == "POST" and path == "/api/model-services":
+                    self.respond(201, editor.add_model_service(body))
+                elif self.command == "POST" and path == "/api/compile":
                     self.respond(200, editor.compile(body.get("pipeline")))
                 elif (
                     self.command == "POST"

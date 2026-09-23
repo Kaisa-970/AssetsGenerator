@@ -1,3 +1,4 @@
+import { ModelServices } from "./ModelServices";
 import { InputContractForm } from "./InputContractForm";
 import { executionStatus } from "./executionStatus";
 import { ParameterForm } from "./ParameterForm";
@@ -245,7 +246,11 @@ function App() {
     setRun(undefined);
     setTimeout(() => flow.fitView({ padding: 0.18 }), 50);
   };
-  const addOperator = (key: string, position?: { x: number; y: number }) => {
+  const addOperator = (
+    key: string,
+    position?: { x: number; y: number },
+    backend?: string,
+  ) => {
     const base = key.split("@")[0];
     let id = base;
     let i = 2;
@@ -253,7 +258,17 @@ function App() {
     const candidates = catalog.adapters.filter((a) =>
       a.operators.includes(key),
     );
-    const adapter = candidates.length === 1 ? candidates[0] : undefined;
+    const adapter = backend
+      ? catalog.backends?.find(
+          (item) => item.backend === backend && item.operators.includes(key),
+        )
+      : candidates.length === 1
+        ? candidates[0]
+        : undefined;
+    if (backend && !adapter) {
+      setMessage("模型实现尚未注册，请重新检测服务。");
+      return;
+    }
     update({
       ...pipeline,
       nodes: {
@@ -262,7 +277,9 @@ function App() {
           operator: key,
           ...(adapter
             ? {
-                adapter: `${adapter.name}@${adapter.version}`,
+                ...(backend
+                  ? { backend }
+                  : { adapter: `${adapter.name}@${adapter.version}` }),
                 parameters: adapter.defaults || {},
               }
             : {}),
@@ -472,7 +489,17 @@ function App() {
           >
             ＋ 管线输入
           </button>
-          <div className="catalog-list">
+          <div className="catalog-list" aria-label="可添加节点目录">
+            <ModelServices
+              catalog={catalog}
+              onCatalog={(next) => {
+                setCatalog(next);
+                void compileCurrent(pipelineRef.current);
+              }}
+              onAddNode={(operator, backend) =>
+                addOperator(operator, undefined, backend)
+              }
+            />
             {Object.entries(catalog.operators)
               .filter(
                 ([key]) =>
@@ -507,39 +534,41 @@ function App() {
                   </span>
                 </button>
               ))}
-          </div>
-          <div className="templates">
-            <div className="section-label">示例管线</div>
-            {catalog.templates.map((t) => (
-              <button
-                key={t.id}
-                onClick={() => {
-                  if (window.confirm("加载示例会替换当前未保存画布，继续？")) {
-                    loadPipeline(t.pipeline);
-                    setTab(catalog.execution_enabled ? "run" : "plan");
-                  }
-                }}
-              >
-                {t.label}
-                {t.execution_ready !== undefined && (
-                  <small>
-                    {
-                      (
-                        {
-                          cpu: "CPU · 无需模型",
-                          local: "本地模型",
-                          remote: "远程服务",
-                          unconfigured: "未配置实现",
-                        } as Record<string, string>
-                      )[t.execution_level || "unconfigured"]
-                    }{" "}
-                    · {t.execution_ready ? "配置可执行" : "暂不可运行"}
-                  </small>
-                )}
-                {t.execution_reason && <small>{t.execution_reason}</small>}
-                {t.service_status && <small>{t.service_status}</small>}
-              </button>
-            ))}
+            <div className="templates">
+              <div className="section-label">示例管线</div>
+              {catalog.templates.map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => {
+                    if (
+                      window.confirm("加载示例会替换当前未保存画布，继续？")
+                    ) {
+                      loadPipeline(t.pipeline);
+                      setTab(catalog.execution_enabled ? "run" : "plan");
+                    }
+                  }}
+                >
+                  {t.label}
+                  {t.execution_ready !== undefined && (
+                    <small>
+                      {
+                        (
+                          {
+                            cpu: "CPU · 无需模型",
+                            local: "本地模型",
+                            remote: "远程服务",
+                            unconfigured: "未配置实现",
+                          } as Record<string, string>
+                        )[t.execution_level || "unconfigured"]
+                      }{" "}
+                      · {t.execution_ready ? "配置可执行" : "暂不可运行"}
+                    </small>
+                  )}
+                  {t.execution_reason && <small>{t.execution_reason}</small>}
+                  {t.service_status && <small>{t.service_status}</small>}
+                </button>
+              ))}
+            </div>
           </div>
         </aside>
         <main className="canvas">
@@ -607,6 +636,20 @@ function App() {
             }}
             onDrop={(e) => {
               e.preventDefault();
+              const serviceId = e.dataTransfer.getData(
+                "application/model-service",
+              );
+              const service = catalog.model_services?.find(
+                (item) => item.backend === serviceId,
+              );
+              if (service) {
+                addOperator(
+                  service.operator,
+                  flow.screenToFlowPosition({ x: e.clientX, y: e.clientY }),
+                  service.backend,
+                );
+                return;
+              }
               const key = e.dataTransfer.getData("application/operator");
               if (catalog.operators[key])
                 addOperator(

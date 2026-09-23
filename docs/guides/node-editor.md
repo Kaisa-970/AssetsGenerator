@@ -1,5 +1,8 @@
 # 节点编辑器
 
+已有符合统一协议的图生 Mesh 服务时，可在左侧“添加模型服务”填写地址，检测后确认添加，无需编辑 Registry JSON 或重启编辑器。操作与部署示例见[添加自己的图生 Mesh 模型](add-shape-model-service.md)。首版支持 RGBA → Mesh；其他能力仍使用下方原有配置入口。
+
+
 默认模式编辑和编译草稿；启用执行配置后，可按节点选择已注册的本地或 HTTP Backend。当前运行入口支持单个 image（RGB/RGBA）或 observations（ObservationBundle）输入，且至少有一个处理节点。ComfyUI 图片链已有实验接入，真实部署验收仍未完成。
 
 ## 启动

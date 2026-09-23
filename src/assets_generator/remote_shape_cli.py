@@ -8,6 +8,8 @@ import sqlite3
 import sys
 from pathlib import Path
 
+from .model_service_descriptor import shape_service_descriptor
+from .models import BackendNativeFrame
 from .remote_service_http import create_remote_server
 from .remote_service_store import RemoteServiceStore
 from .remote_service_worker import execute_next_service_job, execute_service_job
@@ -71,7 +73,29 @@ def main(argv: list[str] | None = None) -> int:
                     return 1
             return 0
         if args.action == "serve":
-            server = create_remote_server(store, port=args.port)
+            backend = profiles[args.profile].shape_identity["backend"]
+            # These are the verified native GLB conventions of the two existing
+            # profile implementations, not assumptions about arbitrary services.
+            frames = {
+                "trellis2": BackendNativeFrame(
+                    "trellis2_glb_native", "right", "+Y", None, "unknown", "relative_unit"
+                ),
+                "triposr": BackendNativeFrame(
+                    "triposr_glb_native", "right", "+Z", None, "unknown", "relative_unit"
+                ),
+            }
+            if backend not in frames:
+                raise ValueError("unsupported shape profile frame")
+            server = create_remote_server(
+                store,
+                port=args.port,
+                descriptor=shape_service_descriptor(
+                    handler.identity,
+                    args.profile,
+                    frame=frames[backend],
+                    fixed_parameters=backend == "triposr",
+                ),
+            )
             try:
                 print(
                     json.dumps(

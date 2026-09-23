@@ -332,6 +332,13 @@ class AdapterRegistry:
         self._adapters: dict[str, NodeAdapter] = {}
         self._backend_adapters: dict[tuple[str, str], NodeAdapter] = {}
 
+    def copy(self) -> AdapterRegistry:
+        """Build a catalog update without mutating the registry used by old plans."""
+        registry = AdapterRegistry()
+        registry._adapters = dict(self._adapters)
+        registry._backend_adapters = dict(self._backend_adapters)
+        return registry
+
     @staticmethod
     def _validate_remote(adapter: NodeAdapter) -> None:
         if adapter.spec.execution_kind != "remote":

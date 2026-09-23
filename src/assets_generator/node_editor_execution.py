@@ -127,6 +127,14 @@ class NodeEditorExecution:
             None
         )
 
+    def install_model_registry(self, update: Callable[[Any], None]) -> None:
+        """Serialize explicit service installation with execution commands."""
+        with self._lock:
+            self._idle()
+            registry = self.engine.registry.copy()
+            update(registry)
+            self.engine.registry = registry
+
     def _owned(self, run_id: str) -> None:
         if not re.fullmatch(r"dag_[A-Za-z0-9_-]{1,120}", run_id):
             raise ContractError("invalid DAG run ID")
