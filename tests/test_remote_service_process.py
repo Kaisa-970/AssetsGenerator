@@ -1,5 +1,6 @@
 import json
 import sys
+import time
 
 import pytest
 from test_remote_http import request
@@ -61,7 +62,13 @@ def test_authorization_failure_never_executes_and_blocks_new_job(tmp_path, monke
         with pytest.raises(ValueError, match="occupied"):
             ServiceProcessWorker(store, other).run(command)
         assert not marker.exists()
-        assert store.observe_worker(owner).result == "exited"
+        # Closing the authorization channel makes the launcher exit asynchronously.
+        # Retain the fail-closed slot assertion above, then wait for actual exit evidence.
+        deadline = time.monotonic() + 5
+        while store.observe_worker(owner).result != "exited":
+            assert time.monotonic() < deadline
+            assert not marker.exists()
+            time.sleep(0.01)
         old = json.loads(store.worker_record(owner))
         assert old["exit_code"] is None
         assert old["launch_phase"] == "identity_recorded"

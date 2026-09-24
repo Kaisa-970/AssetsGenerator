@@ -1,6 +1,6 @@
 # 节点工作台当前状态
 
-更新：2026-09-22。推荐从 [中文使用指南](../guides/node-editor.md) 进入。
+更新：2026-09-24。推荐从 [中文使用指南](../guides/node-editor.md) 进入。
 画布使用 React Flow；CLI 保留为自动化和诊断入口。下表区分真实模型验收与 CPU 回归，
 不以流程可运行代表质量达标或完整 B2 完成。
 
@@ -14,6 +14,8 @@
 | HTTP 服务中断 | 真实模型执行时监听服务 SIGKILL 后重连及原作业发布 | [HTTP 验收](http-listener-crash-real.md)；不证明主机或 GPU 驱动故障恢复 |
 | 输出与输入复用 | GLB 预览、下载、标量 Artifact 输入、历史输出复用 | [历史记录](node-editor-b2-history.md)；复杂压缩材质、集合表单未覆盖 |
 | 交互设计首片 | 独立 QA、资产边界和人工决定展示；无模型 CPU 图片入口 | [定向验证](node-editor-product-cpu-smoke.md)；[预检与启动复核已接入](node-editor-preflight-cpu-smoke.md)，普通新运行已改为一次点击自动预检和创建；[继续提取与操作提示](node-editor-continuation-actions.md)已接入；用户已反馈确认页面走查；六步资产主路径预算仍待补验 |
+| 参数与结果交互 | 未应用参数门控、历史徽标来源、图片放大/收起、中间网格 A/B、输出列表拆分 | [本轮验证](editor-usability-20260924.md)；真实模型质量与六步完整资产路径仍待用户验收 |
+| 模型服务发现 | URL 添加 Shape 服务、同节点切换 TripoSR/TRELLIS.2、自动领取 | [真实验收](dual-backend-discovery-real.md)；服务间 GPU 串行由操作者保证 |
 | ComfyUI | 实验协议及 CPU 浏览器验证 | **真实部署验收延期**；有实际使用需求后再启动 |
 
 本轮已整理共享网格读取、provenance、release 边界，见 [改动与验证](shared-foundations-20260921.md)；

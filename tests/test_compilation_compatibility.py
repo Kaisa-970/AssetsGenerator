@@ -37,6 +37,10 @@ def test_legacy_contract_serialization_preserves_historical_identities():
         "resize_image@1",
         "apply_binary_mask@1",
         "text_segmentation@2",
+        "text_segmentation@1",
+        "select_text_mask@1",
+        "masked_shape_generation@1",
+        "masked_shape_asset_assembly@1",
     ):
         del specs[key]
     specs["canonicalize@1"] = replace(specs["canonicalize@1"], relations=())

@@ -617,7 +617,9 @@ test("parameter form sends typed values and preserves other instances", async ({
   await expect(page.getByLabel("参数 seed", { exact: true })).toHaveValue("42");
   await page.getByLabel("参数 seed", { exact: true }).fill("1.5");
   await page.getByLabel("参数 seed", { exact: true }).press("Tab");
-  await expect(page.getByRole("alert")).toContainText("尚未应用");
+  await expect(
+    page.getByRole("alert", { name: "参数错误 · seed", exact: true }),
+  ).toContainText("尚未应用");
   await page
     .getByRole("button", { name: "放弃字段编辑 · seed", exact: true })
     .click();
@@ -630,7 +632,7 @@ test("parameter form sends typed values and preserves other instances", async ({
     .click();
   await page.getByLabel("参数 seed", { exact: true }).fill("1.5");
   await page.getByLabel("参数 seed", { exact: true }).press("Tab");
-  await expect(page.getByRole("alert")).toHaveCount(2);
+  await expect(page.getByRole("alert", { name: /参数错误 ·/ })).toHaveCount(2);
   await page
     .getByRole("button", { name: "放弃字段编辑 · seed", exact: true })
     .click();
@@ -655,7 +657,9 @@ test("parameter form sends typed values and preserves other instances", async ({
   await page
     .getByRole("button", { name: "应用字段 · matrix", exact: true })
     .click();
-  await expect(page.getByRole("alert")).toContainText("尚未应用");
+  await expect(
+    page.getByRole("alert", { name: "参数错误 · matrix", exact: true }),
+  ).toContainText("尚未应用");
   await page
     .getByLabel("参数 matrix JSON", { exact: true })
     .fill("[1, 0, 0, 1]");
@@ -666,7 +670,7 @@ test("parameter form sends typed values and preserves other instances", async ({
     page.getByLabel("参数 options JSON", { exact: true }),
   ).toHaveValue('{"label":"pending"}');
   await expect(
-    page.getByText("options 尚未应用；保存、编译和运行使用已应用值。", {
+    page.getByText("options 尚未应用；应用或放弃编辑后才能启动新运行。", {
       exact: false,
     }),
   ).toBeVisible();
@@ -699,7 +703,9 @@ test("parameter form sends typed values and preserves other instances", async ({
   await page
     .getByRole("button", { name: "应用字段 · options", exact: true })
     .click();
-  await expect(page.getByRole("alert")).toContainText("尚未应用");
+  await expect(
+    page.getByRole("alert", { name: "参数错误 · options", exact: true }),
+  ).toContainText("尚未应用");
   await page
     .getByLabel("参数 options JSON", { exact: true })
     .fill('{"label":"example"}');
@@ -812,9 +818,13 @@ test("fixed run graph displays persisted plan instead of edited draft", async ({
   const draftCanvas = page.locator("main.canvas");
   const draftNode = draftCanvas.locator('.react-flow__node[data-id="copy"]');
   await expect(draftNode).toBeVisible();
+  // Set an explicit camera baseline: fitted zoom varies with viewport width.
+  await draftCanvas
+    .getByRole("button", { name: "Zoom In", exact: true })
+    .click();
   await expect(draftCanvas.locator(".react-flow__viewport")).toHaveAttribute(
     "style",
-    /scale\(1\)/,
+    /scale\(/,
   );
   const viewport = await draftCanvas
     .locator(".react-flow__viewport")
@@ -1343,7 +1353,7 @@ test("published GLB preview loads geometry and closes without mutation", async (
   await page.getByRole("button", { name: "运行", exact: true }).click();
   await page.getByLabel("选择运行").selectOption("dag_preview");
   await page
-    .getByRole("button", { name: "预览模型 · generate", exact: true })
+    .getByRole("button", { name: "预览模型 · generate · glb", exact: true })
     .click();
   const dialog = page.getByRole("dialog", { name: "模型预览", exact: true });
   await expect(dialog.getByRole("status")).toContainText("模型已加载");
@@ -1374,7 +1384,7 @@ test("published GLB preview loads geometry and closes without mutation", async (
   await dialog.getByRole("button", { name: "关闭模型预览" }).click();
   await expect(dialog).toHaveCount(0);
   await page
-    .getByRole("button", { name: "预览模型 · generate", exact: true })
+    .getByRole("button", { name: "预览模型 · generate · glb", exact: true })
     .click();
   await expect(dialog.getByRole("status")).toContainText("模型已加载");
   await page.getByLabel("选择运行").selectOption("");
@@ -1383,7 +1393,7 @@ test("published GLB preview loads geometry and closes without mutation", async (
   await page.getByLabel("选择运行").selectOption("dag_preview");
   failOutput = true;
   await page
-    .getByRole("button", { name: "预览模型 · generate", exact: true })
+    .getByRole("button", { name: "预览模型 · generate · glb", exact: true })
     .click();
   await expect(dialog.getByRole("status")).toContainText("HTTP 400");
   await expect(dialog.locator("canvas")).toHaveCount(0);
@@ -1391,7 +1401,7 @@ test("published GLB preview loads geometry and closes without mutation", async (
   failOutput = false;
   delayOutput = true;
   await page
-    .getByRole("button", { name: "预览模型 · generate", exact: true })
+    .getByRole("button", { name: "预览模型 · generate · glb", exact: true })
     .click();
   await expect.poll(() => outputEntered).toBe(true);
   await dialog.getByRole("button", { name: "关闭模型预览" }).click();
@@ -1410,7 +1420,7 @@ test("published GLB preview loads geometry and closes without mutation", async (
     } as typeof original;
   });
   await page
-    .getByRole("button", { name: "预览模型 · generate", exact: true })
+    .getByRole("button", { name: "预览模型 · generate · glb", exact: true })
     .click();
   await expect(dialog.getByRole("status")).toContainText("预览失败");
   await expect(dialog.locator("canvas")).toHaveCount(0);

@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import {
+  OutputComparison,
   comparisonInputCompatible,
   comparisonOutputUrl,
   comparisonSelectionMatches,
@@ -58,3 +61,25 @@ describe("fixed output comparison", () => {
     );
   });
 });
+
+it.each(["triangle_mesh", "gltf_asset"])(
+  "offers model preview for %s comparison without selecting downstream",
+  (kind) => {
+    let selected = false;
+    const html = renderToStaticMarkup(
+      createElement(OutputComparison, {
+        slots: { A: { ...slot, kind, port: "mesh" } },
+        inputs: {},
+        disabled: false,
+        selectedInputs: {},
+        onUse: () => {
+          selected = true;
+        },
+        onClear: () => {},
+      }),
+    );
+    expect(html).toContain("预览模型 · A");
+    expect(html).not.toContain("此类型暂无可视预览");
+    expect(selected).toBe(false);
+  },
+);

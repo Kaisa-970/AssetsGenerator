@@ -49,6 +49,13 @@ export function ExecutionPreflight({
   onConfirm: (prepared: Prepared) => Promise<void>;
 }) {
   const key = JSON.stringify(intent);
+  const availability = useRef({ disabled, revision: 0 });
+  if (availability.current.disabled !== disabled) {
+    availability.current = {
+      disabled,
+      revision: availability.current.revision + 1,
+    };
+  }
   const current = useRef(key);
   current.current = key;
   const [busy, setBusy] = useState(false);
@@ -61,7 +68,12 @@ export function ExecutionPreflight({
   }>();
   const active = checked?.key === key ? checked : undefined;
   const check = async () => {
-    if (inFlight.current) return;
+    if (inFlight.current || availability.current.disabled) return;
+    const availabilityRevision = availability.current.revision;
+    const invalidated = () =>
+      current.current !== key ||
+      availability.current.disabled ||
+      availability.current.revision !== availabilityRevision;
     inFlight.current = true;
     setBusy(true);
     setError("");
@@ -70,14 +82,14 @@ export function ExecutionPreflight({
       // Import is explicit and separate from the read-only analysis request.
       const { reuse_source, ...inputIntent } = intent;
       const inputs = await post("/api/prepare-inputs", inputIntent);
-      if (current.current !== key) return;
+      if (invalidated()) return;
       const prepared = {
         pipeline: intent.pipeline,
         input_refs: inputs.input_refs,
         ...(reuse_source ? { reuse_source } : {}),
       };
       const report: Report = await post("/api/preflight", prepared);
-      if (current.current !== key) return;
+      if (invalidated()) return;
       if (
         typeof report.digest !== "string" ||
         !report.nodes ||
@@ -141,6 +153,7 @@ export function ExecutionPreflight({
           <button
             disabled={disabled || busy || !active.report.execution_ready}
             onClick={() => {
+              if (availability.current.disabled) return;
               const prepared = active.prepared;
               setChecked(undefined);
               void onConfirm(prepared);

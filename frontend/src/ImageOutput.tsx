@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 /** Read-only output viewer; mount by immutable run/node/port identity. */
 export function ImageOutput({
@@ -15,6 +16,14 @@ export function ImageOutput({
   defaultOpen?: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
+  const [enlarged, setEnlarged] = useState(false);
+  const dialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    if (enlarged) dialog.current?.showModal();
+  }, [enlarged]);
+  useEffect(() => {
+    setEnlarged(false);
+  }, [runId, nodeId, port, url]);
   const [readAttempt, setReadAttempt] = useState(0);
   const [status, setStatus] = useState<"loading" | "loaded" | "failed">(
     "loading",
@@ -55,6 +64,7 @@ export function ImageOutput({
         aria-expanded={open}
         onClick={() => {
           setOpen(!open);
+          setEnlarged(false);
           setStatus("loading");
         }}
       >
@@ -74,6 +84,38 @@ export function ImageOutput({
               </button>
             </>
           )}
+          {source && status === "loaded" && (
+            <button onClick={() => setEnlarged(true)}>
+              放大图片 · {nodeId} · {port}
+            </button>
+          )}
+          {enlarged &&
+            source &&
+            status === "loaded" &&
+            createPortal(
+              <dialog
+                ref={dialog}
+                className="image-output-dialog"
+                aria-label="放大图片"
+                onCancel={() => setEnlarged(false)}
+                onClose={() => setEnlarged(false)}
+              >
+                <header>
+                  <strong>图片预览</strong>
+                  <button autoFocus onClick={() => setEnlarged(false)}>
+                    关闭放大图片
+                  </button>
+                </header>
+                <p className="run-identity">
+                  {runId} / {nodeId} / {port}
+                </p>
+                <img
+                  src={source}
+                  alt={`放大：节点 ${nodeId} 的 ${port} 输出`}
+                />
+              </dialog>,
+              document.body,
+            )}
           {source && (
             <img
               src={source}

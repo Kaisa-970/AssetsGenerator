@@ -516,6 +516,9 @@ footer {
   background: rgba(255, 255, 255, 0.97);
   box-shadow: 0 4px 18px #182d4420;
 }
+.node-preview-window[hidden] {
+  display: none;
+}
 .node-preview-window img {
   max-width: 100%;
   max-height: 230px;
@@ -554,4 +557,29 @@ footer {
 .model-services > .catalog-item {
   width: 100%;
   margin-top: 8px;
+}
+
+.image-output-dialog {
+  max-width: 94vw;
+  max-height: 94vh;
+  padding: 16px;
+  border: 1px solid #555;
+  border-radius: 8px;
+  background: #171d28;
+  color: #eee;
+}
+.image-output-dialog::backdrop {
+  background: rgb(0 0 0 / 70%);
+}
+.image-output-dialog header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 24px;
+}
+.image-output-dialog img {
+  display: block;
+  max-width: 88vw;
+  max-height: 78vh;
+  object-fit: contain;
 }

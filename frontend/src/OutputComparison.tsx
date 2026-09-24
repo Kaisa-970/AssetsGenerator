@@ -122,7 +122,8 @@ export function OutputComparison({
                   url={url}
                   defaultOpen
                 />
-              ) : slot.kind === "gltf_asset" ? (
+              ) : slot.kind === "gltf_asset" ||
+                slot.kind === "triangle_mesh" ? (
                 <button onClick={() => setModel(structuredClone(slot))}>
                   预览模型 · {side}
                 </button>

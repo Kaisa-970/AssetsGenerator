@@ -86,6 +86,17 @@ test("edited configuration marks kept historical preview stale without dispatch"
   await page.locator('.react-flow__node[data-id="encode"]').click();
   const preview = page.getByRole("region", { name: "选中节点预览" });
   await expect(preview.getByRole("img")).toBeVisible();
+  await preview
+    .getByRole("button", { name: "放大图片 · encode · image", exact: true })
+    .click();
+  const enlarged = page.getByRole("dialog", { name: "放大图片", exact: true });
+  await expect(enlarged).toBeVisible();
+  await expect(enlarged).toContainText("old / encode / image");
+  await expect(enlarged.getByRole("img")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(enlarged).toHaveCount(0);
+  await expect(preview.getByRole("img")).toBeVisible();
+
   await expect(preview.getByLabel("预览配置状态")).toContainText("配置匹配");
   changed = true;
   await page.getByLabel("管线名称", { exact: true }).fill("changed");

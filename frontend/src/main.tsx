@@ -1,3 +1,9 @@
+import {
+  emptyParameterDraft,
+  pendingParameterNodes,
+  parseParameterObject,
+  type ParameterDraft,
+} from "./parameterDrafts";
 import { ModelServices } from "./ModelServices";
 import { InputContractForm } from "./InputContractForm";
 import { executionStatus } from "./executionStatus";
@@ -59,7 +65,7 @@ function OperatorNode({ data, selected }: NodeProps<Node<Data>>) {
     <div className={`op-node ${selected ? "selected" : ""}`}>
       <div className="node-top">
         <span>{data.operator === "Pipeline input" ? "输入" : "算子"}</span>
-        {data.status && <em>{executionStatus(data.status)}</em>}
+        {data.status && <em>历史 · {executionStatus(data.status)}</em>}
       </div>
       <strong>{data.label}</strong>
       <small>{data.operator}</small>
@@ -137,8 +143,48 @@ function App() {
   }>({ sequence: 0 });
   const [filter, setFilter] = useState("");
   const [registeredOnly, setRegisteredOnly] = useState(false);
+  const [nodePreviewOpen, setNodePreviewOpen] = useState(true);
   const [previewHost, setPreviewHost] = useState<HTMLDivElement | null>(null);
-  const [parameters, setParameters] = useState("{}");
+  const [parameterDrafts, setParameterDrafts] = useState<
+    Record<string, ParameterDraft>
+  >({});
+  const pendingParameterIds = pendingParameterNodes(
+    parameterDrafts,
+    pipeline.nodes,
+  );
+  const pendingParameterIdsRef = useRef(pendingParameterIds);
+  pendingParameterIdsRef.current = pendingParameterIds;
+  const configurationBlockedReason = pendingParameterIds.length
+    ? `参数尚未应用：${pendingParameterIds.join("、")}。请返回配置应用或放弃编辑。`
+    : undefined;
+  useEffect(() => {
+    setParameterDrafts((previous) => {
+      const removed = Object.keys(previous).filter(
+        (id) => !(id in pipeline.nodes),
+      );
+      if (!removed.length) return previous;
+      return Object.fromEntries(
+        Object.entries(previous).filter(([id]) => id in pipeline.nodes),
+      );
+    });
+  }, [pipeline.nodes]);
+  const selectedDraft =
+    (selected && parameterDrafts[selected]) || emptyParameterDraft();
+  const parameters =
+    selectedDraft.json ??
+    JSON.stringify(
+      selected ? pipeline.nodes[selected]?.parameters || {} : {},
+      null,
+      2,
+    );
+  const changeParameterDraft = (
+    id: string,
+    change: (draft: ParameterDraft) => ParameterDraft,
+  ) =>
+    setParameterDrafts((previous) => ({
+      ...previous,
+      [id]: change(previous[id] || emptyParameterDraft()),
+    }));
   const [inputSpec, setInputSpec] = useState("{}");
   const [tab, setTab] = useState("inspector");
   const [run, setRun] = useState<Record<string, unknown>>();
@@ -212,13 +258,6 @@ function App() {
       .catch((e) => setMessage(String(e)));
   }, []);
   useEffect(() => {
-    setParameters(
-      JSON.stringify(
-        selected ? pipeline.nodes[selected]?.parameters || {} : {},
-        null,
-        2,
-      ),
-    );
     setInputSpec(
       JSON.stringify(
         selected?.startsWith("input:")
@@ -240,7 +279,10 @@ function App() {
     }
   };
   const loadPipeline = (p: Pipeline, l: Layout = {}) => {
+    if (pendingParameterIdsRef.current.length)
+      throw Error("存在尚未应用的参数；请先应用或放弃编辑，再载入其他画布。");
     update(validateDocument(p));
+    setParameterDrafts({});
     setLayout(l);
     setSelected(undefined);
     setRun(undefined);
@@ -415,6 +457,15 @@ function App() {
           />
         </div>
         <div className="toolbar">
+          {catalog.execution_enabled && (
+            <button
+              aria-expanded={nodePreviewOpen}
+              aria-controls="node-preview-window"
+              onClick={() => setNodePreviewOpen((open) => !open)}
+            >
+              {nodePreviewOpen ? "收起节点预览" : "展开节点预览"}
+            </button>
+          )}
           <button onClick={() => input.current?.click()}>导入 YAML</button>
           <button
             onClick={() => {
@@ -539,6 +590,7 @@ function App() {
               {catalog.templates.map((t) => (
                 <button
                   key={t.id}
+                  disabled={!!configurationBlockedReason}
                   onClick={() => {
                     if (
                       window.confirm("加载示例会替换当前未保存画布，继续？")
@@ -667,7 +719,33 @@ function App() {
             <MiniMap pannable zoomable nodeColor="#bccddb" />
           </ReactFlow>
           {catalog.execution_enabled && (
-            <div className="node-preview-window" ref={setPreviewHost} />
+            <div
+              id="node-preview-window"
+              className="node-preview-window"
+              hidden={!nodePreviewOpen}
+              ref={setPreviewHost}
+            />
+          )}
+          {run && (
+            <div
+              role="status"
+              aria-label="画布历史状态来源"
+              style={{
+                position: "absolute",
+                top: 12,
+                left: 12,
+                zIndex: 5,
+                background: "white",
+                color: "#263747",
+                padding: 10,
+                maxWidth: "85%",
+                overflowWrap: "anywhere",
+              }}
+            >
+              画布徽标：导入的历史记录 {String(run.run_id || "未记录运行 ID")} ·
+              仅按同名节点显示，不代表当前草稿已执行，也不代表预览来源。
+              <button onClick={() => setRun(undefined)}>清除历史状态</button>
+            </div>
           )}
           <div className="canvas-note">
             拖动连接端口 · Delete 删除节点 ·{" "}
@@ -700,10 +778,30 @@ function App() {
           <p aria-label="当前配置编译状态" aria-live="polite">
             {compileMessage}
           </p>
+          {configurationBlockedReason && (
+            <section role="alert" aria-label="未应用参数">
+              <p>{configurationBlockedReason}</p>
+              {pendingParameterIds.map((id) => (
+                <button
+                  key={id}
+                  onClick={() => {
+                    setSelected(id);
+                    setTab("inspector");
+                  }}
+                >
+                  编辑待应用参数 · {id}
+                </button>
+              ))}
+              <button onClick={() => setParameterDrafts({})}>
+                放弃全部未应用参数编辑
+              </button>
+            </section>
+          )}
           {catalog.execution_enabled && (
             <div hidden={tab !== "run"}>
               <ExecutionPanel
                 pipeline={pipeline}
+                configurationBlockedReason={configurationBlockedReason}
                 selectedNode={selected}
                 previewHost={previewHost}
                 onLoadDraft={(draft) => {
@@ -867,6 +965,14 @@ function App() {
                           const next = selected.startsWith("input:")
                             ? inputId(e.target.value)
                             : e.target.value;
+                          setParameterDrafts((previous) => {
+                            const nextDrafts = { ...previous };
+                            if (next !== selected && previous[selected]) {
+                              nextDrafts[next] = previous[selected];
+                              delete nextDrafts[selected];
+                            }
+                            return nextDrafts;
+                          });
                           update(p);
                           if (layout[selected])
                             setLayout({ ...layout, [next]: layout[selected] });
@@ -885,6 +991,7 @@ function App() {
                         Adapter
                         <select
                           aria-label="Adapter"
+                          disabled={pendingParameterIds.includes(selected)}
                           value={node.adapter || ""}
                           onChange={(e) =>
                             update({
@@ -915,6 +1022,7 @@ function App() {
                       <label>
                         Backend 配置
                         <select
+                          disabled={pendingParameterIds.includes(selected)}
                           aria-label="节点 Backend"
                           value={node.backend || ""}
                           onChange={(e) =>
@@ -959,35 +1067,73 @@ function App() {
                             )}
                         </select>
                       </label>
-                      <ParameterForm
-                        key={`${selected}:${node.adapter || ""}`}
-                        adapter={selectedAdapter}
-                        parameters={node.parameters || {}}
-                        onChange={(value) =>
-                          update((previous) => ({
-                            ...previous,
-                            nodes: {
-                              ...previous.nodes,
-                              [selected]: {
-                                ...previous.nodes[selected],
-                                parameters: value,
+                      <fieldset
+                        disabled={selectedDraft.json !== undefined}
+                        style={{ border: 0, padding: 0, margin: 0 }}
+                      >
+                        <ParameterForm
+                          key={`${selected}:${node.adapter || ""}`}
+                          adapter={selectedAdapter}
+                          draft={selectedDraft.fields}
+                          errors={selectedDraft.errors}
+                          setDraft={(value) =>
+                            changeParameterDraft(selected, (draft) => ({
+                              ...draft,
+                              fields:
+                                typeof value === "function"
+                                  ? value(draft.fields)
+                                  : value,
+                            }))
+                          }
+                          setErrors={(value) =>
+                            changeParameterDraft(selected, (draft) => ({
+                              ...draft,
+                              errors:
+                                typeof value === "function"
+                                  ? value(draft.errors)
+                                  : value,
+                            }))
+                          }
+                          parameters={node.parameters || {}}
+                          onChange={(value) =>
+                            update((previous) => ({
+                              ...previous,
+                              nodes: {
+                                ...previous.nodes,
+                                [selected]: {
+                                  ...previous.nodes[selected],
+                                  parameters: value,
+                                },
                               },
-                            },
-                          }))
-                        }
-                      />
+                            }))
+                          }
+                        />
+                      </fieldset>
                       <label>
                         节点参数 · JSON
                         <textarea
                           spellCheck={false}
+                          aria-label="节点参数 JSON"
                           value={parameters}
-                          onChange={(e) => setParameters(e.target.value)}
+                          disabled={
+                            Object.keys(selectedDraft.fields).length > 0
+                          }
+                          onChange={(e) =>
+                            changeParameterDraft(selected, (draft) => ({
+                              ...draft,
+                              json: e.target.value,
+                            }))
+                          }
                         />
                       </label>
                       <button
+                        disabled={
+                          selectedDraft.json === undefined ||
+                          Object.keys(selectedDraft.fields).length > 0
+                        }
                         onClick={() => {
                           try {
-                            const value = JSON.parse(parameters);
+                            const value = parseParameterObject(parameters);
                             if (
                               !value ||
                               typeof value !== "object" ||
@@ -1001,6 +1147,9 @@ function App() {
                                 [selected]: { ...node, parameters: value },
                               },
                             });
+                            changeParameterDraft(selected, () =>
+                              emptyParameterDraft(),
+                            );
                             setMessage("参数已应用。");
                           } catch (e) {
                             setMessage(String(e));

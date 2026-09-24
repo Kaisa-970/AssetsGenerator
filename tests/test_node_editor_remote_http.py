@@ -33,7 +33,7 @@ from assets_generator.worker import ProcessJobRequest
 
 @pytest.mark.parametrize("abandon_first", [False, True])
 @pytest.mark.parametrize("masked_input", [False, True])
-def test_remote_asset_chain_through_editor_http(tmp_path, abandon_first, masked_input):
+def test_remote_asset_chain_through_editor_http(tmp_path, abandon_first, masked_input, monkeypatch):
     with serve(tmp_path / "service.sqlite") as (remote, client, _):
         identity = request().identity
         registry = AdapterRegistry()
@@ -53,6 +53,14 @@ def test_remote_asset_chain_through_editor_http(tmp_path, abandon_first, masked_
         )
         with DagRepository(LocalArtifactStore(tmp_path / "store"), tmp_path / "core") as repo:
             execution = NodeEditorExecution(DagEngine(repo, registry))
+            dispatched = []
+            original_dispatch = execution._dispatch
+
+            def record_dispatch(run_id, command):
+                dispatched.append(run_id)
+                return original_dispatch(run_id, command)
+
+            monkeypatch.setattr(execution, "_dispatch", record_dispatch)
             editor = DraftEditor(tmp_path / "drafts", execution=execution)
             server = create_editor_server(editor, 0)
             thread = threading.Thread(target=server.serve_forever)
@@ -80,14 +88,34 @@ def test_remote_asset_chain_through_editor_http(tmp_path, abandon_first, masked_
                 ) as response:
                     return json.load(response)
 
-            def settled(run_id):
+            def wait_for(run_id, predicate):
                 deadline = time.monotonic() + 30
                 while True:
                     snapshot = get(f"/api/runs/{run_id}")
-                    if not snapshot["busy"]:
+                    if predicate(snapshot):
                         return snapshot
                     assert time.monotonic() < deadline
                     time.sleep(0.05)
+
+            def settled(run_id):
+                return wait_for(run_id, lambda snapshot: not snapshot["busy"])
+
+            def queued(run_id, previous_key=None):
+                def is_queued(snapshot):
+                    states = snapshot["run"]["dag"]["node_states"]
+                    attempts = states["shape"]["attempts"]
+                    if not attempts:
+                        return False
+                    binding = attempts[-1].get("remote_binding")
+                    if not binding or binding["submission_key"] == previous_key:
+                        return False
+                    remote_request = remote.request_for(binding["submission_key"])
+                    return (
+                        remote_request is not None
+                        and remote.lookup(remote_request).state == "queued"
+                    )
+
+                return wait_for(run_id, is_queued)
 
             try:
                 graph = yaml.safe_load(
@@ -121,7 +149,7 @@ def test_remote_asset_chain_through_editor_http(tmp_path, abandon_first, masked_
                     creation["input_refs"] = {"image": rgb["image_ref"], "mask": mask["mask_ref"]}
                 started = post("/api/runs", creation)
                 run_id = started["run"]["run_id"]
-                waiting = settled(run_id)
+                waiting = queued(run_id)
                 assert waiting["run"]["status"] == "running"
                 exported = get(f"/api/runs/{run_id}/draft")
                 assert exported["source_run_id"] == run_id
@@ -137,7 +165,8 @@ def test_remote_asset_chain_through_editor_http(tmp_path, abandon_first, masked_
                     == original_plan["bindings"]["shape"]["parameters"]
                 )
                 assert post("/api/compile", {"pipeline": cloned})["execution_ready"]
-                assert get(f"/api/runs/{run_id}")["run"]["dag"] == waiting["run"]["dag"]
+                assert get(f"/api/runs/{run_id}")["run"]["run_id"] == run_id
+                assert dispatched == [run_id]
                 assert len(get("/api/runs")["runs"]) == 1
                 attempt = repo.load(run_id).dag.node_states["shape"].current()
                 req = remote.request_for(attempt.remote_binding.submission_key)
@@ -159,12 +188,8 @@ def test_remote_asset_chain_through_editor_http(tmp_path, abandon_first, masked_
                     )
                     # Process exit was saved, but no terminal result was published.
                     assert remote.abandon_exited_job(req).state == "failed"
-                    post(
-                        f"/api/runs/{run_id}/resume",
-                        {
-                            "expected_revision": waiting["run"]["dag"]["revision"],
-                        },
-                    )
+                    # The explicitly started command owns remote result collection;
+                    # GET observes it without creating a resume/dispatch command.
                     failed = settled(run_id)
                     assert failed["run"]["status"] == "failed"
                     old = repo.load(run_id).dag.node_states["shape"].current()
@@ -178,21 +203,19 @@ def test_remote_asset_chain_through_editor_http(tmp_path, abandon_first, masked_
                             "expected_revision": failed["run"]["dag"]["revision"],
                         },
                     )
-                    waiting = settled(run_id)
+                    waiting = queued(run_id, previous_key=original_key)
                     current = repo.load(run_id).dag.node_states["shape"].current()
                     assert current.remote_binding.submission_key != original_key
                     req = remote.request_for(current.remote_binding.submission_key)
                     assert remote.lookup(req).state == "queued"
                 assert execute_service_job(remote, req, handler).state == "succeeded"
-                # Polling alone cannot consume the remote result or execute downstream nodes.
-                unchanged = get(f"/api/runs/{run_id}")
-                assert unchanged["run"]["dag"] == waiting["run"]["dag"]
-                post(
-                    f"/api/runs/{run_id}/resume",
-                    {"expected_revision": waiting["run"]["dag"]["revision"]},
-                )
+                # Start/retry already authorized the continuation loop. It collects
+                # this result and runs downstream without a second resume request.
                 completed = settled(run_id)
                 assert completed["run"]["status"] == "succeeded"
+                assert dispatched == [run_id] * (2 if abandon_first else 1)
+                jobs_after_completion = remote.list_jobs()["jobs"]
+                assert len(jobs_after_completion) == (2 if abandon_first else 1)
                 assert all(
                     len(s["attempts"]) == (2 if abandon_first and key == "shape" else 1)
                     for key, s in completed["run"]["dag"]["node_states"].items()
@@ -219,7 +242,16 @@ def test_remote_asset_chain_through_editor_http(tmp_path, abandon_first, masked_
                 report = get(report_path)
                 assert report["profile"] == "geometry-v1"
                 assert report["overall_status"] in {"pass", "warn"}
-                assert not any(output["node_id"] == "shape" for output in completed["outputs"])
+                for node in ("shape", "canonical"):
+                    assert any(
+                        output["node_id"] == node and output["kind"] == "triangle_mesh"
+                        for output in completed["outputs"]
+                    )
+                    facts = get(f"/api/runs/{run_id}/appearance/{node}/mesh")
+                    assert facts["primitive_count"] > 0
+                    with urlopen(base + f"/api/runs/{run_id}/outputs/{node}/mesh") as response:
+                        assert response.read(4) == b"glTF"
+
                 if abandon_first:
                     history = repo.load(run_id).dag.node_states["shape"].attempts
                     assert history[0] == old
@@ -260,6 +292,10 @@ def test_remote_asset_chain_through_editor_http(tmp_path, abandon_first, masked_
                         )
                 assert get(f"/api/runs/{run_id}")["run"]["dag"] == completed["run"]["dag"]
                 assert post("/api/runs", creation)["run"]["dag"] == completed["run"]["dag"]
+                # Output/status GETs and idempotent creation never dispatch a new
+                # command or submit another remote inference job.
+                assert dispatched == [run_id] * (2 if abandon_first else 1)
+                assert remote.list_jobs()["jobs"] == jobs_after_completion
                 from urllib.error import HTTPError
 
                 missing = repo.store.blob_path(ArtifactRef(**next(iter(release["files"].values()))))

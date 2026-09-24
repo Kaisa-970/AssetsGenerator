@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import type { Dispatch, SetStateAction } from "react";
 import type { Adapter } from "./graph";
 
 type Field = {
@@ -11,41 +11,19 @@ export function ParameterForm({
   adapter,
   parameters,
   onChange,
+  draft,
+  errors,
+  setDraft,
+  setErrors,
 }: {
   adapter?: Adapter;
   parameters: Record<string, unknown>;
   onChange: (value: Record<string, unknown>) => void;
+  draft: Record<string, string>;
+  errors: Record<string, string>;
+  setDraft: Dispatch<SetStateAction<Record<string, string>>>;
+  setErrors: Dispatch<SetStateAction<Record<string, string>>>;
 }) {
-  const [draft, setDraft] = useState<Record<string, string>>({});
-  const [errors, setErrors] = useState<Record<string, string>>({});
-  const previous = useRef({ adapter, parameters });
-  useEffect(() => {
-    const old = previous.current;
-    previous.current = { adapter, parameters };
-    if (old.adapter !== adapter) {
-      setDraft({});
-      setErrors({});
-      return;
-    }
-    setErrors((pending) =>
-      Object.fromEntries(
-        Object.entries(pending).filter(
-          ([name]) =>
-            JSON.stringify(old.parameters[name]) ===
-            JSON.stringify(parameters[name]),
-        ),
-      ),
-    );
-    setDraft((pending) =>
-      Object.fromEntries(
-        Object.entries(pending).filter(
-          ([name]) =>
-            JSON.stringify(old.parameters[name]) ===
-            JSON.stringify(parameters[name]),
-        ),
-      ),
-    );
-  }, [adapter, parameters]);
   const clearDraft = (name: string) => {
     setErrors((pending) => {
       const next = { ...pending };
@@ -84,7 +62,9 @@ export function ParameterForm({
       <div className="section-label">参数表单</div>
       <p>未覆盖的字段使用 Adapter 默认值。后端编译仍是最终校验。</p>
       {missing.length > 0 && (
-        <p role="alert">缺少必填参数：{missing.join("、")}。填写并应用后才能运行。</p>
+        <p role="alert">
+          缺少必填参数：{missing.join("、")}。填写并应用后才能运行。
+        </p>
       )}
       {fields.map(([name, field]) => {
         const value = effective[name];
@@ -93,7 +73,8 @@ export function ParameterForm({
           fixed && JSON.stringify(value) !== JSON.stringify(field.enum![0]);
         return (
           <label key={name}>
-            {name}{required.has(name) ? "（必填）" : ""}
+            {name}
+            {required.has(name) ? "（必填）" : ""}
             {fixed ? "（固定契约）" : ""}
             {field.enum ? (
               <select
@@ -211,7 +192,7 @@ export function ParameterForm({
             )}
             {Object.hasOwn(draft, name) && (
               <span>
-                {name} 尚未应用；保存、编译和运行使用已应用值。
+                {name} 尚未应用；应用或放弃编辑后才能启动新运行。
                 <button
                   type="button"
                   onClick={() => {

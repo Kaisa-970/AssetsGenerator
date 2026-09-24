@@ -1,10 +1,11 @@
+import { selectedPreviewPort, previewEmptyMessage } from "./selectedPreview";
 import { ReuseHumanDecision } from "./ReuseHumanDecision";
 import { useResultFreshness } from "./useResultFreshness";
 import { request, type Envelope } from "./executionApi";
 import { useRunCreation, type CreationRequest } from "./useRunCreation";
 import { OutputComparison, type ComparisonSlot } from "./OutputComparison";
 import { NodeActionHint } from "./NodeActionHint";
-import { ContinueExtraction } from "./ContinueExtraction";
+import { RunOutputs, type RunOutput } from "./RunOutputs";
 import { ExecutionPreflight } from "./ExecutionPreflight";
 import { ExecutionInputs } from "./ExecutionInputs";
 import { MeshAppearancePanel } from "./MeshAppearancePanel";
@@ -26,6 +27,7 @@ export function ExecutionPanel({
   pipeline,
   profile,
   executionReason,
+  configurationBlockedReason,
   selectedNode,
   previewHost,
   onLoadDraft,
@@ -33,6 +35,7 @@ export function ExecutionPanel({
   pipeline: Pipeline;
   profile?: string;
   executionReason?: string;
+  configurationBlockedReason?: string;
   selectedNode?: string;
   previewHost?: HTMLElement | null;
   onLoadDraft: (pipeline: Pipeline) => void;
@@ -260,6 +263,9 @@ export function ExecutionPanel({
   };
   const unresolvedCreation = !!creation.request || !!creation.error;
   const run = envelope?.run;
+  useEffect(() => {
+    setPreviewPort("");
+  }, [selectedNode, run?.run_id]);
   const actionAdvice =
     envelope?.actions?.run_id === run?.run_id &&
     envelope?.actions?.revision === run?.dag?.revision
@@ -414,6 +420,100 @@ export function ExecutionPanel({
       setUploading(false);
     }
   };
+  const compareOutput = (output: RunOutput, side: "A" | "B") => {
+    if (!run || !envelope?.snapshot_ref) return;
+    const snapshot = envelope.snapshot_ref!.artifact_id;
+    void mutate(async () => {
+      const source = await request(
+        `/api/runs/${encodeURIComponent(run.run_id)}/snapshot-reference/${encodeURIComponent(output.node_id)}/${encodeURIComponent(output.port)}?snapshot=${encodeURIComponent(snapshot)}`,
+      );
+      if (
+        source.source_run_id !== run.run_id ||
+        source.node_id !== output.node_id ||
+        source.port !== output.port ||
+        source.source_snapshot?.artifact_id !== snapshot ||
+        source.kind !== output.kind ||
+        typeof source.reference?.artifact_id !== "string"
+      )
+        throw Error("比较输出来源无法核实");
+      setComparison((old) => ({
+        ...old,
+        [side]: {
+          runId: run.run_id,
+          nodeId: output.node_id,
+          port: output.port,
+          kind: source.kind,
+          snapshot,
+          reference: source.reference,
+          schema_name: source.schema_name,
+          schema_version: source.schema_version,
+        },
+      }));
+      setMessage(`已固定比较项 ${side}，不改变下游输入。`);
+    });
+  };
+  const reuseOutput = (output: RunOutput, name: string) => {
+    if (!run) return;
+    const port = effectivePipeline.inputs[name];
+    if (!multiInput) setImageSource("reference");
+    const revision = inputGeneration.current.revision;
+    void mutate(async () => {
+      const source = await request(
+        `/api/runs/${encodeURIComponent(run.run_id)}/references/${encodeURIComponent(output.node_id)}/${encodeURIComponent(output.port)}`,
+      );
+      if (inputGeneration.current.revision !== revision)
+        throw Error("输入契约已修改，请重新选择输出");
+      if (
+        source.source_run_id !== run.run_id ||
+        source.node_id !== output.node_id ||
+        source.port !== output.port ||
+        !(port.kinds || [port.kind]).includes(source.kind) ||
+        (port.schema_name && source.schema_name !== port.schema_name) ||
+        (port.schema_version &&
+          source.schema_version !== port.schema_version) ||
+        typeof source.reference?.artifact_id !== "string"
+      )
+        throw Error("输出引用与目标输入契约不匹配");
+      setInputOrigins((old) => ({
+        ...old,
+        [name]: {
+          artifactId: source.reference.artifact_id,
+          runId: source.source_run_id,
+          nodeId: source.node_id,
+          port: source.port,
+        },
+      }));
+      if (multiInput) {
+        setInputRefs((old) => ({
+          ...old,
+          [name]: {
+            ...source.reference,
+            ...(output.port.includes("~")
+              ? {
+                  source: {
+                    run_id: source.source_run_id,
+                    node_id: source.node_id,
+                    port: source.port,
+                  },
+                }
+              : {}),
+          },
+        }));
+      } else {
+        setReusedImage({
+          artifact_id: source.reference.artifact_id,
+        });
+        setImageSource("reference");
+      }
+      setMessage(
+        `已将 ${run.run_id}/${output.node_id}.${output.port} 绑定到 ${name}，点击启动才会创建新运行。`,
+      );
+    });
+  };
+  const selectedOutputs = (envelope?.outputs || []).filter(
+    (o) => o.node_id === selectedNode,
+  );
+  const activePreviewPort = selectedPreviewPort(selectedOutputs, previewPort);
   return (
     <section className="execution-panel">
       {(comparison.A || comparison.B) && (
@@ -531,10 +631,10 @@ export function ExecutionPanel({
               输出端口
               <select
                 aria-label="预览输出端口"
-                value={previewPort}
+                value={activePreviewPort}
                 onChange={(e) => setPreviewPort(e.target.value)}
               >
-                <option value="">默认输出</option>
+                {!selectedOutputs.length && <option value="">暂无输出</option>}
                 {envelope?.outputs
                   ?.filter((o) => o.node_id === selectedNode)
                   .map((o) => (
@@ -545,15 +645,8 @@ export function ExecutionPanel({
               </select>
             </label>
             {run &&
-              envelope?.outputs
-                ?.filter((o) => o.node_id === selectedNode)
-                .filter((o, i, all) =>
-                  all.some((item) => item.port === previewPort)
-                    ? o.port === previewPort
-                    : all.some((item) => item.port === "mask")
-                      ? o.port === "mask"
-                      : i === 0,
-                )
+              selectedOutputs
+                .filter((o) => o.port === activePreviewPort)
                 .map((output) =>
                   ["rgb_image", "rgba_image", "binary_mask"].includes(
                     output.kind || "",
@@ -592,7 +685,15 @@ export function ExecutionPanel({
                   ),
                 )}
             {!envelope?.outputs?.some((o) => o.node_id === selectedNode) && (
-              <p>该节点在当前运行中尚无可预览结果。</p>
+              <p>
+                {previewEmptyMessage(
+                  selectedNode,
+                  run?.run_id,
+                  selectedNode
+                    ? run?.dag?.node_states[selectedNode]?.status
+                    : undefined,
+                )}
+              </p>
             )}
           </section>,
           previewHost,
@@ -673,6 +774,9 @@ export function ExecutionPanel({
         }}
       />
       <p>启动时后端重新编译当前草稿并固定计划。修改画布只影响下一次新运行。</p>
+      {configurationBlockedReason && (
+        <p role="alert">{configurationBlockedReason}</p>
+      )}
       {effectiveReason && (
         <p role="alert">当前入口不可运行：{effectiveReason}</p>
       )}
@@ -718,7 +822,8 @@ export function ExecutionPanel({
                 : imageSource === "path"
                   ? !imagePath.trim()
                   : !uploaded || uploaded.rgba !== rgbaInput) ||
-          !!effectiveReason
+          !!effectiveReason ||
+          !!configurationBlockedReason
         }
         intent={{
           pipeline: structuredClone(effectivePipeline),
@@ -918,227 +1023,37 @@ export function ExecutionPanel({
           >
             恢复 / 继续此运行
           </button>
-          {run.status === "succeeded" && !envelope.outputs?.length && (
-            <p>
-              运行已完成，暂无可预览图片；分割可能未找到符合提示词和阈值的候选。
-            </p>
-          )}
-          {!!envelope.outputs?.length && (
-            <div className="run-node">
-              <strong>可查看的节点输出</strong>
-              {envelope.outputs
-                .filter(
-                  (output) =>
-                    output.kind === "gltf_asset" ||
-                    output.kind === "triangle_mesh" ||
-                    (!output.kind && output.port === "glb"),
-                )
-                .map((output) => (
-                  <button
-                    key={`preview:${output.node_id}`}
-                    onClick={() =>
-                      setPreview({
-                        runId: run.run_id,
-                        nodeId: output.node_id,
-                        url: output.url,
-                      })
-                    }
-                  >
-                    预览模型 · {output.node_id}
-                  </button>
-                ))}
-              {envelope.snapshot_ref &&
-                envelope.outputs
-                  .filter(
-                    (output) =>
-                      output.kind === "binary_mask" && output.port === "mask",
-                  )
-                  .map((output) => (
-                    <ContinueExtraction
-                      key={`${run.run_id}:${output.node_id}:${envelope.snapshot_ref!.artifact_id}`}
-                      runId={run.run_id}
-                      nodeId={output.node_id}
-                      snapshot={envelope.snapshot_ref!.artifact_id}
-                      disabled={executing || uploading || unresolvedCreation}
-                      onConfirm={(prepared) =>
-                        mutate(() =>
-                          submitCreation({
-                            ...prepared,
-                            idempotency_key: crypto.randomUUID(),
-                          }),
-                        )
-                      }
-                    />
-                  ))}
-              {envelope.snapshot_ref &&
-                envelope.outputs
-                  .filter((output) =>
-                    [
-                      "rgb_image",
-                      "rgba_image",
-                      "binary_mask",
-                      "gltf_asset",
-                      "triangle_mesh",
-                    ].includes(output.kind || ""),
-                  )
-                  .flatMap((output) =>
-                    (["A", "B"] as const).map((side) => (
-                      <button
-                        key={`compare:${side}:${output.node_id}:${output.port}`}
-                        disabled={pending || uploading}
-                        onClick={() => {
-                          const snapshot = envelope.snapshot_ref!.artifact_id;
-                          void mutate(async () => {
-                            const source = await request(
-                              `/api/runs/${encodeURIComponent(run.run_id)}/snapshot-reference/${encodeURIComponent(output.node_id)}/${encodeURIComponent(output.port)}?snapshot=${encodeURIComponent(snapshot)}`,
-                            );
-                            if (
-                              source.source_run_id !== run.run_id ||
-                              source.node_id !== output.node_id ||
-                              source.port !== output.port ||
-                              source.source_snapshot?.artifact_id !==
-                                snapshot ||
-                              source.kind !== output.kind ||
-                              typeof source.reference?.artifact_id !== "string"
-                            )
-                              throw Error("比较输出来源无法核实");
-                            setComparison((old) => ({
-                              ...old,
-                              [side]: {
-                                runId: run.run_id,
-                                nodeId: output.node_id,
-                                port: output.port,
-                                kind: source.kind,
-                                snapshot,
-                                reference: source.reference,
-                                schema_name: source.schema_name,
-                                schema_version: source.schema_version,
-                              },
-                            }));
-                            setMessage(
-                              `已固定比较项 ${side}，不改变下游输入。`,
-                            );
-                          });
-                        }}
-                      >
-                        加入比较 {side} · {output.node_id} · {output.port}
-                      </button>
-                    )),
-                  )}
-              {envelope.outputs
-                .filter((output) => output.kind === "asset_release")
-                .map((output) => (
-                  <a
-                    key={`archive:${output.node_id}:${output.port}`}
-                    href={`/api/runs/${encodeURIComponent(run.run_id)}/archives/${encodeURIComponent(output.node_id)}/${encodeURIComponent(output.port)}`}
-                    download={`${run.run_id}-${output.node_id}.zip`}
-                  >
-                    下载发布包 · {output.node_id}
-                  </a>
-                ))}
-              {envelope.outputs
-                .filter((output) =>
-                  ["rgb_image", "rgba_image", "binary_mask"].includes(
-                    output.kind || "",
-                  ),
-                )
-                .map((output) => (
-                  <ImageOutput
-                    key={`${run.run_id}:${output.node_id}:${output.port}:${output.url}`}
-                    runId={run.run_id}
-                    nodeId={output.node_id}
-                    port={output.port}
-                    url={output.url}
-                  />
-                ))}
-              {(multiInput ||
-                (!multiView && "image" in effectivePipeline.inputs)) &&
-                envelope.outputs.flatMap((output) =>
-                  Object.entries(effectivePipeline.inputs)
-                    .filter(([, port]) =>
-                      (port.kinds || [port.kind]).includes(output.kind),
-                    )
-                    .map(([name, port]) => (
-                      <button
-                        key={`reuse:${output.node_id}:${output.port}:${name}`}
-                        disabled={pending || uploading || unresolvedCreation}
-                        onClick={() => {
-                          if (!multiInput) setImageSource("reference");
-                          const revision = inputGeneration.current.revision;
-                          void mutate(async () => {
-                            const source = await request(
-                              `/api/runs/${encodeURIComponent(run.run_id)}/references/${encodeURIComponent(output.node_id)}/${encodeURIComponent(output.port)}`,
-                            );
-                            if (inputGeneration.current.revision !== revision)
-                              throw Error("输入契约已修改，请重新选择输出");
-                            if (
-                              source.source_run_id !== run.run_id ||
-                              source.node_id !== output.node_id ||
-                              source.port !== output.port ||
-                              !(port.kinds || [port.kind]).includes(
-                                source.kind,
-                              ) ||
-                              (port.schema_name &&
-                                source.schema_name !== port.schema_name) ||
-                              (port.schema_version &&
-                                source.schema_version !==
-                                  port.schema_version) ||
-                              typeof source.reference?.artifact_id !== "string"
-                            )
-                              throw Error("输出引用与目标输入契约不匹配");
-                            setInputOrigins((old) => ({
-                              ...old,
-                              [name]: {
-                                artifactId: source.reference.artifact_id,
-                                runId: source.source_run_id,
-                                nodeId: source.node_id,
-                                port: source.port,
-                              },
-                            }));
-                            if (multiInput) {
-                              setInputRefs((old) => ({
-                                ...old,
-                                [name]: {
-                                  ...source.reference,
-                                  ...(output.port.includes("~")
-                                    ? {
-                                        source: {
-                                          run_id: source.source_run_id,
-                                          node_id: source.node_id,
-                                          port: source.port,
-                                        },
-                                      }
-                                    : {}),
-                                },
-                              }));
-                            } else {
-                              setReusedImage({
-                                artifact_id: source.reference.artifact_id,
-                              });
-                              setImageSource("reference");
-                            }
-                            setMessage(
-                              `已将 ${run.run_id}/${output.node_id}.${output.port} 绑定到 ${name}，点击启动才会创建新运行。`,
-                            );
-                          });
-                        }}
-                      >
-                        用作输入 {name} · {output.node_id} · {output.port}
-                      </button>
-                    )),
-                )}
-              {envelope.outputs.map((output) => (
-                <a
-                  key={`${output.node_id}:${output.port}`}
-                  href={output.url}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  {output.node_id} · {output.port} ↗
-                </a>
-              ))}
-            </div>
-          )}
+          <RunOutputs
+            runId={run.run_id}
+            status={run.status}
+            outputs={envelope.outputs || []}
+            snapshot={envelope.snapshot_ref?.artifact_id}
+            inputs={
+              multiInput || (!multiView && "image" in effectivePipeline.inputs)
+                ? effectivePipeline.inputs
+                : {}
+            }
+            disabled={{
+              continuation:
+                executing ||
+                uploading ||
+                unresolvedCreation ||
+                !!configurationBlockedReason,
+              comparison: pending || uploading,
+              inputBinding: pending || uploading || unresolvedCreation,
+            }}
+            onPreview={setPreview}
+            onContinueExtraction={(prepared) =>
+              mutate(() =>
+                submitCreation({
+                  ...prepared,
+                  idempotency_key: crypto.randomUUID(),
+                }),
+              )
+            }
+            onCompare={compareOutput}
+            onUseAsInput={reuseOutput}
+          />
           {Object.entries(run.dag?.node_states || {}).map(([id, state]) => (
             <div className="run-node" key={id}>
               <strong>{id}</strong>
