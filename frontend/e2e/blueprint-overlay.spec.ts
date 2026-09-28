@@ -69,7 +69,6 @@ test("docked mesh preview opens over the configuration tab", async ({
   await page.getByLabel("选择运行", { exact: true }).selectOption("historical");
   const shape = page.locator('[data-id="shape"]');
   await expect(shape.getByLabel("输出状态 shape")).toContainText("mesh");
-  await page.getByRole("button", { name: "收起节点预览", exact: true }).click();
   await shape.getByRole("button", { name: "查看输出", exact: true }).click();
   await expect(page.locator("#node-preview-window")).toBeVisible();
   await expect(page.locator("#node-preview-window")).toContainText(

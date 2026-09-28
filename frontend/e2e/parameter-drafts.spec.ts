@@ -102,11 +102,11 @@ test("unapplied parameters survive node and tab changes; history badges name the
   await page.mouse.down();
   await page.mouse.move(handle.x - 96, handle.y + 50, { steps: 5 });
   await page.mouse.up();
-  await expect(separator).toHaveAttribute("aria-valuenow", "400");
-  expect((await page.locator(".inspector").boundingBox())!.width).toBe(400);
+  await expect(separator).toHaveAttribute("aria-valuenow", "380");
+  expect((await page.locator(".inspector").boundingBox())!.width).toBe(380);
   await separator.focus();
   await separator.press("ArrowLeft");
-  await expect(separator).toHaveAttribute("aria-valuenow", "420");
+  await expect(separator).toHaveAttribute("aria-valuenow", "400");
   await expect(
     page.locator(".inspector").getByLabel("参数 width", { exact: true }),
   ).toHaveValue("bad");
@@ -124,8 +124,8 @@ test("unapplied parameters survive node and tab changes; history badges name the
   ).toHaveValue("bad");
   await page.getByRole("button", { name: "恢复面板布局", exact: true }).click();
   await expect(page.locator(".inspector")).toBeVisible();
-  await expect(page.locator("#node-preview-window")).toBeVisible();
-  expect((await page.locator(".inspector").boundingBox())!.width).toBe(420);
+  await expect(page.locator("#node-preview-window")).toBeHidden();
+  expect((await page.locator(".inspector").boundingBox())!.width).toBe(400);
   const canvasWidth = (await page.locator(".canvas").boundingBox())!.width;
   await page.getByRole("button", { name: "收起属性面板", exact: true }).click();
   await page.getByRole("button", { name: "收起节点目录", exact: true }).click();
@@ -159,7 +159,7 @@ test("unapplied parameters survive node and tab changes; history badges name the
     .getByRole("button", { name: "运行记录与诊断", exact: true })
     .click();
   await expect(page.locator(".inspector")).toBeVisible();
-  expect((await page.locator(".inspector").boundingBox())!.width).toBe(420);
+  expect((await page.locator(".inspector").boundingBox())!.width).toBe(400);
   await expect(
     page.getByRole("region", { name: "运行记录与诊断面板", exact: true }),
   ).toBeVisible();

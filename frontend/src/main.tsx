@@ -196,7 +196,9 @@ function App() {
   const nodePaletteTrigger = useRef<HTMLButtonElement>(null);
   const [inspectorOpen, setInspectorOpen] = useState(true);
   const [inspectorWidth, setInspectorWidth] = useState(280);
-  const [nodePreviewOpen, setNodePreviewOpen] = useState(true);
+  // Keep the canvas as the primary workspace; previews open on demand from
+  // the toolbar or a node's output action.
+  const [nodePreviewOpen, setNodePreviewOpen] = useState(false);
   const [inputHosts, setInputHosts] = useState<Record<string, HTMLElement>>({});
   const [controlsHost, setControlsHost] = useState<HTMLDivElement | null>(null);
   const registerInputHost = useCallback(

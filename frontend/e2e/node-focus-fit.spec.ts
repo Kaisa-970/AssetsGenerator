@@ -77,9 +77,9 @@ for (const size of [
     await page.goto("/");
     await page.getByRole("button", { name: "高节点定位", exact: true }).click();
     await page.getByRole("button", { name: "继续替换", exact: true }).click();
-    // Keep preview and Details open. Focus changes only the viewport.
+    // The canvas is the default focus; preview remains available on demand.
     await expect(
-      page.getByRole("button", { name: "收起节点预览", exact: true }),
+      page.getByRole("button", { name: "展开节点预览", exact: true }),
     ).toBeVisible();
     await page
       .getByLabel("定位画布节点", { exact: true })

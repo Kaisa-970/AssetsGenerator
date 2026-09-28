@@ -69,13 +69,11 @@ test("preview can collapse to select every node at 1280x720 without remounting",
   await page.getByRole("button", { name: "收起预览测试", exact: true }).click();
   await page.getByRole("button", { name: "继续替换", exact: true }).click();
   await page.getByLabel("选择运行").selectOption("history");
-  const collapse = page.getByRole("button", {
-    name: "收起节点预览",
+  const expand = page.getByRole("button", {
+    name: "展开节点预览",
     exact: true,
   });
-  await expect(collapse).toHaveAttribute("aria-expanded", "true");
-  await collapse.click();
-  await expect(page.locator("#node-preview-window")).toBeHidden();
+  await expect(expand).toHaveAttribute("aria-expanded", "false");
   for (const id of ["input:image", "third", "second", "first"]) {
     await page.getByRole("button", { name: "Fit View", exact: true }).click();
     await page.getByRole("button", { name: "Zoom Out", exact: true }).click();
@@ -88,11 +86,10 @@ test("preview can collapse to select every node at 1280x720 without remounting",
       page.locator(`.react-flow__node[data-id="${id}"]`),
     ).toHaveClass(/selected/);
   }
-  const expand = page.getByRole("button", {
-    name: "展开节点预览",
+  const collapse = page.getByRole("button", {
+    name: "收起节点预览",
     exact: true,
   });
-  await expect(expand).toHaveAttribute("aria-expanded", "false");
   await expand.click();
   const preview = page.getByRole("region", { name: "选中节点预览" });
   await expect(preview.getByRole("img")).toBeVisible();
