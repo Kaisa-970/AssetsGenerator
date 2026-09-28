@@ -268,7 +268,11 @@ export function ModelServices({
                         void add(capabilityId);
                       }}
                     >
-                      {busy === "add" ? "正在添加…" : "添加此能力"}
+                      {busy === "add"
+                        ? "正在添加…"
+                        : capabilities.length === 1
+                          ? "确认添加模型"
+                          : "添加此能力"}
                     </button>
                   </article>
                 );
