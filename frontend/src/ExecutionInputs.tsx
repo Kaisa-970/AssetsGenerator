@@ -236,9 +236,30 @@ export function ExecutionInputs({
                   historicalInputs.inputs[name].artifact_id !== artifactId && (
                     <div className="blueprint-input-origin">
                       <p>
-                        历史来源：运行 {historicalInputs.run_id} · 输入 {name} ·{" "}
-                        {historicalInputs.inputs[name].artifact_id}
+                        历史来源：运行 {historicalInputs.run_id} · 输入 {name}
+                        {historicalInputs.inputs[name].identity?.kind
+                          ? ` · ${String(historicalInputs.inputs[name].identity.kind)}`
+                          : ""}
                       </p>
+                      <details>
+                        <summary>查看来源摘要</summary>
+                        <p>
+                          快照：
+                          {historicalInputs.snapshot_ref.artifact_id.slice(
+                            0,
+                            20,
+                          )}
+                          …
+                        </p>
+                        <p>
+                          Artifact：
+                          {historicalInputs.inputs[name].artifact_id.slice(
+                            0,
+                            20,
+                          )}
+                          …
+                        </p>
+                      </details>
                       <button
                         disabled={pending || uploading}
                         onClick={() => useHistoricalInput?.(name)}
