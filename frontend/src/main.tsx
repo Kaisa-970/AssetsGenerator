@@ -1452,11 +1452,6 @@ function App() {
             onConnect={connect}
             onNodeClick={(_, n) => {
               setSelected(n.id);
-              // Selecting a node is an explicit request to configure it. Keep
-              // the inspector closed on a blank canvas, then reveal it when a
-              // node is selected so its advanced controls are immediately
-              // reachable.
-              setInspectorOpen(true);
             }}
             zoomOnDoubleClick={false}
             onNodeDoubleClick={(_, node) => {

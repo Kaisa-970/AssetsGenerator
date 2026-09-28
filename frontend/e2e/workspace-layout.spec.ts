@@ -95,3 +95,52 @@ test("workspace controls are grouped and remain usable on a narrow screen", asyn
   expect(box?.width).toBeGreaterThan(200);
   await expect(page.getByRole("combobox", { name: "定位画布节点" })).toBeVisible();
 });
+
+test("selecting a node keeps the advanced panel closed until explicitly opened", async ({
+  page,
+}) => {
+  await page.route("**/api/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    await route.fulfill({
+      json:
+        path === "/api/catalog"
+          ? {
+              operators: {
+                step: {
+                  name: "step",
+                  version: "1",
+                  inputs: {},
+                  outputs: {},
+                },
+              },
+              adapters: [],
+              templates: [
+                {
+                  id: "single",
+                  label: "single",
+                  pipeline: {
+                    pipeline: "single",
+                    version: "1",
+                    inputs: {},
+                    nodes: { step: { operator: "step", inputs: {} } },
+                  },
+                },
+              ],
+              execution_enabled: true,
+            }
+          : path === "/api/compile"
+            ? { ok: true, execution_ready: false }
+            : path === "/api/drafts"
+              ? { drafts: [] }
+              : { runs: [] },
+    });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "single", exact: true }).click();
+  await page.getByRole("button", { name: "继续替换", exact: true }).click();
+  await page.getByRole("button", { name: "收起属性面板", exact: true }).click();
+  await page.locator('[data-id="step"] .blueprint-node-header').click();
+  await expect(page.locator(".inspector")).toBeHidden();
+  await page.getByRole("button", { name: "展开属性面板", exact: true }).click();
+  await expect(page.locator(".inspector")).toBeVisible();
+});
