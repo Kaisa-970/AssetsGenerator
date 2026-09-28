@@ -53,7 +53,7 @@ for (const size of [
     await historyResize.dblclick();
     await expect(historyResize).toHaveAttribute("aria-valuenow", "300");
     await resize.dblclick();
-    await expect(resize).toHaveAttribute("aria-valuenow", "300");
+    await expect(resize).toHaveAttribute("aria-valuenow", "280");
     await resize.focus();
     await resize.press("Home");
     await expect(resize).toHaveAttribute("aria-valuenow", "260");

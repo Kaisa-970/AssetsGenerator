@@ -195,7 +195,7 @@ function App() {
   >();
   const nodePaletteTrigger = useRef<HTMLButtonElement>(null);
   const [inspectorOpen, setInspectorOpen] = useState(true);
-  const [inspectorWidth, setInspectorWidth] = useState(300);
+  const [inspectorWidth, setInspectorWidth] = useState(280);
   const [nodePreviewOpen, setNodePreviewOpen] = useState(true);
   const [inputHosts, setInputHosts] = useState<Record<string, HTMLElement>>({});
   const [controlsHost, setControlsHost] = useState<HTMLDivElement | null>(null);

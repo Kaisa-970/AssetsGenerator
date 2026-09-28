@@ -40,7 +40,7 @@ export function PanelResizeHandle({
       onLostPointerCapture={() => {
         drag.current = undefined;
       }}
-      onDoubleClick={() => onChange(300)}
+      onDoubleClick={() => onChange(280)}
       onKeyDown={(event) => {
         if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key))
           return;
