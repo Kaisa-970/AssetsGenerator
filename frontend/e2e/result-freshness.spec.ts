@@ -89,7 +89,7 @@ test("edited configuration marks kept historical preview stale without dispatch"
   await page.getByRole("button", { name: "freshness", exact: true }).click();
   await page.getByRole("button", { name: "继续替换", exact: true }).click();
   await page.getByLabel("选择运行").selectOption("old");
-  await page.locator('.react-flow__node[data-id="encode"]').click();
+  await page.getByLabel("定位画布节点", { exact: true }).selectOption("encode");
   const preview = page.getByRole("region", { name: "选中节点预览" });
   await expect(preview.getByRole("img")).toBeVisible();
   await preview

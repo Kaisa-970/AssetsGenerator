@@ -233,7 +233,7 @@
 }
 
 /* Keep expanded photo lists reachable inside the canvas viewport. */
-.blueprint-node-input .blueprint-controls:has([aria-label="上传多视图照片"]) {
+.blueprint-node-input .blueprint-controls {
   max-height: 320px;
   overflow-y: auto;
   overscroll-behavior: contain;

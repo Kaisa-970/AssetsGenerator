@@ -1038,3 +1038,15 @@ footer {
 .observation-thumbnails figure {
   margin: 8px 0;
 }
+
+.node-locator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 12px;
+}
+.node-locator select {
+  width: 150px;
+  padding: 3px 6px;
+}

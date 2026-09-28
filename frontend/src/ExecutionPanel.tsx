@@ -61,7 +61,9 @@ export function ExecutionPanel({
   inputHosts,
   controlsHost,
   workspaceRevision = 0,
+  historicalInputSource: historicalInputSourceProp,
   onLoadDraft,
+  onHistoricalInputSourceChange,
   onRunViewChange,
   onFreshnessChange,
   onLocateInput,
@@ -78,7 +80,26 @@ export function ExecutionPanel({
   inputHosts?: Record<string, HTMLElement>;
   controlsHost?: HTMLElement | null;
   workspaceRevision?: number;
-  onLoadDraft: (pipeline: Pipeline) => void;
+  historicalInputSource?: {
+    run_id: string;
+    snapshot_ref: { artifact_id: string };
+    inputs: Record<
+      string,
+      { artifact_id: string; identity?: Record<string, unknown> }
+    >;
+  };
+  onHistoricalInputSourceChange?: () => void;
+  onLoadDraft: (
+    pipeline: Pipeline,
+    historicalInputs?: {
+      run_id: string;
+      snapshot_ref: { artifact_id: string };
+      inputs: Record<
+        string,
+        { artifact_id: string; identity?: Record<string, unknown> }
+      >;
+    },
+  ) => void;
   onLocateInput?: (name: string) => void;
   onLocateNode?: (nodeId: string) => void;
   onOpenHistory?: () => void;
@@ -308,6 +329,7 @@ export function ExecutionPanel({
     void refreshRuns().catch((error) => setMessage(String(error)));
   }, []);
   const choose = (id: string) => {
+    onHistoricalInputSourceChange?.();
     setPreview(undefined);
     setShowGraph(false);
     setShowReview(false);
@@ -389,7 +411,11 @@ export function ExecutionPanel({
       ? {
           runId: run.run_id,
           status: run.status,
-          outputs: (envelope?.outputs || []).map(({ node_id, port, kind }) => ({ node_id, port, kind })),
+          outputs: (envelope?.outputs || []).map(({ node_id, port, kind }) => ({
+            node_id,
+            port,
+            kind,
+          })),
           states: Object.fromEntries(
             Object.entries(run.dag?.node_states || {}).map(([id, state]) => [
               id,
@@ -461,6 +487,23 @@ export function ExecutionPanel({
         : !uploaded || uploaded.rgba !== rgbaInput;
   });
   const executing = pending || !!envelope?.busy;
+  const historicalInputSource = historicalInputSourceProp;
+  const useHistoricalInput = (name: string) => {
+    const source = historicalInputSource?.inputs[name];
+    if (!source) return;
+    setInputArtifact(name, source.artifact_id);
+    setInputOrigins((old) => ({
+      ...old,
+      [name]: {
+        artifactId: source.artifact_id,
+        runId: historicalInputSource.run_id,
+        nodeId: `input:${name}`,
+        port: name,
+        snapshot: historicalInputSource.snapshot_ref.artifact_id,
+      },
+    }));
+    setMessage(`已绑定历史输入 ${name}；需要重新预检，尚未启动运行。`);
+  };
   const setInputArtifact = (name: string, artifactId: string) => {
     // A manually assigned reference does not inherit an earlier selection's origin.
     setInputOrigins((old) => {
@@ -980,6 +1023,8 @@ export function ExecutionPanel({
           uploadMessage,
           inputRefs,
           inputFiles,
+          historicalInputs: historicalInputSource,
+          useHistoricalInput,
           inputOrigins,
           clearInput: (name: string) => {
             if (pending || uploading) return;
@@ -1109,8 +1154,16 @@ export function ExecutionPanel({
             只运行到选中节点（包含必要上游）
           </label>
           {!runToSelection && (
-            <section className="selected-execution-context" aria-label="所选节点执行动作">
-              <strong>当前节点：{selectedNode && pipeline.nodes[selectedNode] ? selectedNode : "未选择处理节点"}</strong>
+            <section
+              className="selected-execution-context"
+              aria-label="所选节点执行动作"
+            >
+              <strong>
+                当前节点：
+                {selectedNode && pipeline.nodes[selectedNode]
+                  ? selectedNode
+                  : "未选择处理节点"}
+              </strong>
               <p>只执行此节点及完成它所需的上游；下游节点不会运行。</p>
               <button
                 type="button"
@@ -1122,7 +1175,10 @@ export function ExecutionPanel({
             </section>
           )}
           {runToSelection && (
-            <section className="selected-execution-context selected-execution-context-active" aria-label="当前执行范围">
+            <section
+              className="selected-execution-context selected-execution-context-active"
+              aria-label="当前执行范围"
+            >
               <strong>执行范围：{selectedNode || "未选择节点"}</strong>
               <p>包含必要上游；本次创建独立运行，不执行下游。</p>
               <button type="button" onClick={() => setRunToSelection(false)}>
@@ -1266,7 +1322,12 @@ export function ExecutionPanel({
                   draft.source_plan_id !== run.dag?.plan_id
                 )
                   throw Error("原运行计划身份不匹配");
-                onLoadDraft(draft.pipeline);
+                const source = envelope?.snapshot_ref?.artifact_id
+                  ? await request(
+                      `/api/runs/${encodeURIComponent(run.run_id)}/input-references?snapshot=${encodeURIComponent(envelope.snapshot_ref.artifact_id)}`,
+                    )
+                  : undefined;
+                onLoadDraft(draft.pipeline, source);
                 setMessage(
                   "已读取原运行配置，请在页面上确认是否替换画布。不会启动运行或复用人工决定。",
                 );

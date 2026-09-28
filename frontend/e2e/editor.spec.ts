@@ -109,7 +109,9 @@ test("uploaded images bind exact references only after explicit run creation", a
     await route.fulfill({ json: body });
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "运行", exact: true }).click();
+  await page
+    .getByLabel("定位画布节点", { exact: true })
+    .selectOption("input:image");
   if (!(await page.getByLabel("图片来源", { exact: true }).isVisible()))
     await page.getByText("高级：图片来源", { exact: true }).click();
   await page.getByLabel("图片来源", { exact: true }).selectOption("path");
@@ -209,12 +211,17 @@ test("edits a template, saves layout, compiles and reloads a draft", async ({
   await page.getByRole("button", { name: "配置", exact: true }).click();
   await expect(page.locator(".react-flow__node")).toHaveCount(2);
   await expect(page.locator(".react-flow__edge")).toHaveCount(1);
-  await page.locator('.react-flow__node[data-id="copy"]').click();
+  await page.getByLabel("定位画布节点", { exact: true }).selectOption("copy");
   await page.getByLabel("实例 ID").fill("copy_renamed");
   await page.getByLabel("实例 ID").press("Tab");
   await expect(
     page.locator('.react-flow__node[data-id="copy_renamed"]'),
   ).toBeVisible();
+  await page.getByRole("button", { name: "收起属性面板", exact: true }).click();
+  await page.getByRole("button", { name: "保存 / 加载", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "保存草稿", exact: true }),
+  ).toBeInViewport();
   await page.getByRole("button", { name: "保存草稿", exact: true }).click();
   await expect(page.getByRole("status")).toContainText(
     "已保存图和参数；实际输入未保存",
@@ -421,7 +428,9 @@ test("execution uses frozen server runs and explicit revisioned actions", async 
   reviewServer.unref();
   page.on("close", () => reviewServer.close());
   await page.goto("/");
-  await page.getByRole("button", { name: "运行", exact: true }).click();
+  await page
+    .getByLabel("定位画布节点", { exact: true })
+    .selectOption("input:image");
   await expect(page.getByText("执行环境：trellis-local")).toBeVisible();
   if (!(await page.getByLabel("图片来源", { exact: true }).isVisible()))
     await page.getByText("高级：图片来源", { exact: true }).click();
@@ -440,6 +449,9 @@ test("execution uses frozen server runs and explicit revisioned actions", async 
         pipeline: { pipeline: "my_asset_pipeline" },
       },
     });
+  await page
+    .getByRole("button", { name: "运行记录与诊断", exact: true })
+    .click();
   await page
     .getByRole("button", { name: "准备人工审查 · choose", exact: true })
     .click();
@@ -511,7 +523,9 @@ test("lost create response is never automatically resubmitted", async ({
     });
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "运行", exact: true }).click();
+  await page
+    .getByLabel("定位画布节点", { exact: true })
+    .selectOption("input:image");
   if (!(await page.getByLabel("图片来源", { exact: true }).isVisible()))
     await page.getByText("高级：图片来源", { exact: true }).click();
   await page.getByLabel("图片来源", { exact: true }).selectOption("path");
@@ -552,7 +566,9 @@ test("compiled graph can be ineligible for the current execution endpoint", asyn
   await expect(
     page.getByLabel("当前配置编译状态", { exact: true }),
   ).toContainText(reason);
-  await page.getByRole("button", { name: "运行", exact: true }).click();
+  await page
+    .getByLabel("定位画布节点", { exact: true })
+    .selectOption("input:image");
   if (!(await page.getByLabel("图片来源", { exact: true }).isVisible()))
     await page.getByText("高级：图片来源", { exact: true }).click();
   await page.getByLabel("图片来源", { exact: true }).selectOption("path");
@@ -569,6 +585,9 @@ test("compiled graph can be ineligible for the current execution endpoint", asyn
 test("parameter form sends typed values and preserves other instances", async ({
   page,
 }) => {
+  // This scenario exercises dozens of field edits, validations and a copy roundtrip.
+  // Keep individual locator/assertion deadlines bounded; allow the full sequence.
+  test.setTimeout(60000);
   let submitted: any;
   const node = {
     operator: "generate@1",
@@ -1156,7 +1175,9 @@ test("lost creation response preserves exact intent through reload and explicit 
     });
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "运行", exact: true }).click();
+  await page
+    .getByLabel("定位画布节点", { exact: true })
+    .selectOption("input:image");
   if (!(await page.getByLabel("图片来源", { exact: true }).isVisible()))
     await page.getByText("高级：图片来源", { exact: true }).click();
   await page.getByLabel("图片来源", { exact: true }).selectOption("path");
@@ -1176,7 +1197,9 @@ test("lost creation response preserves exact intent through reload and explicit 
   await expect(start).toBeDisabled();
 
   await page.reload();
-  await page.getByRole("button", { name: "运行", exact: true }).click();
+  await page
+    .getByLabel("定位画布节点", { exact: true })
+    .selectOption("input:image");
   await expect(retry).toBeEnabled();
   expect(starts).toHaveLength(1);
   if (!(await page.getByLabel("图片来源", { exact: true }).isVisible()))
@@ -1251,7 +1274,9 @@ test("creation is not sent if browser cannot persist its receipt", async ({
     });
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "运行", exact: true }).click();
+  await page
+    .getByLabel("定位画布节点", { exact: true })
+    .selectOption("input:image");
   if (!(await page.getByLabel("图片来源", { exact: true }).isVisible()))
     await page.getByText("高级：图片来源", { exact: true }).click();
   await page.getByLabel("图片来源", { exact: true }).selectOption("path");
@@ -1328,7 +1353,9 @@ test("multi-view creation preserves observation reference across reload retry", 
   await page.goto("/");
   await page.getByRole("button", { name: "multiview", exact: true }).click();
   await page.getByRole("button", { name: "继续替换", exact: true }).click();
-  await page.getByRole("button", { name: "运行", exact: true }).click();
+  await page
+    .getByLabel("定位画布节点", { exact: true })
+    .selectOption("input:observations");
   const png = Buffer.from(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aZ0sAAAAASUVORK5CYII=",
     "base64",
@@ -1353,6 +1380,9 @@ test("multi-view creation preserves observation reference across reload retry", 
   await expect(
     page.getByAltText("视图 2缩略图", { exact: true }),
   ).toBeVisible();
+  await page
+    .getByText("已导入 2 个视图 · 查看顺序与缩略图", { exact: true })
+    .click();
   await page.getByText("高级：观测包引用", { exact: true }).click();
   await page.getByLabel("观测包 Artifact ID").fill("sha256:" + "b".repeat(64));
   await expect(page.getByAltText("视图 1缩略图", { exact: true })).toHaveCount(
@@ -1373,10 +1403,12 @@ test("multi-view creation preserves observation reference across reload retry", 
   });
   expect(requests[0].image_ref).toBeUndefined();
   await page.reload();
-  await page.getByRole("button", { name: "运行", exact: true }).click();
   fail = false;
   await page
     .getByRole("button", { name: "重试原创建请求", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "运行记录与诊断", exact: true })
     .click();
   await expect(page.getByText("dag_multiview", { exact: true })).toBeVisible();
   expect(requests).toHaveLength(2);
@@ -1503,16 +1535,19 @@ test("published GLB preview loads geometry and closes without mutation", async (
   const dialog = page.getByRole("dialog", { name: "模型预览", exact: true });
   await expect(dialog.getByRole("status")).toContainText("模型已加载");
   await expect(dialog.locator("canvas")).toBeVisible();
-  const redPixels = await dialog.locator("canvas").evaluate(async (canvas) => {
-    await new Promise<void>((resolve) =>
-      requestAnimationFrame(() => resolve()),
-    );
-    const source = canvas as HTMLCanvasElement;
+  // Read pixels from Playwright's browser screenshot. Reading the WebGL
+  // drawing buffer directly is undefined unless preserveDrawingBuffer is set,
+  // which production preview intentionally does not enable.
+  const canvasPng = await dialog.locator("canvas").screenshot();
+  const redPixels = await page.evaluate(async (base64) => {
+    const image = new Image();
+    image.src = `data:image/png;base64,${base64}`;
+    await image.decode();
     const copy = document.createElement("canvas");
-    copy.width = source.width;
-    copy.height = source.height;
+    copy.width = image.naturalWidth;
+    copy.height = image.naturalHeight;
     const context = copy.getContext("2d")!;
-    context.drawImage(source, 0, 0);
+    context.drawImage(image, 0, 0);
     const data = context.getImageData(0, 0, copy.width, copy.height).data;
     let count = 0;
     for (let i = 0; i < data.length; i += 4)
@@ -1523,7 +1558,7 @@ test("published GLB preview loads geometry and closes without mutation", async (
       )
         count++;
     return count;
-  });
+  }, canvasPng.toString("base64"));
   expect(redPixels).toBeGreaterThan(1000);
   await dialog.getByRole("button", { name: "重置视角" }).click();
   await dialog.getByRole("button", { name: "关闭模型预览" }).click();
@@ -3224,13 +3259,8 @@ test("run to selection omits downstream and node preview stays visible in config
   await page.getByRole("button", { name: "partial", exact: true }).click();
   await page.getByRole("button", { name: "继续替换", exact: true }).click();
   await page
-    .locator('.react-flow__node[data-id="segment"] .blueprint-node-header')
-    .click();
-  await page.getByRole("button", { name: "编译校验", exact: true }).click();
-  await page.getByRole("button", { name: "运行", exact: true }).click();
-  await page
-    .getByRole("checkbox", { name: "只运行到选中节点（包含必要上游）" })
-    .check();
+    .getByLabel("定位画布节点", { exact: true })
+    .selectOption("input:image");
   await page
     .locator('[data-id="input:image"]')
     .getByText("高级：输入引用", { exact: true })
@@ -3238,6 +3268,12 @@ test("run to selection omits downstream and node preview stays visible in config
   await page
     .getByLabel("输入 image Artifact ID", { exact: true })
     .fill("image-ref");
+  await page
+    .getByLabel("定位画布节点", { exact: true })
+    .selectOption("segment");
+  await page
+    .getByRole("checkbox", { name: "只运行到选中节点（包含必要上游）" })
+    .check();
   // The graph keeps all editable inputs; the submitted run is still sliced.
   await expect(
     page.locator('.react-flow__node[data-id="input:unrelated_mask"]'),

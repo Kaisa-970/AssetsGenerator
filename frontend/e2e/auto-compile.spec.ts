@@ -84,7 +84,7 @@ test("template opens execution, parameter changes compile automatically and old 
     .poll(() => requests.some((p) => p.pipeline === "auto_test"))
     .toBe(true);
   expect(starts).toBe(0);
-  await page.locator('.react-flow__node[data-id="resize"]').click();
+  await page.getByLabel("定位画布节点", { exact: true }).selectOption("resize");
   await page.getByRole("button", { name: "配置", exact: true }).click();
   const width = page
     .locator(".inspector")

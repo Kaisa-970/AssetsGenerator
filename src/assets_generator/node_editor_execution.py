@@ -142,6 +142,30 @@ class NodeEditorExecution:
         if owner.get("workbench_directory") != str(self.engine.repository.directory.resolve()):
             raise ContractError("run belongs to another editor directory")
 
+    def input_references(self, run_id: str, snapshot: dict[str, Any]) -> dict[str, Any]:
+        """Return verified named pipeline input references from one immutable run snapshot."""
+        self._owned(run_id)
+        expected = read_json(self.engine.store.root / "runs" / f"{run_id}.json")
+        if not isinstance(snapshot, dict) or snapshot.get("artifact_id") != expected.get(
+            "artifact_id"
+        ):
+            raise ContractError("input source snapshot does not match the persisted run")
+        run = self.engine.repository.load(run_id)
+        if run.dag is None or not isinstance(run.dag.named_actual_inputs, dict):
+            raise ContractError("run has no named actual inputs")
+        values: dict[str, Any] = {}
+        for name, ref in run.dag.named_actual_inputs.items():
+            if not isinstance(ref, ArtifactRef):
+                raise ContractError(f"input {name} is not an Artifact reference")
+            manifest = self.engine.store.get_manifest(ref.artifact_id)
+            if not self.engine.store.verify_digest(ref):
+                raise ContractError(f"input {name} failed Artifact digest verification")
+            values[name] = {
+                "artifact_id": ref.artifact_id,
+                "identity": to_primitive(manifest.identity),
+            }
+        return {"run_id": run_id, "snapshot_ref": snapshot, "inputs": values}
+
     def plan(self, run_id: str) -> dict[str, Any]:
         """Read the verified persisted plan; never recover or dispatch a run."""
         self._owned(run_id)

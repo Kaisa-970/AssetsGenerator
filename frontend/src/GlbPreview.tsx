@@ -76,7 +76,8 @@ export function GlbPreview({
     let controls: OrbitControls | undefined;
     let observer: ResizeObserver | undefined;
     let scene: THREE.Scene | undefined;
-    let frame = 0;
+    let frame: number | undefined;
+    let removeRenderListener: (() => void) | undefined;
     setStatus("正在加载模型…");
     const load = async () => {
       const endpoint = new URL(url, window.location.href);
@@ -118,6 +119,19 @@ export function GlbPreview({
       host.current!.appendChild(renderer.domElement);
       const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 10000);
       controls = new OrbitControls(camera, renderer.domElement);
+      // OrbitControls has no damping or auto-rotation here. A static preview
+      // needs a new frame only when its view changes, not an endless GPU loop.
+      const requestRender = () => {
+        if (!active || !renderer || frame !== undefined) return;
+        frame = requestAnimationFrame(() => {
+          frame = undefined;
+          if (active && renderer && scene) renderer.render(scene, camera);
+        });
+      };
+      controls.addEventListener("change", requestRender);
+      const renderControls = controls;
+      removeRenderListener = () =>
+        renderControls.removeEventListener("change", requestRender);
       const center = box.getCenter(new THREE.Vector3());
       const radius = Math.max(
         box.getSize(new THREE.Vector3()).length() / 2,
@@ -139,6 +153,7 @@ export function GlbPreview({
         camera.updateProjectionMatrix();
         controls!.target.copy(center);
         controls!.update();
+        requestRender();
       };
       scene.add(new THREE.HemisphereLight(0xffffff, 0x888888, 2));
       const light = new THREE.DirectionalLight(0xffffff, 3);
@@ -153,22 +168,19 @@ export function GlbPreview({
         renderer.setSize(width, height);
         camera.aspect = width / Math.max(height, 1);
         camera.updateProjectionMatrix();
+        requestRender();
       };
       observer = new ResizeObserver(resize);
       observer.observe(host.current!);
       resize();
       reset.current();
-      const draw = () => {
-        if (!active) return;
-        renderer!.render(scene!, camera);
-        frame = requestAnimationFrame(draw);
-      };
-      draw();
       setStatus("模型已加载 · 拖动旋转，滚轮缩放，右键平移");
     };
     void load().catch((error) => {
       if (active) {
-        cancelAnimationFrame(frame);
+        if (frame !== undefined) cancelAnimationFrame(frame);
+        frame = undefined;
+        removeRenderListener?.();
         observer?.disconnect();
         controls?.dispose();
         if (scene) {
@@ -186,7 +198,9 @@ export function GlbPreview({
     return () => {
       active = false;
       controller.abort();
-      cancelAnimationFrame(frame);
+      if (frame !== undefined) cancelAnimationFrame(frame);
+      frame = undefined;
+      removeRenderListener?.();
       observer?.disconnect();
       controls?.dispose();
       if (scene) dispose(scene);

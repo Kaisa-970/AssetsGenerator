@@ -3,6 +3,7 @@ import { expect, test } from "@playwright/test";
 test("unapplied parameters survive node and tab changes; history badges name their source", async ({
   page,
 }) => {
+  test.setTimeout(60000); // Multiple edits, panel switches and history import roundtrip.
   const node = {
     operator: "resize@1",
     adapter: "resize@1",
@@ -195,7 +196,7 @@ test("unapplied parameters survive node and tab changes; history badges name the
   await inspector.evaluate((el) => {
     el.scrollTop = el.scrollHeight;
   });
-  await page.locator('.react-flow__node[data-id="second"]').click();
+  await page.getByLabel("定位画布节点", { exact: true }).selectOption("second");
   await expect.poll(() => inspector.evaluate((el) => el.scrollTop)).toBe(0);
   await page.getByRole("button", { name: "配置", exact: true }).click();
   await expect(
@@ -582,11 +583,17 @@ test("node controls and Details share the same applied parameter state", async (
   await page.getByRole("button", { name: "同步", exact: true }).click();
   await page.getByRole("button", { name: "继续替换", exact: true }).click();
   await page.locator('[data-id="resize"] header').click();
+  await page.getByLabel("定位画布节点", { exact: true }).selectOption("resize");
+  const viewport = page.locator(".react-flow__viewport");
+  await page.waitForTimeout(500);
+  const beforeParameterEdit = await viewport.getAttribute("style");
   const nodeField = page
     .locator('[data-id="resize"]')
     .getByLabel("节点参数 width", { exact: true });
   await nodeField.fill("64");
   await nodeField.press("Enter");
+  await page.waitForTimeout(500);
+  await expect(viewport).toHaveAttribute("style", beforeParameterEdit || "");
   await expect(
     page
       .locator('[data-id="resize"]')

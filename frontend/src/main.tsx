@@ -111,10 +111,32 @@ function App() {
   const [connectionIssue, setConnectionIssue] = useState("");
   const [message, setMessage] = useState("正在读取节点目录…");
   const [pendingLoad, setPendingLoad] = useState<
-    { pipeline: Pipeline; layout?: Layout; label: string } | undefined
+    | {
+        pipeline: Pipeline;
+        layout?: Layout;
+        label: string;
+        historicalInputs?: {
+          run_id: string;
+          snapshot_ref: { artifact_id: string };
+          inputs: Record<
+            string,
+            { artifact_id: string; identity?: Record<string, unknown> }
+          >;
+        };
+      }
+    | undefined
   >();
   const [draft, setDraft] = useState("my-pipeline");
   const [drafts, setDrafts] = useState<string[]>([]);
+  const [historicalInputSource, setHistoricalInputSource] = useState<{
+    run_id: string;
+    snapshot_ref: { artifact_id: string };
+    inputs: Record<
+      string,
+      { artifact_id: string; identity?: Record<string, unknown> }
+    >;
+  }>();
+  const draftToolsRef = useRef<HTMLDivElement>(null);
   const [result, setResult] = useState<unknown>();
   const [busy, setBusy] = useState(false);
   const [compilePending, setCompilePending] = useState(true);
@@ -394,7 +416,10 @@ function App() {
     );
     const fallbackPosition = selectedNode
       ? {
-          x: selectedNode.position.x + (selectedNode.measured?.width || 340) + 80,
+          x:
+            selectedNode.position.x +
+            (selectedNode.measured?.width || 340) +
+            80,
           y: Math.max(80, selectedNode.position.y),
         }
       : {
@@ -670,12 +695,16 @@ function App() {
           statusSource:
             runView?.runId || (run?.run_id ? String(run.run_id) : undefined),
           freshness: nodeFreshness[id],
-          outputSummary: runView?.outputs.filter((output) => output.node_id === id),
+          outputSummary: runView?.outputs.filter(
+            (output) => output.node_id === id,
+          ),
           onViewOutputs: runView
             ? () => {
                 setSelected(id);
                 setNodePreviewOpen(true);
-                setMessage(`正在查看节点 ${id} 的输出；结果来自运行 ${runView.runId}。`);
+                setMessage(
+                  `正在查看节点 ${id} 的输出；结果来自运行 ${runView.runId}。`,
+                );
               }
             : undefined,
         },
@@ -743,11 +772,12 @@ function App() {
         )),
   );
   const paletteQuery = nodePaletteFilter.trim().toLowerCase();
-  const paletteOperators = Object.entries(catalog.operators).filter(([key, op]) =>
-    [key, op.name, readableOperatorLabel(op.name)]
-      .join(" ")
-      .toLowerCase()
-      .includes(paletteQuery),
+  const paletteOperators = Object.entries(catalog.operators).filter(
+    ([key, op]) =>
+      [key, op.name, readableOperatorLabel(op.name)]
+        .join(" ")
+        .toLowerCase()
+        .includes(paletteQuery),
   );
   const paletteServices = (catalog.model_services || []).filter((service) =>
     [service.backend, service.display_name, service.operator]
@@ -756,10 +786,26 @@ function App() {
       .includes(paletteQuery),
   );
   const paletteInputs = [
-    { kind: "rgb" as const, label: "图片输入", detail: "RGB 图片 · 上传或选择已有图片" },
-    { kind: "rgba" as const, label: "透明图片输入", detail: "RGBA 图片 · 带透明区域" },
-    { kind: "mask" as const, label: "遮罩输入", detail: "二值遮罩 · 作为处理节点输入" },
-    { kind: "text" as const, label: "文字输入", detail: "文本提示 · 连接到文字分割节点" },
+    {
+      kind: "rgb" as const,
+      label: "图片输入",
+      detail: "RGB 图片 · 上传或选择已有图片",
+    },
+    {
+      kind: "rgba" as const,
+      label: "透明图片输入",
+      detail: "RGBA 图片 · 带透明区域",
+    },
+    {
+      kind: "mask" as const,
+      label: "遮罩输入",
+      detail: "二值遮罩 · 作为处理节点输入",
+    },
+    {
+      kind: "text" as const,
+      label: "文字输入",
+      detail: "文本提示 · 连接到文字分割节点",
+    },
   ].filter(({ kind, label, detail }) =>
     [kind, label, detail].join(" ").toLowerCase().includes(paletteQuery),
   );
@@ -779,7 +825,9 @@ function App() {
             onClick={() => {
               try {
                 loadPipeline(pendingLoad.pipeline, pendingLoad.layout);
+                setHistoricalInputSource(pendingLoad.historicalInputs);
                 setTab("inspector");
+                setHistoryOpen(false);
                 setMessage(`已${pendingLoad.label}。`);
                 setPendingLoad(undefined);
               } catch (error) {
@@ -834,6 +882,7 @@ function App() {
                 inputs: {},
                 nodes: {},
               } satisfies Pipeline;
+              setHistoricalInputSource(undefined);
               setPendingLoad({
                 label: "新建空白管线",
                 pipeline: nextPipeline,
@@ -841,6 +890,19 @@ function App() {
             }}
           >
             新建空白
+          </button>
+          <button
+            onClick={() => {
+              setInspectorOpen(true);
+              setTab("inspector");
+              requestAnimationFrame(() =>
+                requestAnimationFrame(() => {
+                  draftToolsRef.current?.scrollIntoView({ block: "start" });
+                }),
+              );
+            }}
+          >
+            保存 / 加载
           </button>
           <button onClick={() => input.current?.click()}>导入 YAML</button>
           <button
@@ -910,9 +972,14 @@ function App() {
             <header>
               <div>
                 <strong>添加节点</strong>
-                <p>选择一个节点，它会直接加入当前画布。数据端口仍通过拖线连接。</p>
+                <p>
+                  选择一个节点，它会直接加入当前画布。数据端口仍通过拖线连接。
+                </p>
               </div>
-              <button aria-label="关闭添加节点" onClick={() => setNodePaletteOpen(false)}>
+              <button
+                aria-label="关闭添加节点"
+                onClick={() => setNodePaletteOpen(false)}
+              >
                 ×
               </button>
             </header>
@@ -928,7 +995,8 @@ function App() {
                 <h3>输入</h3>
                 {paletteInputs.map(({ kind, label, detail }) => (
                   <button key={kind} onClick={() => addInputNode(kind)}>
-                    <strong>{label}</strong><span>{detail}</span>
+                    <strong>{label}</strong>
+                    <span>{detail}</span>
                   </button>
                 ))}
                 {!paletteInputs.length && <p>没有匹配的输入类型。</p>}
@@ -944,7 +1012,10 @@ function App() {
                     }}
                   >
                     <strong>{readableOperatorLabel(op.name)}</strong>
-                    <span>{op.name} · {Object.keys(op.inputs).length} 输入 / {Object.keys(op.outputs).length} 输出</span>
+                    <span>
+                      {op.name} · {Object.keys(op.inputs).length} 输入 /{" "}
+                      {Object.keys(op.outputs).length} 输出
+                    </span>
                   </button>
                 ))}
                 {!paletteOperators.length && <p>没有匹配的处理算子。</p>}
@@ -955,18 +1026,26 @@ function App() {
                   <button
                     key={service.backend}
                     onClick={() => {
-                      addOperator(service.operator, nodePalettePosition, service.backend);
+                      addOperator(
+                        service.operator,
+                        nodePalettePosition,
+                        service.backend,
+                      );
                       setNodePaletteOpen(false);
                     }}
                   >
                     <strong>{service.display_name}</strong>
-                    <span>{service.operator} · {service.frame_id} · {service.unit}</span>
+                    <span>
+                      {service.operator} · {service.frame_id} · {service.unit}
+                    </span>
                   </button>
                 ))}
                 {!paletteServices.length && <p>暂未配置独立模型服务。</p>}
               </div>
             </div>
-            <footer>添加后选中节点即可在节点内或右侧“配置”中修改模型和参数。</footer>
+            <footer>
+              添加后选中节点即可在节点内或右侧“配置”中修改模型和参数。
+            </footer>
           </section>
         </NodePaletteDialog>
       )}
@@ -1002,9 +1081,39 @@ function App() {
         >
           {panelRestore ? "恢复面板布局" : "专注画布"}
         </button>
+        <label className="node-locator">
+          定位节点
+          <select
+            aria-label="定位画布节点"
+            value={selected || ""}
+            onChange={(event) => {
+              const id = event.target.value;
+              if (!id) return;
+              setSelected(id);
+              void flow.fitView({
+                nodes: [{ id }],
+                padding: 0.2,
+                minZoom: 0.75,
+                maxZoom: 1,
+              });
+            }}
+          >
+            <option value="">选择节点…</option>
+            {Object.keys(pipeline.inputs).map((name) => (
+              <option key={inputId(name)} value={inputId(name)}>
+                输入 · {name}
+              </option>
+            ))}
+            {Object.keys(pipeline.nodes).map((id) => (
+              <option key={id} value={id}>
+                处理 · {id}
+              </option>
+            ))}
+          </select>
+        </label>
         <button
           disabled={!selected}
-            onClick={() => {
+          onClick={() => {
             if (selected)
               void flow.fitView({
                 nodes: [{ id: selected }],
@@ -1054,7 +1163,7 @@ function App() {
           { "--inspector-width": `${inspectorWidth}px` } as React.CSSProperties
         }
       >
-          <aside id="workspace-catalog" className="catalog" hidden={!catalogOpen}>
+        <aside id="workspace-catalog" className="catalog" hidden={!catalogOpen}>
           <div className="section-label">节点目录</div>
           <input
             className="search"
@@ -1228,6 +1337,7 @@ function App() {
                   key={t.id}
                   disabled={!!configurationBlockedReason}
                   onClick={() => {
+                    setHistoricalInputSource(undefined);
                     setPendingLoad({
                       label: `加载示例「${t.label}」`,
                       pipeline: t.pipeline,
@@ -1279,13 +1389,21 @@ function App() {
             zoomOnDoubleClick={false}
             onNodeDoubleClick={(_, node) => {
               setSelected(node.id);
-              void flow.fitView({ nodes: [{ id: node.id }], padding: 0.2, minZoom: 0.75, maxZoom: 1 });
+              void flow.fitView({
+                nodes: [{ id: node.id }],
+                padding: 0.2,
+                minZoom: 0.75,
+                maxZoom: 1,
+              });
             }}
             onPaneClick={() => setSelected(undefined)}
             onPaneContextMenu={(event) => {
               event.preventDefault();
               openNodePalette(
-                flow.screenToFlowPosition({ x: event.clientX, y: event.clientY }),
+                flow.screenToFlowPosition({
+                  x: event.clientX,
+                  y: event.clientY,
+                }),
               );
             }}
             onNodesChange={(changes) => {
@@ -1354,8 +1472,6 @@ function App() {
                   flow.screenToFlowPosition({ x: e.clientX, y: e.clientY }),
                 );
             }}
-            fitView
-            fitViewOptions={{ maxZoom: 1, padding: 0.18 }}
             minZoom={0.15}
             maxZoom={2}
             deleteKeyCode={["Backspace", "Delete"]}
@@ -1877,7 +1993,9 @@ function App() {
                 </p>
               )}
               <hr />
-              <div className="section-label">草稿</div>
+              <div className="section-label" ref={draftToolsRef}>
+                草稿 · 保存与加载
+              </div>
               <label>
                 保存名称
                 <input
@@ -2038,8 +2156,12 @@ function App() {
                 });
               }}
               workspaceRevision={workspaceRevision}
+              historicalInputSource={historicalInputSource}
               controlsHost={controlsHost}
-              onLoadDraft={(draft) => {
+              onHistoricalInputSourceChange={() =>
+                setHistoricalInputSource(undefined)
+              }
+              onLoadDraft={(draft, historicalInputs) => {
                 if (
                   pipelineRef.current !== pipeline ||
                   layoutRef.current !== layout
@@ -2047,7 +2169,11 @@ function App() {
                   throw Error(
                     "读取运行配置期间画布已修改，保留当前编辑；请重新载入。",
                   );
-                setPendingLoad({ pipeline: draft, label: "载入历史运行配置" });
+                setPendingLoad({
+                  pipeline: draft,
+                  label: "载入历史运行配置",
+                  historicalInputs,
+                });
               }}
               profile={catalog.execution_profile}
               executionReason={
@@ -2092,6 +2218,7 @@ function App() {
                 );
                 return;
               }
+              setHistoricalInputSource(undefined);
               setPendingLoad({
                 label: `导入 YAML「${file.name}」`,
                 pipeline: p,

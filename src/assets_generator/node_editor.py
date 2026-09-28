@@ -313,6 +313,20 @@ def create_editor_server(
                     elif len(parts) == 4 and parts[1] == "outputs":
                         output = editor.execution.output(parts[0], parts[2], parts[3])
                         self.send(200, output.data, output.media_type)
+                    elif len(parts) == 2 and parts[1] == "input-references":
+                        query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
+                        if (
+                            set(query) != {"snapshot"}
+                            or len(query["snapshot"]) != 1
+                            or not query["snapshot"][0]
+                        ):
+                            raise ValueError("input references require one snapshot identity")
+                        self.respond(
+                            200,
+                            editor.execution.input_references(
+                                parts[0], {"artifact_id": query["snapshot"][0]}
+                            ),
+                        )
                     elif len(parts) == 2 and parts[1] == "draft":
                         self.respond(200, editor.execution.draft_from_run(parts[0]))
                     elif len(parts) == 2 and parts[1] == "plan":

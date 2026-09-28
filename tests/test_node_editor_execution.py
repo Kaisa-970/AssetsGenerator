@@ -272,6 +272,11 @@ def test_uploaded_image_is_exact_run_input_without_upload_dispatch(tmp_path, mon
             wait(service, run_id)
             assert repo.load(run_id).dag.named_actual_inputs["image"] == ref
             assert dispatched == [run_id]
+            snapshot_ref = service.snapshot(run_id)["snapshot_ref"]
+            source = service.input_references(run_id, snapshot_ref)
+            assert source["inputs"]["image"]["artifact_id"] == ref.artifact_id
+            with pytest.raises(ContractError, match="snapshot"):
+                service.input_references(run_id, {"artifact_id": "sha256:wrong"})
             store.blob_path(ref).unlink()
             with pytest.raises((ValueError, OSError)):
                 service.start(raw(), image_ref=uploaded["image_ref"])

@@ -158,6 +158,83 @@ const { chromium, expect } = require("@playwright/test");
       (await read(runs[0].run.run_id)).run.dag.node_states,
       runs[0].run.dag.node_states,
     );
+    // Save/load uses the same visible workspace controls and real draft API.
+    await page
+      .getByRole("button", { name: "保存 / 加载", exact: true })
+      .click();
+    const draftName = `cpu-roundtrip-${Date.now()}`;
+    await page.getByLabel("保存名称", { exact: true }).fill(draftName);
+    await page.getByRole("button", { name: "保存草稿", exact: true }).click();
+    await expect(page.locator("footer[role=status]")).toContainText(
+      "实际输入未保存",
+    );
+    const savedResponse = await page.request.get(
+      `${url}/api/drafts/${draftName}`,
+    );
+    assert.equal(savedResponse.status(), 200);
+    const saved = await savedResponse.json();
+    assert.equal(saved.pipeline.nodes.resize_image.parameters.width, 128);
+    assert.equal(saved.pipeline.nodes.resize_image.parameters.height, 64);
+    assert.equal(
+      saved.pipeline.nodes.resize_image.inputs.image,
+      "encode_png.outputs.image",
+    );
+    assert.deepEqual(Object.keys(saved).sort(), ["layout", "pipeline"]);
+    await page
+      .getByLabel("定位画布节点", { exact: true })
+      .selectOption("resize_image");
+    await page.getByLabel("节点参数 width", { exact: true }).fill("256");
+    await page.getByLabel("节点参数 width", { exact: true }).press("Enter");
+    await page
+      .getByRole("button", { name: "保存 / 加载", exact: true })
+      .click();
+    await page.getByLabel("加载草稿").selectOption(draftName);
+    await expect(
+      page.getByRole("alertdialog", { name: "确认替换画布" }),
+    ).toContainText("清空当前实际输入");
+    await page.getByRole("button", { name: "继续替换", exact: true }).click();
+    await expect(
+      page.getByLabel("缺少运行输入", { exact: true }),
+    ).toContainText("image");
+    await page
+      .getByLabel("定位画布节点", { exact: true })
+      .selectOption("resize_image");
+    await expect(
+      page.getByLabel("节点参数 width", { exact: true }),
+    ).toHaveValue("128");
+    await expect(
+      page.getByLabel("节点参数 height", { exact: true }),
+    ).toHaveValue("64");
+    // Re-save through the public UI to verify world-space layout too.
+    await page
+      .getByRole("button", { name: "保存 / 加载", exact: true })
+      .click();
+    const roundtripName = `${draftName}-reloaded`;
+    await page.getByLabel("保存名称", { exact: true }).fill(roundtripName);
+    await page.getByRole("button", { name: "保存草稿", exact: true }).click();
+    await expect(page.locator("footer[role=status]")).toContainText(
+      "实际输入未保存",
+    );
+    const roundtripResponse = await page.request.get(
+      `${url}/api/drafts/${roundtripName}`,
+    );
+    assert.equal(roundtripResponse.status(), 200);
+    const roundtrip = await roundtripResponse.json();
+    assert.deepEqual(
+      roundtrip.pipeline,
+      saved.pipeline,
+      "Loaded graph and parameters must round trip exactly",
+    );
+    assert.deepEqual(
+      roundtrip.layout,
+      saved.layout,
+      "Loaded node positions must round trip exactly",
+    );
+    assert.equal(starts.length, 3, "Loading must not launch inference");
+    fs.writeFileSync(
+      `${directory}/saved-draft.json`,
+      JSON.stringify(saved, null, 2),
+    );
     assert.deepEqual(errors, []);
     fs.writeFileSync(
       `${directory}/acceptance.json`,

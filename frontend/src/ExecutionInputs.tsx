@@ -17,6 +17,15 @@ type Props = {
   uploadMessage: string;
   inputRefs: Record<string, Record<string, unknown>>;
   inputFiles: Record<string, { file: File; artifactId: string }>;
+  historicalInputs?: {
+    run_id: string;
+    snapshot_ref: { artifact_id: string };
+    inputs: Record<
+      string,
+      { artifact_id: string; identity?: Record<string, unknown> }
+    >;
+  };
+  useHistoricalInput?: (name: string) => void;
   inputOrigins: Record<
     string,
     {
@@ -152,6 +161,8 @@ export function ExecutionInputs({
   inputRefs,
   inputFiles,
   inputOrigins,
+  historicalInputs,
+  useHistoricalInput,
   setInputArtifact,
   uploadInputArtifact,
   observationFiles,
@@ -183,7 +194,9 @@ export function ExecutionInputs({
               <div className="run-node blueprint-input-value" key={name}>
                 <div className="blueprint-input-value-header">
                   <strong>{name}</strong>
-                  <span>{port.kind || port.kinds?.join(" | ") || "未声明类型"}</span>
+                  <span>
+                    {port.kind || port.kinds?.join(" | ") || "未声明类型"}
+                  </span>
                 </div>
                 {kind === "text" && (
                   <TextInput
@@ -219,6 +232,21 @@ export function ExecutionInputs({
                     label={`输入 ${name}`}
                   />
                 )}
+                {historicalInputs?.inputs[name] &&
+                  historicalInputs.inputs[name].artifact_id !== artifactId && (
+                    <div className="blueprint-input-origin">
+                      <p>
+                        历史来源：运行 {historicalInputs.run_id} · 输入 {name} ·{" "}
+                        {historicalInputs.inputs[name].artifact_id}
+                      </p>
+                      <button
+                        disabled={pending || uploading}
+                        onClick={() => useHistoricalInput?.(name)}
+                      >
+                        使用历史输入 · {name}
+                      </button>
+                    </div>
+                  )}
                 {inputOrigins[name]?.artifactId === artifactId && (
                   <p className="blueprint-input-origin">
                     下游输入来源：{inputOrigins[name].runId} /{" "}

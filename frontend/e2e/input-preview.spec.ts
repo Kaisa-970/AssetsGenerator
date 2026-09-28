@@ -42,7 +42,9 @@ test("upload defaults and local thumbnails revoke URLs without starting runs", a
     await route.fulfill({ json: body });
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "运行", exact: true }).click();
+  await page
+    .getByLabel("定位画布节点", { exact: true })
+    .selectOption("input:image");
   await expect(page.getByLabel("图片来源", { exact: true })).toHaveValue(
     "upload",
   );
@@ -118,8 +120,10 @@ test("multi-input image and mask thumbnails disappear when bindings change", asy
   await page.goto("/");
   await page.getByRole("button", { name: "inputs", exact: true }).click();
   await page.getByRole("button", { name: "继续替换", exact: true }).click();
-  await page.getByRole("button", { name: "运行", exact: true }).click();
   for (const name of ["image", "mask"]) {
+    await page
+      .getByLabel("定位画布节点", { exact: true })
+      .selectOption(`input:${name}`);
     await page.getByLabel(`上传输入 ${name}`).setInputFiles({
       name: name + ".png",
       mimeType: "image/png",
@@ -143,4 +147,112 @@ test("multi-input image and mask thumbnails disappear when bindings change", asy
     page.getByAltText("输入 image缩略图", { exact: true }),
   ).toBeVisible();
   expect(starts).toBe(0);
+});
+
+test("historical multi-input sources require explicit per-input reuse without creating a run", async ({
+  page,
+}) => {
+  let runCreates = 0;
+  const pipeline = {
+    pipeline: "historical_inputs",
+    version: "1",
+    inputs: {
+      image: { kind: "rgb_image", carriers: ["artifact_ref"] },
+      text: { kind: "text", carriers: ["artifact_ref"] },
+    },
+    nodes: {
+      shape: {
+        operator: "shape_generation@1",
+        inputs: {
+          image: "pipeline.inputs.image",
+          text: "pipeline.inputs.text",
+        },
+      },
+    },
+  };
+  await page.route("**/api/**", async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (path === "/api/runs" && request.method() === "POST") {
+      runCreates++;
+      return route.fulfill({ status: 500, json: { error: "must not create" } });
+    }
+    let body: unknown = {};
+    if (path === "/api/catalog")
+      body = {
+        operators: {},
+        adapters: [],
+        templates: [{ id: "historical", label: "历史输入", pipeline }],
+        execution_enabled: true,
+      };
+    else if (path === "/api/drafts") body = { drafts: [] };
+    else if (path === "/api/runs")
+      body = { runs: [{ run_id: "dag_history", status: "succeeded" }] };
+    else if (path.endsWith("/draft"))
+      body = { source_run_id: "dag_history", source_plan_id: "plan", pipeline };
+    else if (path.endsWith("/input-references"))
+      body = {
+        run_id: "dag_history",
+        snapshot_ref: { artifact_id: "sha256:snapshot" },
+        inputs: {
+          image: {
+            artifact_id: "sha256:image",
+            identity: { kind: "rgb_image" },
+          },
+          text: { artifact_id: "sha256:text", identity: { kind: "text" } },
+        },
+      };
+    else if (path === "/api/runs/dag_history")
+      body = {
+        run: {
+          run_id: "dag_history",
+          status: "succeeded",
+          dag: {
+            plan_id: "plan",
+            revision: 1,
+            named_actual_inputs: {
+              image: { artifact_id: "sha256:image" },
+              text: { artifact_id: "sha256:text" },
+            },
+            node_states: {},
+          },
+        },
+        snapshot_ref: { artifact_id: "sha256:snapshot" },
+        outputs: [],
+        busy: false,
+      };
+    else if (path === "/api/compile")
+      body = { ok: true, execution_ready: true };
+    else if (path === "/api/inputs/text")
+      body = { artifact_id: "sha256:text", text: "sofa" };
+    await route.fulfill({ json: body });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "运行", exact: true }).click();
+  await page
+    .getByLabel("选择运行", { exact: true })
+    .selectOption("dag_history");
+  await page
+    .getByRole("button", { name: "将配置载入画布", exact: true })
+    .click();
+  await page
+    .getByRole("alertdialog", { name: "确认替换画布" })
+    .getByRole("button", { name: "继续替换", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "使用历史输入 · image", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "使用历史输入 · text", exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "使用历史输入 · image", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "使用历史输入 · text", exact: true })
+    .click();
+  await expect(
+    page.getByText(/下游输入来源：dag_history/).first(),
+  ).toBeVisible();
+  expect(runCreates).toBe(0);
 });
