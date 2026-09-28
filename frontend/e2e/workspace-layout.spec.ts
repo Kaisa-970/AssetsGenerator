@@ -84,6 +84,9 @@ test("workspace controls are grouped and remain usable on a narrow screen", asyn
     });
   });
   await page.goto("/");
+  await expect(page.getByText("注册表示配置可绑定，不代表模型已验收。", { exact: true })).toBeHidden();
+  await page.getByText("目录说明", { exact: true }).click();
+  await expect(page.getByText("注册表示配置可绑定，不代表模型已验收。", { exact: true })).toBeVisible();
   await expect(
     page.locator(".workspace-panel-group[aria-label='画布视图']"),
   ).toBeVisible();

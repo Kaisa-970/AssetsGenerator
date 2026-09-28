@@ -188,6 +188,24 @@ label select {
   padding: 2px 6px;
   font-size: 10px;
 }
+.catalog-guidance {
+  margin: 4px 0 10px;
+  padding: 5px 7px;
+  border: 1px solid #e3ebf0;
+  border-radius: 5px;
+  background: #fbfcfd;
+  font-size: 10px;
+}
+.catalog-guidance summary {
+  color: #637989;
+  cursor: pointer;
+  font-size: 10px;
+}
+.catalog-guidance p {
+  margin: 6px 0 0;
+  color: #7a8d9a;
+  line-height: 1.45;
+}
 .catalog-empty {
   padding: 12px 4px;
   color: #687c8d;

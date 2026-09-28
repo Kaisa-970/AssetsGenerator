@@ -1290,7 +1290,11 @@ function App() {
             />
             只看已注册实现
           </label>
-          <p>注册表示配置可绑定，不代表模型已验收。</p>
+          <details className="catalog-guidance">
+            <summary>目录说明</summary>
+            <p>注册表示配置可绑定，不代表模型已验收。</p>
+            <p>点击节点加入画布，也可以拖动到画布指定位置。</p>
+          </details>
           <label className="legacy-input-picker">
             快速添加输入
             <select
