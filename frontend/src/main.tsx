@@ -66,7 +66,13 @@ type Data = BlueprintNodeData;
 type QuickInputKind = "rgb" | "rgba" | "mask" | "text";
 const quickInputDefinitions: Record<
   QuickInputKind,
-  { label: string; detail: string; name: string; kinds: string[]; carriers: string[] }
+  {
+    label: string;
+    detail: string;
+    name: string;
+    kinds: string[];
+    carriers: string[];
+  }
 > = {
   rgb: {
     label: "图片输入",
@@ -837,12 +843,32 @@ function App() {
         .toLowerCase()
         .includes(paletteQuery),
   );
-  const paletteServices = (catalog.model_services || []).filter((service) =>
-    [service.backend, service.display_name, service.operator]
-      .join(" ")
-      .toLowerCase()
-      .includes(paletteQuery),
-  );
+  const paletteServices = (catalog.model_services || []).flatMap((service) => {
+    const capabilities = service.capabilities?.length
+      ? service.capabilities
+      : [
+          {
+            operator: service.operator,
+            display_name: service.display_name,
+            unit: service.unit,
+          },
+        ];
+    return capabilities
+      .map((capability, index) => ({ service, capability, index }))
+      .filter(({ service, capability }) =>
+        [
+          service.backend,
+          service.display_name,
+          service.operator,
+          capability.capability_id,
+          capability.operator,
+          capability.display_name,
+        ]
+          .join(" ")
+          .toLowerCase()
+          .includes(paletteQuery),
+      );
+  });
   const paletteInputs = [...availableQuickInputs.keys()]
     .map((kind) => ({
       kind,
@@ -1070,21 +1096,30 @@ function App() {
                 <p className="node-palette-section-note">
                   添加后已预选 Backend
                 </p>
-                {paletteServices.map((service) => (
+                {paletteServices.map(({ service, capability, index }) => (
                   <button
-                    key={service.backend}
+                    key={`${service.backend}:${capability.capability_id || capability.operator || index}`}
+                    disabled={index !== 0 || !(capability.operator || service.operator)}
                     onClick={() => {
+                      const operator = capability.operator || service.operator;
+                      if (!operator) return;
                       addOperator(
-                        service.operator,
+                        operator,
                         nodePalettePosition,
                         service.backend,
                       );
                       setNodePaletteOpen(false);
                     }}
                   >
-                    <strong>{service.display_name}</strong>
+                    <strong>
+                      {capability.display_name || service.display_name}
+                    </strong>
                     <span>
-                      {service.operator} · {service.frame_id} · {service.unit}
+                      {index === 0 && (capability.operator || service.operator)
+                        ? capability.operator || service.operator
+                        : "仅查看 · 当前版本暂不可执行"} ·{" "}
+                      {capability.frame_id || service.frame_id || "未声明坐标"}{" "}
+                      · {capability.unit || service.unit || "未声明单位"}
                     </span>
                   </button>
                 ))}
@@ -1465,8 +1500,16 @@ function App() {
                 (item) => item.backend === serviceId,
               );
               if (service) {
+                const capabilityId = e.dataTransfer.getData(
+                  "application/model-capability",
+                );
+                const capability = service.capabilities?.find(
+                  (item) => item.capability_id === capabilityId,
+                );
+                const operator = capability?.operator || service.operator;
+                if (!operator) return;
                 addOperator(
-                  service.operator,
+                  operator,
                   flow.screenToFlowPosition({ x: e.clientX, y: e.clientY }),
                   service.backend,
                 );

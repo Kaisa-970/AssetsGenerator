@@ -66,6 +66,98 @@ def test_round_trip_and_copy(descriptor):
     assert normalized["defaults"]["steps"] == 12
 
 
+def test_capabilities_form_normalizes_known_first_capability(descriptor):
+    multi = {
+        key: descriptor[key]
+        for key in ("schema_version", "display_name", "service_id", "backend_digest")
+    }
+    multi["capabilities"] = [
+        {
+            "operator": "shape_generation@1",
+            "transport": "remote_jobs@1",
+            "parameter_schema": descriptor["parameter_schema"],
+            "defaults": descriptor["defaults"],
+            "frame_id": descriptor["frame_id"],
+            "up_axis": descriptor["up_axis"],
+            "unit": descriptor["unit"],
+        },
+        {
+            "operator": "depth_prediction@1",
+            "transport": "remote_jobs@1",
+            "parameter_schema": {"type": "object", "properties": {}},
+            "defaults": {},
+        },
+    ]
+    normalized = validate_descriptor(multi)
+    assert normalized["operator"] == "shape_generation@1"
+    assert normalized["parameter_schema"] == descriptor["parameter_schema"]
+    assert [item["operator"] for item in normalized["capabilities"]] == [
+        "shape_generation@1",
+        "depth_prediction@1",
+    ]
+
+
+def test_capabilities_form_allows_unknown_capability_for_inspection(descriptor):
+    descriptor.pop("operator")
+    descriptor.pop("transport")
+    descriptor.pop("parameter_schema")
+    descriptor.pop("defaults")
+    descriptor["capabilities"] = [
+        {
+            "operator": "gaussian_splat@1",
+            "transport": "remote_jobs@1",
+            "parameter_schema": {"type": "object", "properties": {}},
+            "defaults": {},
+        }
+    ]
+    normalized = validate_descriptor(descriptor)
+    assert normalized["operator"] == "gaussian_splat@1"
+    assert normalized["capabilities"][0]["operator"] == "gaussian_splat@1"
+
+
+@pytest.mark.parametrize(
+    "capabilities",
+    [
+        [],
+        [{"operator": "shape_generation@1"}],
+        [
+            {
+                "operator": "x",
+                "transport": "remote_jobs@1",
+                "parameter_schema": {"type": "object", "properties": {}},
+                "defaults": {},
+                "extra": 1,
+            }
+        ],
+    ],
+)
+def test_reject_malformed_capabilities(descriptor, capabilities):
+    base = {
+        key: descriptor[key]
+        for key in ("schema_version", "display_name", "service_id", "backend_digest")
+    }
+    base["capabilities"] = capabilities
+    with pytest.raises(ContractError):
+        validate_descriptor(base)
+
+
+def test_reject_duplicate_capability_ids(descriptor):
+    base = {
+        key: descriptor[key]
+        for key in ("schema_version", "display_name", "service_id", "backend_digest")
+    }
+    capability = {
+        "capability_id": "mesh",
+        "operator": "shape_generation@1",
+        "transport": "remote_jobs@1",
+        "parameter_schema": {"type": "object", "properties": {}},
+        "defaults": {},
+    }
+    base["capabilities"] = [capability, {**capability}]
+    with pytest.raises(ContractError, match="unique"):
+        validate_descriptor(base)
+
+
 @pytest.mark.parametrize(
     "field,value",
     [

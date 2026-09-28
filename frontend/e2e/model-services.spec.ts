@@ -15,6 +15,21 @@ const descriptor = {
     properties: { steps: { type: "integer", minimum: 1, maximum: 50 } },
   },
   defaults: { steps: 12 },
+  capabilities: [
+    {
+      capability_id: "shape_generation",
+      display_name: "图像生成网格",
+      operator: "shape_generation@1",
+      frame_id: "triposr_glb_native",
+      up_axis: "+Z",
+      unit: "relative_unit",
+      parameter_schema: {
+        type: "object",
+        properties: { steps: { type: "integer", minimum: 1, maximum: 50 } },
+      },
+      defaults: { steps: 12 },
+    },
+  ],
 };
 const service = {
   backend: "model_mesh",

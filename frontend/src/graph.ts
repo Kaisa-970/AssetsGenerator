@@ -38,16 +38,30 @@ export type Pipeline = {
   [key: string]: unknown;
 };
 export type Layout = Record<string, { x: number; y: number }>;
+export type ServiceCapability = {
+  capability_id?: string;
+  operator?: string;
+  display_name?: string;
+  inputs?: Record<string, Port>;
+  outputs?: Record<string, Port>;
+  parameter_schema?: Record<string, unknown>;
+  defaults?: Record<string, unknown>;
+  frame_id?: string;
+  up_axis?: string;
+  unit?: string;
+};
 export type Catalog = {
   model_services?: {
     backend: string;
     display_name: string;
     endpoint: string;
-    operator: string;
+    /** Legacy single-capability field; new services may expose capabilities[]. */
+    operator?: string;
     descriptor_digest: string;
-    frame_id: string;
-    up_axis: string;
-    unit: string;
+    frame_id?: string;
+    up_axis?: string;
+    unit?: string;
+    capabilities?: ServiceCapability[];
   }[];
   execution_enabled?: boolean;
   execution_profile?: string;

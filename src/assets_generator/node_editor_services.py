@@ -71,6 +71,11 @@ class ModelServices:
                     "frame_id": e["descriptor"].get("frame_id", "unknown"),
                     "up_axis": e["descriptor"].get("up_axis", "unknown"),
                     "unit": e["descriptor"].get("unit", "unknown"),
+                    **(
+                        {"capabilities": e["descriptor"]["capabilities"]}
+                        if e["descriptor"].get("capabilities")
+                        else {}
+                    ),
                 }
                 for e in self.entries
             ]

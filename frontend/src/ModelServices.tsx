@@ -1,22 +1,55 @@
 import { useEffect, useRef, useState } from "react";
-import { portKinds, type Catalog } from "./graph";
+import { portKinds, type Catalog, type ServiceCapability } from "./graph";
 
 type Detection = {
   endpoint: string;
   descriptor_digest: string;
   descriptor: {
     display_name: string;
-    operator: string;
-    parameter_schema: {
+    operator?: string;
+    capabilities?: ServiceCapability[];
+    parameter_schema?: {
       properties?: Record<string, { type?: string; enum?: unknown[] }>;
       required?: string[];
     };
-    defaults: Record<string, unknown>;
-    frame_id: string;
-    up_axis: string;
-    unit: string;
+    defaults?: Record<string, unknown>;
+    frame_id?: string;
+    up_axis?: string;
+    unit?: string;
   };
 };
+
+/** Normalize the new multi-capability descriptor while preserving v1 shape. */
+function descriptorCapabilities(
+  descriptor: Detection["descriptor"],
+): ServiceCapability[] {
+  if (descriptor.capabilities?.length) return descriptor.capabilities;
+  return [
+    {
+      operator: descriptor.operator,
+      display_name: descriptor.display_name,
+      parameter_schema: descriptor.parameter_schema,
+      defaults: descriptor.defaults,
+      frame_id: descriptor.frame_id,
+      up_axis: descriptor.up_axis,
+      unit: descriptor.unit,
+    },
+  ];
+}
+function serviceCapabilities(
+  service: NonNullable<Catalog["model_services"]>[number],
+): ServiceCapability[] {
+  if (service.capabilities?.length) return service.capabilities;
+  return [
+    {
+      operator: service.operator,
+      display_name: service.display_name,
+      frame_id: service.frame_id,
+      up_axis: service.up_axis,
+      unit: service.unit,
+    },
+  ];
+}
 async function post(path: string, body: unknown, signal?: AbortSignal) {
   const response = await fetch(path, {
     method: "POST",
@@ -104,8 +137,9 @@ export function ModelServices({
       setBusy(undefined);
     }
   };
-  const operator =
-    detection && catalog.operators[detection.descriptor.operator];
+  const capabilities = detection
+    ? descriptorCapabilities(detection.descriptor)
+    : [];
   return (
     <section className="model-services" aria-label="模型服务">
       <button onClick={() => setOpen(!open)} aria-expanded={open}>
@@ -142,87 +176,143 @@ export function ModelServices({
           {detection && (
             <section aria-label="检测到的模型">
               <strong>{detection.descriptor.display_name}</strong>
-              <p>{detection.descriptor.operator}</p>
-              <p>
-                原生坐标：{detection.descriptor.frame_id || "未声明"} · 上轴{" "}
-                {detection.descriptor.up_axis || "未声明"} · 单位{" "}
-                {detection.descriptor.unit || "未声明"}
-              </p>
-              {operator ? (
-                <>
-                  <p>
-                    输入：
-                    {Object.entries(operator.inputs)
-                      .map(
-                        ([name, port]) =>
-                          `${name} (${portKinds(port).join(" / ")})`,
-                      )
-                      .join("、")}
-                  </p>
-                  <p>
-                    输出：
-                    {Object.entries(operator.outputs)
-                      .map(
-                        ([name, port]) =>
-                          `${name} (${portKinds(port).join(" / ")})`,
-                      )
-                      .join("、")}
-                  </p>
-                </>
-              ) : (
-                <p role="alert">当前目录没有对应输入输出契约，无法添加。</p>
-              )}
-              <div>
-                可配置参数：
-                {Object.entries(
-                  detection.descriptor.parameter_schema.properties || {},
-                ).map(([name, field]) => (
-                  <p key={name}>
-                    {name} · {field.type}
-                    {detection.descriptor.parameter_schema.required?.includes(
-                      name,
-                    )
-                      ? " · 必填"
-                      : ""}
-                    {Object.hasOwn(detection.descriptor.defaults, name)
-                      ? ` · 默认 ${JSON.stringify(detection.descriptor.defaults[name])}`
-                      : ""}
-                  </p>
-                ))}
-              </div>
+              <p>{capabilities.length} 项模型能力</p>
+              {capabilities.map((capability, index) => {
+                const operator = capability.operator
+                  ? catalog.operators[capability.operator]
+                  : undefined;
+                const schema = capability.parameter_schema as
+                  | {
+                      properties?: Record<string, { type?: string }>;
+                      required?: string[];
+                    }
+                  | undefined;
+                const defaults = capability.defaults || {};
+                return (
+                  <article
+                    key={
+                      capability.capability_id || capability.operator || index
+                    }
+                    className="model-capability"
+                  >
+                    <strong>
+                      {capability.display_name ||
+                        capability.operator ||
+                        `能力 ${index + 1}`}
+                    </strong>
+                    <p>{capability.operator || "未声明 Operator"}</p>
+                    <p>
+                      原生坐标：
+                      {capability.frame_id ||
+                        detection.descriptor.frame_id ||
+                        "未声明"}{" "}
+                      · 上轴{" "}
+                      {capability.up_axis ||
+                        detection.descriptor.up_axis ||
+                        "未声明"}{" "}
+                      · 单位{" "}
+                      {capability.unit || detection.descriptor.unit || "未声明"}
+                    </p>
+                    {operator ? (
+                      <>
+                        <p>
+                          输入：
+                          {Object.entries(operator.inputs)
+                            .map(
+                              ([name, port]) =>
+                                `${name} (${portKinds(port).join(" / ")})`,
+                            )
+                            .join("、")}
+                        </p>
+                        <p>
+                          输出：
+                          {Object.entries(operator.outputs)
+                            .map(
+                              ([name, port]) =>
+                                `${name} (${portKinds(port).join(" / ")})`,
+                            )
+                            .join("、")}
+                        </p>
+                      </>
+                    ) : (
+                      <p role="alert">
+                        当前目录没有对应输入输出契约，无法添加此能力。
+                      </p>
+                    )}
+                    <div>
+                      可配置参数：
+                      {Object.entries(schema?.properties || {}).map(
+                        ([name, field]) => (
+                          <p key={name}>
+                            {name} · {field.type}
+                            {schema?.required?.includes(name) ? " · 必填" : ""}
+                            {Object.hasOwn(defaults, name)
+                              ? ` · 默认 ${JSON.stringify(defaults[name])}`
+                              : ""}
+                          </p>
+                        ),
+                      )}
+                    </div>
+                    <button
+                      disabled={!operator || !!busy || index !== 0}
+                      onClick={() => void add()}
+                    >
+                      {index !== 0
+                        ? "暂不支持单独安装此能力"
+                        : busy === "add"
+                          ? "正在添加…"
+                          : "确认添加模型"}
+                    </button>
+                  </article>
+                );
+              })}
               <p>协议检测通过；尚未验证生成质量。</p>
-              <button disabled={!operator || !!busy} onClick={() => void add()}>
-                {busy === "add" ? "正在添加…" : "确认添加模型"}
-              </button>
             </section>
           )}
           {error && <p role="alert">{error}</p>}
         </div>
       )}
       {notice && <p role="status">{notice}</p>}
-      {(catalog.model_services || []).map((service) => (
-        <button
-          className="catalog-item"
-          key={service.backend}
-          draggable
-          onDragStart={(e) => {
-            e.dataTransfer.setData(
-              "application/model-service",
-              service.backend,
-            );
-            e.dataTransfer.effectAllowed = "move";
-          }}
-          onClick={() => onAddNode(service.operator, service.backend)}
-        >
-          <strong>{service.display_name}</strong>
-          <span>模型服务 · 点击或拖入画布</span>
-          <span>{service.operator}</span>
-          <span>
-            原生坐标：{service.frame_id} · 上轴 {service.up_axis} · 单位{" "}
-            {service.unit}
-          </span>
-        </button>
-      ))}
+      {(catalog.model_services || []).flatMap((service) =>
+        serviceCapabilities(service).map((capability, index) => {
+          const operator = capability.operator || service.operator;
+          const key = `${service.backend}:${capability.capability_id || operator || index}`;
+          return (
+            <button
+              className="catalog-item"
+              key={key}
+              draggable={index === 0 && Boolean(operator)}
+              onDragStart={(e) => {
+                e.dataTransfer.setData(
+                  "application/model-service",
+                  service.backend,
+                );
+                e.dataTransfer.setData(
+                  "application/model-capability",
+                  capability.capability_id || operator || "",
+                );
+                e.dataTransfer.effectAllowed = "move";
+              }}
+              onClick={() =>
+                index === 0 && operator && onAddNode(operator, service.backend)
+              }
+            >
+              <strong>{capability.display_name || service.display_name}</strong>
+              <span>
+                {index === 0 && operator
+                  ? "模型服务 · 点击或拖入画布"
+                  : "仅查看 · 当前版本暂不可执行"}
+              </span>
+              <span>{operator || "未知能力"}</span>
+              <span>
+                原生坐标：{capability.frame_id || service.frame_id || "未声明"}{" "}
+                · 上轴 {capability.up_axis || service.up_axis || "未声明"} ·
+                单位 {capability.unit || service.unit || "未声明"}
+              </span>
+            </button>
+          );
+        }),
+      )}
     </section>
   );
 }
