@@ -746,7 +746,7 @@ footer {
   overflow: hidden;
 }
 .canvas.with-preview {
-  grid-template-rows: minmax(260px, 1fr) minmax(140px, 24%);
+  grid-template-rows: minmax(320px, 1fr) minmax(120px, 20%);
 }
 .canvas > .react-flow {
   min-height: 0;

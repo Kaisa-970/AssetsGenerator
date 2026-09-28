@@ -266,7 +266,9 @@ function App() {
     if (tab === "inspector") inspectorRef.current?.scrollTo({ top: 0 });
   }, [selected, tab]);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [historyHeight, setHistoryHeight] = useState(300);
+  // Keep the first diagnostic view compact; users can expand it with the
+  // resize handle when they need detailed run information.
+  const [historyHeight, setHistoryHeight] = useState(220);
   const [minimapOpen, setMinimapOpen] = useState(false);
   const [panelRestore, setPanelRestore] = useState<{
     catalog: boolean;

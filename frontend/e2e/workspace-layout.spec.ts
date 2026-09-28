@@ -43,6 +43,9 @@ for (const size of [
     await page
       .getByRole("button", { name: "运行记录与诊断", exact: true })
       .click();
+    await expect(
+      page.getByRole("separator", { name: "调整运行记录高度" }),
+    ).toHaveAttribute("aria-valuenow", "220");
     const historyResize = page.getByRole("separator", {
       name: "调整运行记录高度",
     });
