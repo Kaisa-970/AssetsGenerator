@@ -27,6 +27,7 @@ for (const size of [
       });
     });
     await page.goto("/");
+    await page.getByRole("button", { name: "展开属性面板", exact: true }).click();
     const resize = page.getByRole("separator", { name: "调整属性面板宽度" });
     await resize.focus();
     await resize.press("End");

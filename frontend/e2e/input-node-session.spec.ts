@@ -155,6 +155,7 @@ for (const viewport of [
       textNode.getByLabel("输入 text Artifact ID", { exact: true }),
     ).toHaveValue("text-bound");
     await textNode.locator(".blueprint-node-header").click();
+    await page.getByRole("button", { name: "展开节点预览", exact: true }).click();
     await expect(
       page.getByRole("region", { name: "当前输入预览" }),
     ).toContainText("chair");
@@ -359,7 +360,8 @@ test("adding a mask preserves the uploaded image and removing it uses the update
   await expect(page.locator('[data-id="input:image"]')).toContainText(
     "original-image",
   );
-  await page.getByRole("button", { name: "收起属性面板", exact: true }).click();
+  if (await page.getByRole("button", { name: "收起属性面板", exact: true }).count())
+    await page.getByRole("button", { name: "收起属性面板", exact: true }).click();
   await expect(page.locator('[data-id="input:image"]')).toContainText(
     "original-image",
   );

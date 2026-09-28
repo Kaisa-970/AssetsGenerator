@@ -194,7 +194,9 @@ function App() {
     { x: number; y: number } | undefined
   >();
   const nodePaletteTrigger = useRef<HTMLButtonElement>(null);
-  const [inspectorOpen, setInspectorOpen] = useState(true);
+  // Node cards are the primary editing surface; keep advanced Details closed
+  // until the user asks for it from the workspace controls or a toolbar action.
+  const [inspectorOpen, setInspectorOpen] = useState(false);
   const [inspectorWidth, setInspectorWidth] = useState(280);
   // Keep the canvas as the primary workspace; previews open on demand from
   // the toolbar or a node's output action.
@@ -429,6 +431,9 @@ function App() {
     setLayout(l);
     const firstInput = Object.keys(p.inputs)[0];
     setSelected(firstInput ? inputId(firstInput) : undefined);
+    // A loaded template has an explicit selection; expose its configuration
+    // immediately while keeping a truly blank workspace uncluttered.
+    setInspectorOpen(true);
     setRun(undefined);
     setTimeout(() => {
       // Open at the first editable step. Fitting every input/downstream node
@@ -1443,10 +1448,18 @@ function App() {
             }
             nodeTypes={nodeTypes}
             onConnect={connect}
-            onNodeClick={(_, n) => setSelected(n.id)}
+            onNodeClick={(_, n) => {
+              setSelected(n.id);
+              // Selecting a node is an explicit request to configure it. Keep
+              // the inspector closed on a blank canvas, then reveal it when a
+              // node is selected so its advanced controls are immediately
+              // reachable.
+              setInspectorOpen(true);
+            }}
             zoomOnDoubleClick={false}
             onNodeDoubleClick={(_, node) => {
               setSelected(node.id);
+              setInspectorOpen(true);
               focusNode(node.id);
             }}
             onPaneClick={() => setSelected(undefined)}

@@ -118,6 +118,7 @@ test("blank workspace connects uploads and starts from the canvas without openin
     .click();
   await expect(page.locator('[data-id="input:image"]')).toBeInViewport();
   await expect(page.getByLabel("上传运行图片", { exact: true })).toBeFocused();
+  await page.getByRole("button", { name: "展开节点预览", exact: true }).click();
   await page.getByLabel("上传运行图片", { exact: true }).setInputFiles({
     name: "input.png",
     mimeType: "image/png",
