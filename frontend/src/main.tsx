@@ -1371,6 +1371,8 @@ function App() {
           <ReactFlow
             nodes={nodes}
             edges={edges}
+            // Viewport is user state; fitting is only done by explicit actions.
+            fitView={false}
             onEdgesChange={(changes) =>
               setSelectedEdges((old) => {
                 const next = new Set(old);

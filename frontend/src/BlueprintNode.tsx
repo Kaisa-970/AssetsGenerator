@@ -211,7 +211,8 @@ function BlueprintNodeBody({
     return typeof reference === "string" && reference.length > 0;
   });
   const missingInputs = inputNames.filter(
-    (name) => !connectedInputs.includes(name) &&
+    (name) =>
+      !connectedInputs.includes(name) &&
       ["one", "one_or_more"].includes(data.inputs[name].cardinality || "one"),
   );
   // This is catalog availability, not execution eligibility or service health.
@@ -270,9 +271,10 @@ function BlueprintNodeBody({
         />
         <span>{blueprintPortLabel(name)}</span>
         <small>{blueprintKindLabel(port)}</small>
-        {direction === "input" && ["zero_or_one", "zero_or_more", "many"].includes(port.cardinality || "") && (
-          <small>可选</small>
-        )}
+        {direction === "input" &&
+          ["zero_or_one", "zero_or_more", "many"].includes(
+            port.cardinality || "",
+          ) && <small>可选</small>}
         {direction === "input" && data.inputBindings?.[name] && (
           <small
             className="blueprint-binding"
@@ -353,8 +355,15 @@ function BlueprintNodeBody({
         </div>
       )}
       {!isInput && data.outputSummary && data.outputSummary.length > 0 && (
-        <div className="blueprint-output-summary nodrag nowheel nopan" onKeyDown={protectBlueprintControlKeyboard} onPointerDown={(event) => event.stopPropagation()} aria-label={`输出状态 ${data.nodeId}`}>
-          <span>输出 · {data.outputSummary.map((item) => item.port).join("、")}</span>
+        <div
+          className="blueprint-output-summary nodrag nowheel nopan"
+          onKeyDown={protectBlueprintControlKeyboard}
+          onPointerDown={(event) => event.stopPropagation()}
+          aria-label={`输出状态 ${data.nodeId}`}
+        >
+          <span>
+            输出 · {data.outputSummary.map((item) => item.port).join("、")}
+          </span>
           {data.onViewOutputs && (
             <button type="button" onClick={data.onViewOutputs}>
               查看输出

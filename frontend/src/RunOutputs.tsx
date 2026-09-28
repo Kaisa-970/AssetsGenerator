@@ -1,3 +1,5 @@
+import { createPortal } from "react-dom";
+import type { ReactNode } from "react";
 import type { ComponentProps } from "react";
 import { ContinueExtraction } from "./ContinueExtraction";
 import { ImageOutput } from "./ImageOutput";
@@ -11,6 +13,8 @@ type Props = {
   status: string;
   outputs: RunOutput[];
   snapshot?: string;
+  actionHost?: HTMLElement | null;
+  selectedActionOutput?: { nodeId: string; port: string };
   inputs: Pipeline["inputs"];
   disabled: {
     continuation: boolean;
@@ -29,6 +33,8 @@ export function RunOutputs({
   status,
   outputs,
   snapshot,
+  actionHost,
+  selectedActionOutput,
   inputs,
   disabled,
   onPreview,
@@ -95,17 +101,21 @@ export function RunOutputs({
                 ].includes(output.kind || ""),
               )
               .flatMap((output) =>
-                (["A", "B"] as const).map((side) => (
-                  <button
-                    key={`compare:${side}:${output.node_id}:${output.port}`}
-                    disabled={disabled.comparison}
-                    onClick={() => {
-                      onCompare(output, side);
-                    }}
-                  >
-                    加入比较 {side} · {output.node_id} · {output.port}
-                  </button>
-                )),
+                (["A", "B"] as const).map((side) =>
+                  renderOutputAction(
+                    actionHost,
+                    output,
+                    selectedActionOutput,
+                    <button
+                      disabled={disabled.comparison}
+                      onClick={() => {
+                        onCompare(output, side);
+                      }}
+                    >
+                      加入比较 {side} · {output.node_id} · {output.port}
+                    </button>,
+                  ),
+                ),
               )}
           {outputs
             .filter((output) => output.kind === "asset_release")
@@ -138,17 +148,21 @@ export function RunOutputs({
               .filter(([, port]) =>
                 (port.kinds || [port.kind]).includes(output.kind),
               )
-              .map(([name]) => (
-                <button
-                  key={`reuse:${output.node_id}:${output.port}:${name}`}
-                  disabled={disabled.inputBinding}
-                  onClick={() => {
-                    onUseAsInput(output, name);
-                  }}
-                >
-                  用作输入 {name} · {output.node_id} · {output.port}
-                </button>
-              )),
+              .map(([name]) =>
+                renderOutputAction(
+                  actionHost,
+                  output,
+                  selectedActionOutput,
+                  <button
+                    disabled={disabled.inputBinding}
+                    onClick={() => {
+                      onUseAsInput(output, name);
+                    }}
+                  >
+                    用作输入 {name} · {output.node_id} · {output.port}
+                  </button>,
+                ),
+              ),
           )}
           {outputs.map((output) => (
             <a
@@ -164,4 +178,17 @@ export function RunOutputs({
       )}
     </>
   );
+}
+
+function renderOutputAction(
+  host: HTMLElement | null | undefined,
+  output: RunOutput,
+  selected: { nodeId: string; port: string } | undefined,
+  children: ReactNode,
+): ReactNode {
+  return host &&
+    selected?.nodeId === output.node_id &&
+    selected.port === output.port
+    ? createPortal(children, host)
+    : children;
 }

@@ -120,6 +120,8 @@ export function ExecutionPanel({
     Partial<Record<"A" | "B", ComparisonSlot>>
   >({});
   const [comparisonOpen, setComparisonOpen] = useState(false);
+  const [outputActionHost, setOutputActionHost] =
+    useState<HTMLDivElement | null>(null);
   const [reuseResults, setReuseResults] = useState(true);
   const [previewPort, setPreviewPort] = useState("");
   const [runToSelection, setRunToSelection] = useState(false);
@@ -755,102 +757,106 @@ export function ExecutionPanel({
   const activePreviewPort = selectedPreviewPort(selectedOutputs, previewPort);
   return (
     <section className="execution-panel">
-      {(comparison.A || comparison.B) && (
-        <button onClick={() => setComparisonOpen(true)}>比较两次结果</button>
-      )}
-      {comparisonOpen && (
-        <div
-          className="run-graph-overlay comparison-overlay"
-          role="dialog"
-          aria-label="比较两次结果"
-        >
-          <header>
-            <strong>比较两次结果</strong>
-            <button onClick={() => setComparisonOpen(false)}>关闭比较</button>
-          </header>
-          <OutputComparison
-            slots={comparison}
-            inputs={effectivePipeline.inputs}
-            disabled={executing || uploading || unresolvedCreation}
-            selectedInputs={Object.fromEntries(
-              Object.keys(effectivePipeline.inputs).map((name) => [
-                name,
-                {
-                  ...(inputOrigins[name] || {}),
-                  artifactId: String(
-                    multiInput
-                      ? inputRefs[name]?.artifact_id || ""
-                      : reusedImage?.artifact_id || "",
-                  ),
-                },
-              ]),
-            )}
-            onClear={(side) =>
-              setComparison((old) => ({ ...old, [side]: undefined }))
-            }
-            onUse={(slot, name) => {
-              const revision = inputGeneration.current.revision;
-              void mutate(async () => {
-                const source = await request(
-                  `/api/runs/${encodeURIComponent(slot.runId)}/snapshot-reference/${encodeURIComponent(slot.nodeId)}/${encodeURIComponent(slot.port)}?snapshot=${encodeURIComponent(slot.snapshot)}`,
-                );
-                if (revision !== inputGeneration.current.revision)
-                  throw Error("输入契约已变化，请重新选择");
-                const port = effectivePipeline.inputs[name];
-                if (
-                  source.reference?.artifact_id !==
-                    slot.reference.artifact_id ||
-                  source.source_run_id !== slot.runId ||
-                  source.node_id !== slot.nodeId ||
-                  source.port !== slot.port ||
-                  source.source_snapshot?.artifact_id !== slot.snapshot ||
-                  !port ||
-                  !(port.kinds || [port.kind]).includes(source.kind) ||
-                  (port.schema_name &&
-                    port.schema_name !== source.schema_name) ||
-                  (port.schema_version &&
-                    port.schema_version !== source.schema_version)
-                )
-                  throw Error("比较结果与输入绑定无法核实");
-                setInputOrigins((old) => ({
-                  ...old,
-                  [name]: {
-                    artifactId: source.reference.artifact_id,
-                    runId: slot.runId,
-                    nodeId: slot.nodeId,
-                    port: slot.port,
-                    snapshot: slot.snapshot,
+      {(comparison.A || comparison.B) &&
+        createPortal(
+          <button onClick={() => setComparisonOpen(true)}>比较两次结果</button>,
+          controlsHost || document.body,
+        )}
+      {comparisonOpen &&
+        createPortal(
+          <div
+            className="run-graph-overlay comparison-overlay"
+            role="dialog"
+            aria-label="比较两次结果"
+          >
+            <header>
+              <strong>比较两次结果</strong>
+              <button onClick={() => setComparisonOpen(false)}>关闭比较</button>
+            </header>
+            <OutputComparison
+              slots={comparison}
+              inputs={pipeline.inputs}
+              disabled={executing || uploading || unresolvedCreation}
+              selectedInputs={Object.fromEntries(
+                Object.keys(pipeline.inputs).map((name) => [
+                  name,
+                  {
+                    ...(inputOrigins[name] || {}),
+                    artifactId: String(
+                      multiInput
+                        ? inputRefs[name]?.artifact_id || ""
+                        : reusedImage?.artifact_id || "",
+                    ),
                   },
-                }));
-                if (multiInput)
-                  setInputRefs((old) => ({
+                ]),
+              )}
+              onClear={(side) =>
+                setComparison((old) => ({ ...old, [side]: undefined }))
+              }
+              onUse={(slot, name) => {
+                const revision = inputGeneration.current.revision;
+                void mutate(async () => {
+                  const source = await request(
+                    `/api/runs/${encodeURIComponent(slot.runId)}/snapshot-reference/${encodeURIComponent(slot.nodeId)}/${encodeURIComponent(slot.port)}?snapshot=${encodeURIComponent(slot.snapshot)}`,
+                  );
+                  if (revision !== inputGeneration.current.revision)
+                    throw Error("输入契约已变化，请重新选择");
+                  const port = pipeline.inputs[name];
+                  if (
+                    source.reference?.artifact_id !==
+                      slot.reference.artifact_id ||
+                    source.source_run_id !== slot.runId ||
+                    source.node_id !== slot.nodeId ||
+                    source.port !== slot.port ||
+                    source.source_snapshot?.artifact_id !== slot.snapshot ||
+                    !port ||
+                    !(port.kinds || [port.kind]).includes(source.kind) ||
+                    (port.schema_name &&
+                      port.schema_name !== source.schema_name) ||
+                    (port.schema_version &&
+                      port.schema_version !== source.schema_version)
+                  )
+                    throw Error("比较结果与输入绑定无法核实");
+                  setInputOrigins((old) => ({
                     ...old,
                     [name]: {
-                      ...source.reference,
-                      ...(slot.port.includes("~")
-                        ? {
-                            source: {
-                              run_id: slot.runId,
-                              node_id: slot.nodeId,
-                              port: slot.port,
-                              snapshot: { artifact_id: slot.snapshot },
-                            },
-                          }
-                        : {}),
+                      artifactId: source.reference.artifact_id,
+                      runId: slot.runId,
+                      nodeId: slot.nodeId,
+                      port: slot.port,
+                      snapshot: slot.snapshot,
                     },
                   }));
-                else {
-                  setReusedImage(source.reference);
-                  setImageSource("reference");
-                }
-                setMessage(
-                  `已明确选择 ${slot.runId}/${slot.nodeId}.${slot.port} 作为 ${name}，预览其他结果不会改变绑定。`,
-                );
-              });
-            }}
-          />
-        </div>
-      )}
+                  if (multiInput)
+                    setInputRefs((old) => ({
+                      ...old,
+                      [name]: {
+                        ...source.reference,
+                        ...(slot.port.includes("~")
+                          ? {
+                              source: {
+                                run_id: slot.runId,
+                                node_id: slot.nodeId,
+                                port: slot.port,
+                                snapshot: { artifact_id: slot.snapshot },
+                              },
+                            }
+                          : {}),
+                      },
+                    }));
+                  else {
+                    setReusedImage(source.reference);
+                    setImageSource("reference");
+                  }
+                  setMessage(
+                    `已明确选择 ${slot.runId}/${slot.nodeId}.${slot.port} 作为 ${name}，预览其他结果不会改变绑定。`,
+                  );
+                });
+              }}
+            />
+          </div>,
+          document.body,
+        )}
       {previewHost &&
         createPortal(
           <section className="selected-node-preview" aria-label="选中节点预览">
@@ -967,6 +973,7 @@ export function ExecutionPanel({
                         </a>
                       ),
                     )}
+                <div ref={setOutputActionHost} aria-label="选中输出操作" />
                 {!envelope?.outputs?.some(
                   (o) => o.node_id === selectedNode,
                 ) && (
@@ -1404,13 +1411,19 @@ export function ExecutionPanel({
               : "恢复 / 继续此运行"}
           </button>
           <RunOutputs
+            actionHost={outputActionHost}
+            selectedActionOutput={
+              selectedNode
+                ? { nodeId: selectedNode, port: activePreviewPort }
+                : undefined
+            }
             runId={run.run_id}
             status={run.status}
             outputs={envelope.outputs || []}
             snapshot={envelope.snapshot_ref?.artifact_id}
             inputs={
-              multiInput || (!multiView && "image" in effectivePipeline.inputs)
-                ? effectivePipeline.inputs
+              multiInput || (!multiView && "image" in pipeline.inputs)
+                ? pipeline.inputs
                 : {}
             }
             disabled={{
