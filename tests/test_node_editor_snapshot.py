@@ -25,6 +25,15 @@ def test_snapshot_outputs_stay_fixed_when_current_index_changes(fixture, tmp_pat
     result = service.snapshot_reference(run.run_id, "segment", "mask", snapshot)
     assert result["reference"] == to_primitive(expected)
     assert result["source_snapshot"] == snapshot
+    assert result["frame_id"] is None
+    assert result["unit"] is None
+    binding = service.engine._plan(run).bindings["segment"].to_dict()
+    assert result["execution"] == {
+        "adapter": binding["adapter"],
+        "backend": binding.get("backend"),
+        "parameters": binding["parameters"],
+        "implementation_digest": binding["implementation_digest"],
+    }
     assert (
         service.snapshot_output(run.run_id, "segment", "mask", snapshot).data
         == service.engine.store.blob_path(expected).read_bytes()
@@ -143,3 +152,36 @@ def test_selected_snapshot_image_is_consumed_by_new_run_after_index_changes(fixt
         assert image.size == (2, 2)
         assert list(image.getdata()) == [(255, 0, 0)] * 4
     assert (store.root / "runs" / f"{source.run_id}.json").read_text() == "{}"
+
+
+def test_snapshot_reads_without_historical_adapter_registration(fixture):
+    from assets_generator.contracts import ContractError
+    from assets_generator.dag_adapters import AdapterRegistry
+
+    service, run, snapshot = fixture
+    expected = service.snapshot_reference(run.run_id, "segment", "mask", snapshot)
+    expected_bytes = service.snapshot_output(run.run_id, "segment", "mask", snapshot).data
+    expected_plan = service.plan(run.run_id)
+    service.engine.registry = AdapterRegistry()
+    assert service.snapshot_reference(run.run_id, "segment", "mask", snapshot) == expected
+    assert service.snapshot_output(run.run_id, "segment", "mask", snapshot).data == expected_bytes
+    assert service.plan(run.run_id) == expected_plan
+    with pytest.raises(ContractError):
+        service.engine._plan(run)
+
+
+def test_snapshot_reads_after_adapter_implementation_upgrade(fixture, monkeypatch):
+    from assets_generator import dag_adapters
+    from assets_generator.contracts import ContractError
+
+    service, run, snapshot = fixture
+    expected = service.snapshot_reference(run.run_id, "segment", "mask", snapshot)
+    monkeypatch.setattr(
+        dag_adapters, "adapter_implementation_digest", lambda _: "sha256:" + "a" * 64
+    )
+    assert service.snapshot_reference(run.run_id, "segment", "mask", snapshot) == expected
+    assert service.snapshot_output(run.run_id, "segment", "mask", snapshot).data.startswith(
+        b"\x89PNG"
+    )
+    with pytest.raises(ContractError, match="registered execution bindings"):
+        service.engine._plan(run)

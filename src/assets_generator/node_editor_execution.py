@@ -146,7 +146,9 @@ class NodeEditorExecution:
         """Read the verified persisted plan; never recover or dispatch a run."""
         self._owned(run_id)
         run = self.engine.repository.load(run_id)
-        return self.engine._plan(run).to_dict()
+        from .node_editor_snapshot import persisted_plan
+
+        return persisted_plan(self, run)
 
     def draft_from_run(self, run_id: str) -> dict[str, Any]:
         """Project verified execution configuration into a new, unexecuted draft."""
@@ -335,6 +337,8 @@ class NodeEditorExecution:
             "kind": identity.kind,
             "schema_name": identity.schema_name,
             "schema_version": identity.schema_version,
+            "frame_id": identity.identity_metadata.get("frame_id"),
+            "unit": identity.identity_metadata.get("unit"),
         }
 
     def snapshot_reference(

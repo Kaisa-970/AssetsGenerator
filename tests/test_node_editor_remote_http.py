@@ -239,6 +239,14 @@ def test_remote_asset_chain_through_editor_http(tmp_path, abandon_first, masked_
                 )
                 assert reference["source_run_id"] == run_id
                 assert reference["kind"] == "quality_report"
+                assert reference["frame_id"] is None
+                assert reference["unit"] is None
+                mesh_reference = get(f"/api/runs/{run_id}/references/canonical/mesh")
+                mesh_identity = repo.store.get_manifest(
+                    mesh_reference["reference"]["artifact_id"]
+                ).identity
+                assert mesh_reference["frame_id"] == mesh_identity.identity_metadata["frame_id"]
+                assert mesh_reference["unit"] == mesh_identity.identity_metadata["unit"]
                 report = get(report_path)
                 assert report["profile"] == "geometry-v1"
                 assert report["overall_status"] in {"pass", "warn"}
