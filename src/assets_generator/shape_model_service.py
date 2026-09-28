@@ -65,7 +65,7 @@ class ShapeModelService:
         }
         if not raw_capabilities:
             raise ValueError("capabilities must contain at least one capability")
-        self.parameters = {}
+        capability_parameters: dict[str, AdapterSpec] = {}
         capability_descriptors = []
         for capability_id, raw in raw_capabilities.items():
             if not isinstance(capability_id, str) or not capability_id.strip():
@@ -83,7 +83,7 @@ class ShapeModelService:
                 raise ValueError(
                     "all shape capabilities must share the service output frame and unit"
                 )
-            self.parameters[capability_id] = AdapterSpec(
+            capability_parameters[capability_id] = AdapterSpec(
                 "shape_model_service",
                 "1",
                 ("shape_generation@1",),
@@ -104,6 +104,10 @@ class ShapeModelService:
                 }
             )
         first = capability_descriptors[0]
+        # Preserve the v1 public attribute for single-capability deployments;
+        # multi-capability dispatch uses the private keyed map below.
+        self.parameters = capability_parameters[first["capability_id"]]
+        self._capability_parameters = capability_parameters
         self.identity = RemoteIdentity(
             service_id,
             sha256_bytes(
@@ -173,10 +177,12 @@ class ShapeModelService:
         capability_id = payload.get("capability_id") or "shape_generation@1"
         if capability_id == "shape_generation":
             capability_id = "shape_generation@1"
-        if capability_id not in self.parameters:
+        if capability_id not in self._capability_parameters:
             raise ValueError("invalid shape request")
         parameters = thaw(
-            self.parameters[capability_id].normalize_parameters(payload["parameters"])
+            self._capability_parameters[capability_id].normalize_parameters(
+                payload["parameters"]
+            )
         )
         with tempfile.TemporaryDirectory(prefix="inference-", dir=self.directory) as temporary:
             store = LocalArtifactStore(Path(temporary) / "store")
