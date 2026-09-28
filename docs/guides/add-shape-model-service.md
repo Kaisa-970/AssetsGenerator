@@ -53,6 +53,38 @@ service = ShapeModelService(
 service.serve()
 ```
 
+同一服务也可以暴露多个独立的 `shape_generation@1` 能力。每个键会成为一个
+`capability_id`，参数 schema 和默认值可以不同；工作台检测后可分别添加，分别生成
+Backend 身份。回调函数仍然是同一个 `infer`，可以依据参数或能力所需的默认配置选择模型：
+
+```python
+service = ShapeModelService(
+    # 其他参数与上例相同
+    capabilities={
+        "mesh_fast": {
+            "display_name": "快速网格",
+            "parameter_schema": {
+                "type": "object",
+                "properties": {"steps": {"type": "integer", "minimum": 1}},
+            },
+            "defaults": {"steps": 12},
+        },
+        "mesh_quality": {
+            "display_name": "高质量网格",
+            "parameter_schema": {
+                "type": "object",
+                "properties": {"steps": {"type": "integer", "minimum": 1}},
+            },
+            "defaults": {"steps": 48},
+        },
+    },
+)
+```
+
+首版要求这些能力共享服务级输出 `frame_id`、`up_axis` 和 `unit`，因为回调输出的
+GLB provenance 使用同一套坐标声明。不同坐标输出请拆成两个服务地址；未知 Operator
+仍只能检测和查看，不能直接进入标准发布链。
+
 `infer` 收到经过验证的 RGBA 文件路径和按 schema 规范化的参数，必须同步返回自包含 GLB 字节。纹理应内嵌，保留顶点颜色或已有材质；不要返回外部纹理 URL。原生坐标和单位必须如实填写，不能假定所有模型都输出 Y-up 或米。默认材质摘要不替换 GLB 内的真实外观。
 
 包装工具提供服务发现、参数声明、上传验证、SQLite 作业登记、按键查询、结果摘要与自动串行执行。首次添加时不执行推理。部署身份必须由部署者根据实际权重摘要、代码 revision、Python/依赖环境摘要、参数定义、默认值和坐标声明共同生成，并在部署内容变化时更新 `backend_digest`。编辑器只能核对服务前后声明和摘要是否一致，不能替部署者验证摘要是否真实，也无法发现“实际模型已更换但身份声明未更新”的情况。更换部署请使用新数据目录，并在编辑器重新检测和添加。
