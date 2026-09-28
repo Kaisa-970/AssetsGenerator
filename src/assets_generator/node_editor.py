@@ -129,11 +129,18 @@ class DraftEditor:
     def add_model_service(self, body: Any) -> dict[str, Any]:
         if not self.execution:
             raise ContractError("请使用 --store 启用执行服务后添加模型")
-        if not isinstance(body, dict) or set(body) != {"endpoint", "descriptor_digest"}:
+        if (
+            not isinstance(body, dict)
+            or set(body) - {"endpoint", "descriptor_digest", "capability_id"}
+            or not {"endpoint", "descriptor_digest"}.issubset(body)
+        ):
             raise ContractError("请先检测服务再确认添加")
         with self.lock:
             entry = self.model_services.add(
-                body["endpoint"], body["descriptor_digest"], self.execution
+                body["endpoint"],
+                body["descriptor_digest"],
+                self.execution,
+                body.get("capability_id"),
             )
             self.adapters = self.execution.engine.registry
             return {

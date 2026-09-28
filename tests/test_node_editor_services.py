@@ -266,3 +266,63 @@ def test_active_command_refuses_install_without_persisting(tmp_path, monkeypatch
             stop.set()
             worker.join()
             execution.close()
+
+
+def test_install_each_known_capability_creates_independent_backend(tmp_path, monkeypatch):
+    from assets_generator.model_service_descriptor import validate_descriptor
+
+    base = detected("Multi", "c")
+    flat = base["descriptor"]
+    multi = {
+        key: flat[key] for key in ("schema_version", "display_name", "service_id", "backend_digest")
+    }
+    multi["capabilities"] = [
+        {
+            "capability_id": "mesh_fast",
+            "operator": "shape_generation@1",
+            "transport": "remote_jobs@1",
+            "parameter_schema": flat["parameter_schema"],
+            "defaults": flat["defaults"],
+        },
+        {
+            "capability_id": "mesh_quality",
+            "operator": "shape_generation@1",
+            "transport": "remote_jobs@1",
+            "parameter_schema": {
+                "type": "object",
+                "properties": {"steps": {"type": "integer", "minimum": 1}},
+            },
+            "defaults": {"steps": 20},
+        },
+    ]
+    normalized = validate_descriptor(multi)
+    detection = {
+        "endpoint": base["endpoint"],
+        "descriptor": normalized,
+        "descriptor_digest": sha256_bytes(canonical_json_bytes(normalized)),
+    }
+    monkeypatch.setattr(ModelServices, "detect", lambda *args: detection)
+    with DagRepository(LocalArtifactStore(tmp_path / "store"), tmp_path / "runtime") as repo:
+        execution = NodeEditorExecution(DagEngine(repo, AdapterRegistry()))
+        editor = DraftEditor(tmp_path / "editor", execution=execution)
+        first = editor.add_model_service(
+            {
+                "endpoint": detection["endpoint"],
+                "descriptor_digest": detection["descriptor_digest"],
+                "capability_id": "mesh_fast",
+            }
+        )
+        second = editor.add_model_service(
+            {
+                "endpoint": detection["endpoint"],
+                "descriptor_digest": detection["descriptor_digest"],
+                "capability_id": "mesh_quality",
+            }
+        )
+        assert first["backend"] != second["backend"]
+        assert {item["capability_id"] for item in editor.catalog()["model_services"]} == {
+            "mesh_fast",
+            "mesh_quality",
+        }
+        assert len(execution.engine.registry.backend_catalog()) == 2
+        execution.close()

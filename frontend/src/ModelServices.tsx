@@ -74,7 +74,9 @@ export function ModelServices({
   const [open, setOpen] = useState(false);
   const [endpoint, setEndpoint] = useState("");
   const [detection, setDetection] = useState<Detection>();
+  const [selectedCapabilityId, setSelectedCapabilityId] = useState<string>();
   const [busy, setBusy] = useState<"detect" | "add">();
+  const [addingCapability, setAddingCapability] = useState<string>();
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const request = useRef({
@@ -91,6 +93,7 @@ export function ModelServices({
     request.current.sequence++;
     request.current.controller?.abort();
     setDetection(undefined);
+    setSelectedCapabilityId(undefined);
     setBusy(undefined);
     setError("");
     setNotice("");
@@ -116,24 +119,27 @@ export function ModelServices({
       if (sequence === request.current.sequence) setBusy(undefined);
     }
   };
-  const add = async () => {
-    if (!detection) return;
+  const add = async (capabilityId = selectedCapabilityId) => {
+    if (!detection || !capabilityId) return;
     setBusy("add");
     setError("");
     try {
       const value = await post("/api/model-services", {
         endpoint: detection.endpoint,
         descriptor_digest: detection.descriptor_digest,
+        capability_id: capabilityId,
       });
       onCatalog(value.catalog);
       setOpen(false);
       setNotice(`已添加 ${value.display_name}，点击或拖动下方模型加入画布。`);
       setDetection(undefined);
+      setSelectedCapabilityId(undefined);
     } catch (e) {
       setError(String(e));
       // A changed deployment must be detected again before confirming.
       setDetection(undefined);
     } finally {
+      setAddingCapability(undefined);
       setBusy(undefined);
     }
   };
@@ -254,14 +260,15 @@ export function ModelServices({
                       )}
                     </div>
                     <button
-                      disabled={!operator || !!busy || index !== 0}
-                      onClick={() => void add()}
+                      disabled={!operator || !!busy}
+                      onClick={() => {
+                        const capabilityId =
+                          capability.capability_id || capability.operator;
+                        setSelectedCapabilityId(capabilityId);
+                        void add(capabilityId);
+                      }}
                     >
-                      {index !== 0
-                        ? "暂不支持单独安装此能力"
-                        : busy === "add"
-                          ? "正在添加…"
-                          : "确认添加模型"}
+                      {busy === "add" ? "正在添加…" : "添加此能力"}
                     </button>
                   </article>
                 );
@@ -281,7 +288,7 @@ export function ModelServices({
             <button
               className="catalog-item"
               key={key}
-              draggable={index === 0 && Boolean(operator)}
+              draggable={Boolean(operator)}
               onDragStart={(e) => {
                 e.dataTransfer.setData(
                   "application/model-service",
@@ -294,12 +301,12 @@ export function ModelServices({
                 e.dataTransfer.effectAllowed = "move";
               }}
               onClick={() =>
-                index === 0 && operator && onAddNode(operator, service.backend)
+                operator && onAddNode(operator, service.backend)
               }
             >
               <strong>{capability.display_name || service.display_name}</strong>
               <span>
-                {index === 0 && operator
+                {operator
                   ? "模型服务 · 点击或拖入画布"
                   : "仅查看 · 当前版本暂不可执行"}
               </span>

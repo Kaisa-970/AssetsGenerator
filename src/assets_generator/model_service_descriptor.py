@@ -103,6 +103,12 @@ def validate_descriptor(raw: object) -> dict[str, Any]:
             "service_id",
             "backend_digest",
             "capabilities",
+            # Normalized descriptors persisted by the editor also retain the
+            # mirrored legacy fields for old readers.
+            "operator",
+            "transport",
+            "parameter_schema",
+            "defaults",
         }
         if set(raw) - (base_fields | _OPTIONAL_METADATA):
             raise ContractError("model service descriptor has unknown fields")
@@ -123,10 +129,7 @@ def validate_descriptor(raw: object) -> dict[str, Any]:
             "parameter_schema": first["parameter_schema"],
             "defaults": first["defaults"],
             "capabilities": checked_caps,
-            **{
-                field: raw.get(field, first.get(field, "unknown"))
-                for field in _OPTIONAL_METADATA
-            },
+            **{field: raw.get(field, first.get(field, "unknown")) for field in _OPTIONAL_METADATA},
         }
 
     if (
@@ -141,9 +144,7 @@ def validate_descriptor(raw: object) -> dict[str, Any]:
     if "capabilities" in raw:
         # The mirrored fields are used by legacy callers. They must still be a
         # valid capability, even when the descriptor also advertises unknowns.
-        _validate_capability(
-            {key: raw[key] for key in _CAPABILITY_FIELDS if key in raw}, 0
-        )
+        _validate_capability({key: raw[key] for key in _CAPABILITY_FIELDS if key in raw}, 0)
     elif raw["operator"] != "shape_generation@1" or raw["transport"] != "remote_jobs@1":
         raise ContractError("unsupported model service Operator or transport")
     name = raw["display_name"]
@@ -184,6 +185,33 @@ def validate_descriptor(raw: object) -> dict[str, Any]:
     return value  # type: ignore[no-any-return]
 
 
+def select_capability(
+    descriptor: dict[str, Any], capability_id: str | None = None
+) -> dict[str, Any]:
+    """Return one normalized capability from a validated descriptor.
+
+    Legacy flat descriptors expose a single capability whose identity is the
+    operator name. Multi-capability descriptors must be selected explicitly;
+    silently using the first capability would make Backend identity ambiguous.
+    """
+    capabilities = descriptor.get("capabilities")
+    if not capabilities:
+        selected = {key: descriptor[key] for key in _CAPABILITY_FIELDS if key in descriptor}
+        selected.setdefault("capability_id", descriptor["operator"])
+        return selected
+    if capability_id is None:
+        raise ContractError("model service capability_id is required")
+    for item in capabilities:
+        if item["capability_id"] == capability_id:
+            return dict(item)
+    raise ContractError(f"unknown model service capability_id {capability_id!r}")
+
+
+def capability_digest(descriptor: dict[str, Any], capability_id: str | None = None) -> str:
+    """Digest the selected capability, independent of sibling capabilities."""
+    return sha256_bytes(canonical_json_bytes(select_capability(descriptor, capability_id)))
+
+
 def detect_service(endpoint: str) -> dict[str, Any]:
     """Read only; bounded GET, no redirects, uploads, queue claims or inference."""
     client = RemoteJobClient(endpoint, max_response_bytes=64 * 1024)
@@ -196,22 +224,23 @@ def detect_service(endpoint: str) -> dict[str, Any]:
 
 
 class DiscoveredShapeAdapter(RemoteShapeAdapter):
-    """Reuse verified RGBA/GLB import while forwarding declared model parameters."""
+    """Remote adapter bound to one explicitly selected service capability."""
 
-    def __init__(self, endpoint: str, descriptor: object):
+    def __init__(self, endpoint: str, descriptor: object, capability_id: str | None = None):
         checked = validate_descriptor(descriptor)
-        if checked["operator"] != "shape_generation@1":
+        selected = select_capability(checked, capability_id)
+        if selected["operator"] != "shape_generation@1":
             raise ContractError(
-                f"model service capability {checked['operator']!r} has no executable adapter"
+                f"model service capability {selected['operator']!r} has no executable adapter"
             )
-        if checked["transport"] != "remote_jobs@1":
+        if selected["transport"] != "remote_jobs@1":
             raise ContractError(
-                f"model service transport {checked['transport']!r} has no executable adapter"
+                f"model service transport {selected['transport']!r} has no executable adapter"
             )
         identity = RemoteIdentity(checked["service_id"], checked["backend_digest"])
         super().__init__(endpoint, identity)
         fixed = {key: thaw(self.spec.defaults[key]) for key in RESERVED_PARAMETERS}
-        schema = checked["parameter_schema"]
+        schema = selected["parameter_schema"]
         self._spec = AdapterSpec(
             "discovered_shape",
             "1",
@@ -224,8 +253,10 @@ class DiscoveredShapeAdapter(RemoteShapeAdapter):
                     **{key: {"type": "string", "enum": [value]} for key, value in fixed.items()},
                 },
             },
-            defaults={**checked["defaults"], **fixed},
+            defaults={**selected["defaults"], **fixed},
         )
+        self.capability_id = selected["capability_id"]
+        self.capability_digest = capability_digest(checked, self.capability_id)
 
     def prepare_payload(self, context: NodeExecutionContext) -> dict[str, Any]:
         parameters = self.spec.normalize_parameters(context.parameters)
