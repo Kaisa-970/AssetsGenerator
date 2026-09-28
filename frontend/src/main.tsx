@@ -525,6 +525,7 @@ function App() {
     layoutRef.current = nextLayout;
     setLayout(nextLayout);
     setSelected(id);
+    setInspectorOpen(true);
     // Adding a node is an editing action. Bring the new node into the
     // workbench viewport so its model selector and primary parameters are
     // immediately usable instead of leaving the node below the fold.
@@ -578,6 +579,7 @@ function App() {
       },
     }));
     setSelected(inputId(name));
+    setInspectorOpen(true);
     setNodePaletteOpen(false);
     const selectedNode = selected
       ? flow.getNodes().find((item) => item.id === selected)

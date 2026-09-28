@@ -181,6 +181,7 @@ test("detect, add and create an explicitly bound model node without losing the g
   expect(requests[1]).toEqual({
     endpoint: service.endpoint,
     descriptor_digest: service.descriptor_digest,
+    capability_id: "shape_generation",
   });
   const card = page.getByRole("button", { name: /My mesh model.*模型服务/ });
   await expect(card).toContainText("triposr_glb_native");
@@ -287,6 +288,8 @@ test("RGBA preset is sourced from shape contract and connects a fresh image inpu
 }) => {
   const { compiles } = await setup(page);
   await page.getByLabel("添加输入节点").selectOption("rgba");
+  if (await page.getByRole("button", { name: "展开属性面板", exact: true }).count())
+    await page.getByRole("button", { name: "展开属性面板", exact: true }).click();
   // Adding an input already selects it; do not click overlapping canvas nodes.
   await page
     .getByLabel("输入格式快捷设置")
