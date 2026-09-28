@@ -66,6 +66,15 @@ async function fixture(
         kind,
         schema_name: "png",
         schema_version: "1.0",
+        execution: {
+          adapter: "shape@1",
+          backend: `${run}-model`,
+          parameters: {
+            seed: run === "dag_A" ? 17 : 29,
+            service_id: `${run}-service`,
+          },
+          implementation_digest: `${run}-implementation`,
+        },
       };
     } else if (path.includes("/snapshot-output/")) {
       reads.push(url.pathname + url.search);
@@ -142,6 +151,14 @@ test("two pinned previews never replace explicit A input even after current snap
     b = dialog.getByRole("article", { name: "比较 B" });
   await expect(a.getByRole("img")).toBeVisible();
   await expect(b.getByRole("img")).toBeVisible();
+  await expect(a).toContainText("模型 / 实现：dag_A-model");
+  await expect(a).toContainText("生成服务：dag_A-service");
+  await expect(b).toContainText("生成服务：dag_B-service");
+  await expect(b).toContainText("模型 / 实现：dag_B-model");
+  await a.getByText("本次运行参数", { exact: true }).click();
+  await b.getByText("本次运行参数", { exact: true }).click();
+  await expect(a.locator("pre")).toContainText('"seed": 17');
+  await expect(b.locator("pre")).toContainText('"seed": 29');
   await a
     .getByRole("button", { name: "用作下游输入 image · A", exact: true })
     .click();
@@ -214,4 +231,72 @@ test("mask previews without a matching scalar input do not offer downstream bind
   await expect(
     dialog.getByRole("button", { name: /用作下游输入/ }),
   ).toHaveCount(0);
+});
+
+test("mesh comparison keeps independent inline previews", async ({ page }) => {
+  const state = await fixture(page, "triangle_mesh");
+  await add(page, "dag_A", "A");
+  await add(page, "dag_B", "B");
+  await page.getByRole("button", { name: "比较两次结果", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "比较两次结果" });
+  const a = dialog.getByRole("article", { name: "比较 A" });
+  const b = dialog.getByRole("article", { name: "比较 B" });
+  for (const [card, side] of [
+    [a, "A"],
+    [b, "B"],
+  ] as const) {
+    await card
+      .getByRole("button", { name: `预览模型 · ${side}`, exact: true })
+      .click();
+    await expect(
+      card.getByRole("region", { name: "模型预览", exact: true }),
+    ).toBeVisible();
+    // Deliberately invalid GLB: failure remains local to its card.
+    await expect(card.getByRole("status")).toContainText("预览失败");
+  }
+  await expect(
+    page.getByRole("dialog", { name: "模型预览", exact: true }),
+  ).toHaveCount(0);
+  await a.getByRole("button", { name: "关闭模型预览" }).click();
+  await expect(a.getByRole("region", { name: "模型预览" })).toHaveCount(0);
+  await expect(b.getByRole("region", { name: "模型预览" })).toBeVisible();
+  expect(state.starts).toHaveLength(0);
+  expect(state.prepared).toHaveLength(0);
+});
+
+test("comparison overflow scrolls inside its window while close stays visible", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await fixture(page);
+  await add(page, "dag_A", "A");
+  await add(page, "dag_B", "B");
+  await page.getByRole("button", { name: "比较两次结果", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "比较两次结果" });
+  const content = dialog.getByRole("region", { name: "比较两份结果" });
+  await dialog
+    .getByRole("article", { name: "比较 A" })
+    .getByText("本次运行参数", { exact: true })
+    .click();
+  // Constrain available height to exercise the same overflow as a tall mesh/parameter card.
+  await dialog.evaluate((el) => {
+    el.style.height = "400px";
+  });
+  await expect
+    .poll(() => content.evaluate((el) => el.scrollHeight > el.clientHeight))
+    .toBe(true);
+  expect(await content.evaluate((el) => getComputedStyle(el).overflowY)).toBe(
+    "auto",
+  );
+  const remove = dialog.getByRole("button", { name: "移除比较项 · B" });
+  await remove.scrollIntoViewIfNeeded();
+  const box = (await remove.boundingBox())!;
+  const outer = (await dialog.boundingBox())!;
+  expect(box.y + box.height).toBeLessThanOrEqual(outer.y + outer.height);
+  await expect(
+    dialog.getByRole("button", { name: "关闭比较", exact: true }),
+  ).toBeInViewport();
+  await dialog.getByRole("button", { name: "关闭比较", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByLabel("选择运行")).toHaveValue("dag_B");
 });

@@ -1,3 +1,5 @@
+import { NodePaletteDialog } from "./NodePaletteDialog";
+import { PanelResizeHandle } from "./PanelResizeHandle";
 import {
   emptyParameterDraft,
   pendingParameterNodes,
@@ -23,16 +25,14 @@ import {
   Background,
   Controls,
   MiniMap,
-  Handle,
-  Position,
   useReactFlow,
-  type NodeProps,
   type Connection,
   type Node,
 } from "@xyflow/react";
 import { load, dump } from "js-yaml";
 import {
   type Catalog,
+  backendLabel,
   type Pipeline,
   type Layout,
   type Port,
@@ -53,52 +53,30 @@ import {
 import "@xyflow/react/dist/style.css";
 import "./style.css";
 import { ExecutionPanel } from "./ExecutionPanel";
-type Data = Record<string, unknown> & {
-  label: string;
-  operator: string;
-  inputs: Record<string, Port>;
-  outputs: Record<string, Port>;
-  status?: string;
-};
-function OperatorNode({ data, selected }: NodeProps<Node<Data>>) {
-  return (
-    <div className={`op-node ${selected ? "selected" : ""}`}>
-      <div className="node-top">
-        <span>{data.operator === "Pipeline input" ? "输入" : "算子"}</span>
-        {data.status && <em>历史 · {executionStatus(data.status)}</em>}
-      </div>
-      <strong>{data.label}</strong>
-      <small>{data.operator}</small>
-      <div className="ports">
-        {Object.entries(data.inputs).map(([name, p]) => (
-          <div className="port in" key={name}>
-            <Handle type="target" position={Position.Left} id={name} />
-            <b>{name}</b>
-            <small>
-              {portKinds(p).join(" | ")} · {p.cardinality || "one"}
-              {p.schema_name
-                ? ` · ${p.schema_name}@${p.schema_version || "未声明版本"}`
-                : " · 格式未声明"}
-            </small>
-          </div>
-        ))}
-        {Object.entries(data.outputs).map(([name, p]) => (
-          <div className="port out" key={name}>
-            <Handle type="source" position={Position.Right} id={name} />
-            <b>{name}</b>
-            <small>
-              {portKinds(p).join(" | ")} · {p.cardinality || "one"}
-              {p.schema_name
-                ? ` · ${p.schema_name}@${p.schema_version || "未声明版本"}`
-                : " · 格式未声明"}
-            </small>
-          </div>
-        ))}
-      </div>
-    </div>
+import {
+  BlueprintNode,
+  blueprintBindingLabel,
+  blueprintKindLabel,
+  readableOperatorLabel,
+  type BlueprintNodeData,
+} from "./BlueprintNode";
+import { HistoryResizeHandle } from "./HistoryResizeHandle";
+import { executionFailureSummary, type NodeState } from "./executionApi";
+type Data = BlueprintNodeData;
+const nodeTypes = { operator: BlueprintNode };
+function InputHost({
+  name,
+  register,
+}: {
+  name: string;
+  register: (name: string, element: HTMLDivElement | null) => void;
+}) {
+  const ref = useCallback(
+    (element: HTMLDivElement | null) => register(name, element),
+    [name, register],
   );
+  return <div ref={ref} aria-label={`输入 ${name} 的值`} />;
 }
-const nodeTypes = { operator: OperatorNode };
 const initial: Pipeline = {
   pipeline: "my_asset_pipeline",
   version: "1",
@@ -122,6 +100,7 @@ function App() {
     templates: [],
   });
   const [pipeline, setPipeline] = useState<Pipeline>(initial);
+  const [workspaceRevision, setWorkspaceRevision] = useState(0);
   const [layout, setLayout] = useState<Layout>({});
   const [selected, setSelected] = useState<string>();
   const [selectedEdges, setSelectedEdges] = useState<Set<string>>(new Set());
@@ -131,6 +110,9 @@ function App() {
   layoutRef.current = layout;
   const [connectionIssue, setConnectionIssue] = useState("");
   const [message, setMessage] = useState("正在读取节点目录…");
+  const [pendingLoad, setPendingLoad] = useState<
+    { pipeline: Pipeline; layout?: Layout; label: string } | undefined
+  >();
   const [draft, setDraft] = useState("my-pipeline");
   const [drafts, setDrafts] = useState<string[]>([]);
   const [result, setResult] = useState<unknown>();
@@ -143,11 +125,37 @@ function App() {
   }>({ sequence: 0 });
   const [filter, setFilter] = useState("");
   const [registeredOnly, setRegisteredOnly] = useState(false);
+  const [catalogOpen, setCatalogOpen] = useState(true);
+  const [nodePaletteOpen, setNodePaletteOpen] = useState(false);
+  const [nodePaletteFilter, setNodePaletteFilter] = useState("");
+  const [nodePalettePosition, setNodePalettePosition] = useState<
+    { x: number; y: number } | undefined
+  >();
+  const nodePaletteTrigger = useRef<HTMLButtonElement>(null);
+  const [inspectorOpen, setInspectorOpen] = useState(true);
+  const [inspectorWidth, setInspectorWidth] = useState(300);
   const [nodePreviewOpen, setNodePreviewOpen] = useState(true);
+  const [inputHosts, setInputHosts] = useState<Record<string, HTMLElement>>({});
+  const [controlsHost, setControlsHost] = useState<HTMLDivElement | null>(null);
+  const registerInputHost = useCallback(
+    (name: string, element: HTMLDivElement | null) => {
+      setInputHosts((previous) => {
+        if (previous[name] === element || (!element && !previous[name]))
+          return previous;
+        const next = { ...previous };
+        if (element) next[name] = element;
+        else delete next[name];
+        return next;
+      });
+    },
+    [],
+  );
   const [previewHost, setPreviewHost] = useState<HTMLDivElement | null>(null);
   const [parameterDrafts, setParameterDrafts] = useState<
     Record<string, ParameterDraft>
   >({});
+  const parameterDraftsRef = useRef(parameterDrafts);
+  parameterDraftsRef.current = parameterDrafts;
   const pendingParameterIds = pendingParameterNodes(
     parameterDrafts,
     pipeline.nodes,
@@ -187,6 +195,28 @@ function App() {
     }));
   const [inputSpec, setInputSpec] = useState("{}");
   const [tab, setTab] = useState("inspector");
+  const inspectorRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (tab === "inspector") inspectorRef.current?.scrollTo({ top: 0 });
+  }, [selected, tab]);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyHeight, setHistoryHeight] = useState(300);
+  const [minimapOpen, setMinimapOpen] = useState(false);
+  const [panelRestore, setPanelRestore] = useState<{
+    catalog: boolean;
+    inspector: boolean;
+    preview: boolean;
+    history: boolean;
+  }>();
+  const [runView, setRunView] = useState<{
+    runId: string;
+    status: string;
+    outputs: { node_id: string; port: string; kind?: string }[];
+    states: Record<string, { status: string; failureSummary?: string }>;
+  }>();
+  const [nodeFreshness, setNodeFreshness] = useState<Record<string, string>>(
+    {},
+  );
   const [run, setRun] = useState<Record<string, unknown>>();
   const input = useRef<HTMLInputElement>(null);
   const runInput = useRef<HTMLInputElement>(null);
@@ -268,6 +298,31 @@ function App() {
       ),
     );
   }, [selected, pipeline]);
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const editing =
+        target?.isContentEditable ||
+        target?.tagName === "INPUT" ||
+        target?.tagName === "TEXTAREA" ||
+        target?.tagName === "SELECT";
+      if (event.key === "Escape" && nodePaletteOpen) {
+        event.preventDefault();
+        setNodePaletteOpen(false);
+        return;
+      }
+      if (
+        event.shiftKey &&
+        (event.key.toLowerCase() === "a" || event.code === "KeyA") &&
+        !editing
+      ) {
+        event.preventDefault();
+        openNodePalette();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [nodePaletteOpen]);
   const guarded = async (action: () => Promise<void>) => {
     setBusy(true);
     try {
@@ -282,11 +337,25 @@ function App() {
     if (pendingParameterIdsRef.current.length)
       throw Error("存在尚未应用的参数；请先应用或放弃编辑，再载入其他画布。");
     update(validateDocument(p));
+    setWorkspaceRevision((revision) => revision + 1);
     setParameterDrafts({});
     setLayout(l);
-    setSelected(undefined);
+    const firstInput = Object.keys(p.inputs)[0];
+    setSelected(firstInput ? inputId(firstInput) : undefined);
     setRun(undefined);
-    setTimeout(() => flow.fitView({ padding: 0.18 }), 50);
+    setTimeout(() => {
+      // Open at the first editable step. Fitting every input/downstream node
+      // makes multi-input templates too small to operate; overview is explicit.
+      const focusId = firstInput
+        ? inputId(firstInput)
+        : Object.keys(p.nodes)[0];
+      void flow.fitView({
+        nodes: focusId ? [{ id: focusId }] : undefined,
+        padding: 0.15,
+        minZoom: 0.85,
+        maxZoom: 1,
+      });
+    }, 80);
   };
   const addOperator = (
     key: string,
@@ -311,10 +380,40 @@ function App() {
       setMessage("模型实现尚未注册，请重新检测服务。");
       return;
     }
-    update({
-      ...pipeline,
+    const existingNodes = flow.getNodes();
+    const selectedNode = selected
+      ? existingNodes.find((item) => item.id === selected)
+      : undefined;
+    const placed = [
+      ...existingNodes.map((item) => item.position),
+      ...Object.values(layoutRef.current),
+    ];
+    const rightmost = placed.reduce(
+      (maximum, item) => Math.max(maximum, item.x),
+      0,
+    );
+    const fallbackPosition = selectedNode
+      ? {
+          x: selectedNode.position.x + (selectedNode.measured?.width || 340) + 80,
+          y: Math.max(80, selectedNode.position.y),
+        }
+      : {
+          x: Math.max(
+            rightmost + 420,
+            flow.screenToFlowPosition({
+              x: window.innerWidth / 2,
+              y: Math.max(220, window.innerHeight / 2 - 150),
+            }).x,
+          ),
+          y: flow.screenToFlowPosition({
+            x: window.innerWidth / 2,
+            y: Math.max(220, window.innerHeight / 2 - 150),
+          }).y,
+        };
+    update((previous) => ({
+      ...previous,
       nodes: {
-        ...pipeline.nodes,
+        ...previous.nodes,
         [id]: {
           operator: key,
           ...(adapter
@@ -322,30 +421,90 @@ function App() {
                 ...(backend
                   ? { backend }
                   : { adapter: `${adapter.name}@${adapter.version}` }),
-                parameters: adapter.defaults || {},
+                parameters: {},
               }
             : {}),
           inputs: {},
         },
       },
-    });
-    setLayout({
-      ...layout,
-      [id]: position || {
-        x: Math.max(
-          30,
-          ...flow
-            .getNodes()
-            .map(
-              (node) => node.position.x + (node.measured?.width || 300) + 80,
-            ),
-        ),
-        y: 80,
-      },
-    });
+    }));
+    const nextLayout = {
+      ...layoutRef.current,
+      [id]: position || fallbackPosition,
+    };
+    layoutRef.current = nextLayout;
+    setLayout(nextLayout);
     setSelected(id);
-    if (!position)
-      setTimeout(() => flow.fitView({ padding: 0.18, maxZoom: 1 }), 50);
+    // Adding a node is an editing action. Bring the new node into the
+    // workbench viewport so its model selector and primary parameters are
+    // immediately usable instead of leaving the node below the fold.
+    window.setTimeout(() => {
+      void flow.fitView({
+        nodes: [{ id }],
+        padding: 0.18,
+        minZoom: 0.75,
+        maxZoom: 1,
+      });
+    }, 0);
+  };
+  const addInputNode = (kind: "rgb" | "rgba" | "mask" | "text") => {
+    const sources: Record<string, { name: string; port?: Port }> = {
+      rgb: {
+        name: "image",
+        port: catalog.operators["encode_png@1"]?.inputs.image,
+      },
+      rgba: {
+        name: "image",
+        port: catalog.operators["shape_generation@1"]?.inputs.image,
+      },
+      mask: {
+        name: "mask",
+        port: catalog.operators["apply_binary_mask@1"]?.inputs.mask,
+      },
+      text: {
+        name: "text",
+        port: catalog.operators["text_segmentation@2"]?.inputs.text,
+      },
+    };
+    const choice = sources[kind];
+    if (!choice?.port) {
+      setMessage("当前目录没有这个输入类型的契约。");
+      return;
+    }
+    let name = choice.name,
+      i = 2;
+    while (pipelineRef.current.inputs[name]) name = `${choice.name}_${i++}`;
+    update((previous) => ({
+      ...previous,
+      inputs: {
+        ...previous.inputs,
+        [name]: structuredClone(choice.port!),
+      },
+    }));
+    setSelected(inputId(name));
+    setNodePaletteOpen(false);
+    const selectedNode = selected
+      ? flow.getNodes().find((item) => item.id === selected)
+      : undefined;
+    const nextLayout = {
+      ...layoutRef.current,
+      [inputId(name)]: selectedNode
+        ? {
+            x: selectedNode.position.x - 420,
+            y: Math.max(80, selectedNode.position.y),
+          }
+        : flow.screenToFlowPosition({
+            x: Math.max(180, window.innerWidth / 2 - 420),
+            y: Math.max(220, window.innerHeight / 2 - 150),
+          }),
+    };
+    layoutRef.current = nextLayout;
+    setLayout(nextLayout);
+  };
+  const openNodePalette = (position?: { x: number; y: number }) => {
+    setNodePalettePosition(position);
+    setNodePaletteFilter("");
+    setNodePaletteOpen(true);
   };
   const connect = (c: Connection) => {
     if (!c.sourceHandle || !c.targetHandle) return;
@@ -361,14 +520,18 @@ function App() {
       setMessage(error);
       setConnectionIssue(error);
       if (c.source.startsWith("input:")) {
+        setInspectorOpen(true);
         setSelected(c.source);
         setTab("inspector");
       }
       return;
     }
     setConnectionIssue("");
+    const previousBinding = pipeline.nodes[c.target]?.inputs[c.targetHandle];
     update(bind(pipeline, c.source, c.sourceHandle, c.target, c.targetHandle));
-    setMessage("已连接。跨输入来源与空间关系由后端编译及运行校验。");
+    setMessage(
+      `${previousBinding ? `已替换 ${c.target}.${c.targetHandle} 的来源（原为 ${blueprintBindingLabel(previousBinding)}）` : "已连接"}。跨输入来源与空间关系由后端编译及运行校验。`,
+    );
   };
   const selectedInputName = selected?.startsWith("input:")
     ? selected.slice(6)
@@ -376,19 +539,31 @@ function App() {
   const selectedInput = selectedInputName
     ? pipeline.inputs[selectedInputName]
     : undefined;
-  const states = (
-    run?.dag as { node_states?: Record<string, { status: string }> } | undefined
-  )?.node_states;
+  const states =
+    runView?.states ||
+    (
+      run?.dag as
+        | {
+            node_states?: Record<
+              string,
+              { status: string; failureSummary?: string }
+            >;
+          }
+        | undefined
+    )?.node_states;
   const declaredNodes = useMemo<Node<Data>[]>(() => {
     const positions = dependencyLayout(pipeline);
     return [
       ...Object.entries(pipeline.inputs).map(([id, p]) => ({
         id: inputId(id),
         type: "operator",
+        dragHandle: ".blueprint-node-drag-handle",
         position: layout[inputId(id)] || positions[inputId(id)],
         selected: selected === inputId(id),
         data: {
+          nodeId: inputId(id),
           label: id,
+          inputSlot: <InputHost name={id} register={registerInputHost} />,
           operator: "Pipeline input",
           inputs: {},
           outputs: { value: p },
@@ -397,20 +572,139 @@ function App() {
       ...Object.entries(pipeline.nodes).map(([id, n]) => ({
         id,
         type: "operator",
+        dragHandle: ".blueprint-node-drag-handle",
         position: layout[id] || positions[id],
         selected: selected === id,
         data: {
+          nodeId: id,
           label: id,
+          operatorLabel: readableOperatorLabel(
+            catalog.operators[n.operator]?.name || n.operator,
+          ),
+          parameterSchema: (() => {
+            const candidates = (
+              n.backend
+                ? (catalog.backends || []).filter(
+                    (a) => a.backend === n.backend,
+                  )
+                : catalog.adapters
+            ).filter((a) => a.operators.includes(n.operator));
+            return n.adapter
+              ? candidates.find((a) => `${a.name}@${a.version}` === n.adapter)
+              : candidates.length === 1
+                ? candidates[0]
+                : undefined;
+          })(),
+          parameters: n.parameters || {},
+          drafts: parameterDrafts[id]?.fields || {},
+          errors: parameterDrafts[id]?.errors || {},
+          configurationBlockedReason:
+            parameterDrafts[id]?.json !== undefined
+              ? "高级 JSON 尚未应用，请在属性中应用或放弃。"
+              : undefined,
+          setDraft: (value: React.SetStateAction<Record<string, string>>) =>
+            changeParameterDraft(id, (draft) => ({
+              ...draft,
+              fields: typeof value === "function" ? value(draft.fields) : value,
+            })),
+          setErrors: (value: React.SetStateAction<Record<string, string>>) =>
+            changeParameterDraft(id, (draft) => ({
+              ...draft,
+              errors: typeof value === "function" ? value(draft.errors) : value,
+            })),
+          onParametersChange: (value: Record<string, unknown>) =>
+            update((previous) => ({
+              ...previous,
+              nodes: {
+                ...previous.nodes,
+                [id]: { ...previous.nodes[id], parameters: value },
+              },
+            })),
+          backend: n.backend,
+          adapterId: n.adapter,
+          adapters: (n.backend
+            ? (catalog.backends || []).filter((a) => a.backend === n.backend)
+            : catalog.adapters
+          )
+            .filter((a) => a.operators.includes(n.operator))
+            .map((a) => ({
+              value: `${a.name}@${a.version}`,
+              label: `${a.name}@${a.version}`,
+            })),
+          onAdapterChange: (value: string) =>
+            update((previous) => ({
+              ...previous,
+              nodes: {
+                ...previous.nodes,
+                [id]: selectAdapter(previous.nodes[id], value, catalog),
+              },
+            })),
+          backends: [
+            ...new Set(
+              (catalog.backends || [])
+                .filter((b) => b.operators.includes(n.operator))
+                .map((b) => b.backend),
+            ),
+          ].map((backend) => ({
+            value: backend,
+            label: backendLabel(catalog, backend),
+          })),
+          onBackendChange: (catalog.backends || []).some((b) =>
+            b.operators.includes(n.operator),
+          )
+            ? (value: string) =>
+                update((previous) => ({
+                  ...previous,
+                  nodes: {
+                    ...previous.nodes,
+                    [id]: selectBackend(previous.nodes[id], value, catalog),
+                  },
+                }))
+            : undefined,
           operator: n.operator,
           inputs: catalog.operators[n.operator]?.inputs || {},
           outputs: catalog.operators[n.operator]?.outputs || {},
+          inputBindings: n.inputs || {},
           status: states?.[id]?.status,
+          failureSummary: states?.[id]?.failureSummary,
+          statusSource:
+            runView?.runId || (run?.run_id ? String(run.run_id) : undefined),
+          freshness: nodeFreshness[id],
+          outputSummary: runView?.outputs.filter((output) => output.node_id === id),
+          onViewOutputs: runView
+            ? () => {
+                setSelected(id);
+                setNodePreviewOpen(true);
+                setMessage(`正在查看节点 ${id} 的输出；结果来自运行 ${runView.runId}。`);
+              }
+            : undefined,
         },
       })),
     ];
-  }, [pipeline, layout, selected, catalog, states]);
+  }, [
+    pipeline,
+    layout,
+    selected,
+    catalog,
+    states,
+    parameterDrafts,
+    runView?.runId,
+    run?.run_id,
+    runView?.outputs,
+    nodeFreshness,
+    registerInputHost,
+    update,
+  ]);
   const [nodes, setNodes] = useState<Node<Data>[]>([]);
-  useEffect(() => setNodes(declaredNodes), [declaredNodes]);
+  useEffect(() => {
+    setNodes((previous) => {
+      const existing = new Map(previous.map((node) => [node.id, node]));
+      return declaredNodes.map((node) => ({
+        ...existing.get(node.id),
+        ...node,
+      }));
+    });
+  }, [declaredNodes]);
   const edges = useMemo(
     () =>
       graphEdges(pipeline).map((edge) => ({
@@ -431,8 +725,73 @@ function App() {
     : adapters.length === 1
       ? adapters[0]
       : undefined;
+  const visibleOperators = Object.entries(catalog.operators).filter(
+    ([key, op]) =>
+      [
+        key,
+        op.name,
+        readableOperatorLabel(op.name),
+        ...Object.values(op.inputs).map(blueprintKindLabel),
+        ...Object.values(op.outputs).map(blueprintKindLabel),
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(filter.trim().toLowerCase()) &&
+      (!registeredOnly ||
+        [...catalog.adapters, ...(catalog.backends || [])].some((adapter) =>
+          adapter.operators.includes(key),
+        )),
+  );
+  const paletteQuery = nodePaletteFilter.trim().toLowerCase();
+  const paletteOperators = Object.entries(catalog.operators).filter(([key, op]) =>
+    [key, op.name, readableOperatorLabel(op.name)]
+      .join(" ")
+      .toLowerCase()
+      .includes(paletteQuery),
+  );
+  const paletteServices = (catalog.model_services || []).filter((service) =>
+    [service.backend, service.display_name, service.operator]
+      .join(" ")
+      .toLowerCase()
+      .includes(paletteQuery),
+  );
+  const paletteInputs = [
+    { kind: "rgb" as const, label: "图片输入", detail: "RGB 图片 · 上传或选择已有图片" },
+    { kind: "rgba" as const, label: "透明图片输入", detail: "RGBA 图片 · 带透明区域" },
+    { kind: "mask" as const, label: "遮罩输入", detail: "二值遮罩 · 作为处理节点输入" },
+    { kind: "text" as const, label: "文字输入", detail: "文本提示 · 连接到文字分割节点" },
+  ].filter(({ kind, label, detail }) =>
+    [kind, label, detail].join(" ").toLowerCase().includes(paletteQuery),
+  );
   return (
     <div className="app">
+      {pendingLoad && (
+        <div
+          className="load-confirm"
+          role="alertdialog"
+          aria-label="确认替换画布"
+        >
+          <strong>{pendingLoad.label}</strong>
+          <p>
+            这会替换当前画布、节点位置和参数，并清空当前实际输入。替换后需要重新提供图片、文字等输入；取消会保留当前内容。
+          </p>
+          <button
+            onClick={() => {
+              try {
+                loadPipeline(pendingLoad.pipeline, pendingLoad.layout);
+                setTab("inspector");
+                setMessage(`已${pendingLoad.label}。`);
+                setPendingLoad(undefined);
+              } catch (error) {
+                setMessage(String(error));
+              }
+            }}
+          >
+            继续替换
+          </button>
+          <button onClick={() => setPendingLoad(undefined)}>取消</button>
+        </div>
+      )}
       <header>
         <div className="brand">
           <span className="brand-icon">◈</span>
@@ -466,7 +825,32 @@ function App() {
               {nodePreviewOpen ? "收起节点预览" : "展开节点预览"}
             </button>
           )}
+          <button
+            disabled={!!configurationBlockedReason}
+            onClick={() => {
+              const nextPipeline = {
+                pipeline: "my_asset_pipeline",
+                version: "1",
+                inputs: {},
+                nodes: {},
+              } satisfies Pipeline;
+              setPendingLoad({
+                label: "新建空白管线",
+                pipeline: nextPipeline,
+              });
+            }}
+          >
+            新建空白
+          </button>
           <button onClick={() => input.current?.click()}>导入 YAML</button>
+          <button
+            ref={nodePaletteTrigger}
+            className="add-node-toolbar"
+            onClick={() => openNodePalette()}
+            aria-haspopup="dialog"
+          >
+            ＋ 添加节点
+          </button>
           <button
             onClick={() => {
               const url = URL.createObjectURL(
@@ -485,6 +869,7 @@ function App() {
             className="primary"
             disabled={busy}
             onClick={() => {
+              setInspectorOpen(true);
               setTab("plan");
               void compileCurrent(pipeline);
             }}
@@ -493,6 +878,13 @@ function App() {
           </button>
         </div>
       </header>
+      {catalog.execution_enabled && (
+        <div
+          className="execution-toolbar"
+          aria-label="运行工具栏"
+          ref={setControlsHost}
+        />
+      )}
       {connectionIssue && (
         <div role="alert" className="connection-issue">
           <strong>连线未建立：</strong>
@@ -504,15 +896,190 @@ function App() {
           <button onClick={() => setConnectionIssue("")}>关闭连线提示</button>
         </div>
       )}
-      <div className="workspace">
-        <aside className="catalog">
+      {nodePaletteOpen && (
+        <NodePaletteDialog
+          onClose={() => {
+            setNodePaletteOpen(false);
+            requestAnimationFrame(() => nodePaletteTrigger.current?.focus());
+          }}
+        >
+          <section
+            className="node-palette"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <header>
+              <div>
+                <strong>添加节点</strong>
+                <p>选择一个节点，它会直接加入当前画布。数据端口仍通过拖线连接。</p>
+              </div>
+              <button aria-label="关闭添加节点" onClick={() => setNodePaletteOpen(false)}>
+                ×
+              </button>
+            </header>
+            <input
+              autoFocus
+              aria-label="搜索节点"
+              placeholder="搜索图片、文字分割、生成网格…"
+              value={nodePaletteFilter}
+              onChange={(event) => setNodePaletteFilter(event.target.value)}
+            />
+            <div className="node-palette-grid">
+              <div className="node-palette-section">
+                <h3>输入</h3>
+                {paletteInputs.map(({ kind, label, detail }) => (
+                  <button key={kind} onClick={() => addInputNode(kind)}>
+                    <strong>{label}</strong><span>{detail}</span>
+                  </button>
+                ))}
+                {!paletteInputs.length && <p>没有匹配的输入类型。</p>}
+              </div>
+              <div className="node-palette-section">
+                <h3>处理算子</h3>
+                {paletteOperators.map(([key, op]) => (
+                  <button
+                    key={key}
+                    onClick={() => {
+                      addOperator(key, nodePalettePosition);
+                      setNodePaletteOpen(false);
+                    }}
+                  >
+                    <strong>{readableOperatorLabel(op.name)}</strong>
+                    <span>{op.name} · {Object.keys(op.inputs).length} 输入 / {Object.keys(op.outputs).length} 输出</span>
+                  </button>
+                ))}
+                {!paletteOperators.length && <p>没有匹配的处理算子。</p>}
+              </div>
+              <div className="node-palette-section">
+                <h3>已配置模型</h3>
+                {paletteServices.map((service) => (
+                  <button
+                    key={service.backend}
+                    onClick={() => {
+                      addOperator(service.operator, nodePalettePosition, service.backend);
+                      setNodePaletteOpen(false);
+                    }}
+                  >
+                    <strong>{service.display_name}</strong>
+                    <span>{service.operator} · {service.frame_id} · {service.unit}</span>
+                  </button>
+                ))}
+                {!paletteServices.length && <p>暂未配置独立模型服务。</p>}
+              </div>
+            </div>
+            <footer>添加后选中节点即可在节点内或右侧“配置”中修改模型和参数。</footer>
+          </section>
+        </NodePaletteDialog>
+      )}
+      <nav className="workspace-panels" aria-label="工作区面板">
+        <button
+          aria-pressed={minimapOpen}
+          onClick={() => setMinimapOpen((open) => !open)}
+        >
+          {minimapOpen ? "隐藏小地图" : "显示小地图"}
+        </button>
+        <button
+          aria-pressed={!!panelRestore}
+          onClick={() => {
+            if (panelRestore) {
+              setCatalogOpen(panelRestore.catalog);
+              setInspectorOpen(panelRestore.inspector);
+              setNodePreviewOpen(panelRestore.preview);
+              setHistoryOpen(panelRestore.history);
+              setPanelRestore(undefined);
+            } else {
+              setPanelRestore({
+                catalog: catalogOpen,
+                inspector: inspectorOpen,
+                preview: nodePreviewOpen,
+                history: historyOpen,
+              });
+              setCatalogOpen(false);
+              setInspectorOpen(false);
+              setNodePreviewOpen(false);
+              setHistoryOpen(false);
+            }
+          }}
+        >
+          {panelRestore ? "恢复面板布局" : "专注画布"}
+        </button>
+        <button
+          disabled={!selected}
+            onClick={() => {
+            if (selected)
+              void flow.fitView({
+                nodes: [{ id: selected }],
+                padding: 0.2,
+                minZoom: 0.75,
+                maxZoom: 1,
+              });
+          }}
+        >
+          聚焦所选节点
+        </button>
+        <button
+          onClick={() => {
+            void flow.fitView({ padding: 0.18, maxZoom: 1 });
+          }}
+        >
+          查看全图
+        </button>
+        <button
+          aria-expanded={catalogOpen}
+          aria-controls="workspace-catalog"
+          onClick={() => setCatalogOpen((open) => !open)}
+        >
+          {catalogOpen ? "收起节点目录" : "展开节点目录"}
+        </button>
+        <button
+          aria-expanded={inspectorOpen}
+          aria-controls="workspace-inspector"
+          onClick={() => setInspectorOpen((open) => !open)}
+        >
+          {inspectorOpen ? "收起属性面板" : "展开属性面板"}
+        </button>
+        {catalog.execution_enabled && (
+          <button
+            onClick={() => {
+              setInspectorOpen(true);
+              setHistoryOpen(true);
+            }}
+          >
+            运行记录与诊断
+          </button>
+        )}
+      </nav>
+      <div
+        className={`workspace${catalogOpen ? "" : " catalog-collapsed"}${inspectorOpen ? "" : " inspector-collapsed"}`}
+        style={
+          { "--inspector-width": `${inspectorWidth}px` } as React.CSSProperties
+        }
+      >
+          <aside id="workspace-catalog" className="catalog" hidden={!catalogOpen}>
           <div className="section-label">节点目录</div>
           <input
             className="search"
+            aria-label="搜索算子"
             placeholder="搜索算子…"
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter" || visibleOperators.length !== 1)
+                return;
+              event.preventDefault();
+              addOperator(visibleOperators[0][0]);
+            }}
           />
+          <div className="catalog-tools">
+            <span>{visibleOperators.length} 个算子</span>
+            {visibleOperators.length === 1 && (
+              <span className="catalog-enter-hint">按 Enter 添加</span>
+            )}
+            {filter && (
+              <button type="button" onClick={() => setFilter("")}>
+                清除搜索
+              </button>
+            )}
+          </div>
           <label>
             <input
               type="checkbox"
@@ -522,24 +1089,93 @@ function App() {
             只看已注册实现
           </label>
           <p>注册表示配置可绑定，不代表模型已验收。</p>
-          <button
-            className="add-input"
-            onClick={() => {
-              let name = "input";
-              let i = 2;
-              while (pipeline.inputs[name]) name = `input_${i++}`;
-              update({
-                ...pipeline,
-                inputs: {
-                  ...pipeline.inputs,
-                  [name]: { kind: "rgb_image", carriers: ["artifact_ref"] },
-                },
-              });
-              setSelected(inputId(name));
-            }}
-          >
-            ＋ 管线输入
-          </button>
+          <label className="legacy-input-picker">
+            快速添加输入
+            <select
+              aria-label="添加输入节点"
+              value=""
+              onChange={(event) => {
+                const sources: Record<string, { name: string; port?: Port }> = {
+                  rgb: {
+                    name: "image",
+                    port: catalog.operators["encode_png@1"]?.inputs.image,
+                  },
+                  rgba: {
+                    name: "image",
+                    port: catalog.operators["shape_generation@1"]?.inputs.image,
+                  },
+                  mask: {
+                    name: "mask",
+                    port: catalog.operators["apply_binary_mask@1"]?.inputs.mask,
+                  },
+                  text: {
+                    name: "text",
+                    port: catalog.operators["text_segmentation@2"]?.inputs.text,
+                  },
+                };
+                const choice = sources[event.target.value];
+                if (!choice?.port) return;
+                let name = choice.name,
+                  i = 2;
+                while (pipelineRef.current.inputs[name])
+                  name = `${choice.name}_${i++}`;
+                update((previous) => ({
+                  ...previous,
+                  inputs: {
+                    ...previous.inputs,
+                    [name]: structuredClone(choice.port!),
+                  },
+                }));
+                setSelected(inputId(name));
+                const selectedNode = selected
+                  ? flow.getNodes().find((item) => item.id === selected)
+                  : undefined;
+                setLayout((previous) => ({
+                  ...previous,
+                  [inputId(name)]: selectedNode
+                    ? {
+                        x: selectedNode.position.x - 420,
+                        y: Math.max(80, selectedNode.position.y),
+                      }
+                    : flow.screenToFlowPosition({
+                        x: Math.max(180, window.innerWidth / 2 - 420),
+                        y: Math.max(220, window.innerHeight / 2 - 150),
+                      }),
+                }));
+                window.setTimeout(() => {
+                  void flow.fitView({
+                    nodes: [{ id: inputId(name) }],
+                    padding: 0.18,
+                    minZoom: 0.75,
+                    maxZoom: 1,
+                  });
+                }, 0);
+              }}
+            >
+              <option value="">选择输入类型…</option>
+              <option value="rgb" disabled={!catalog.operators["encode_png@1"]}>
+                图片 · RGB
+              </option>
+              <option
+                value="rgba"
+                disabled={!catalog.operators["shape_generation@1"]}
+              >
+                透明图片 · RGBA
+              </option>
+              <option
+                value="mask"
+                disabled={!catalog.operators["apply_binary_mask@1"]}
+              >
+                遮罩
+              </option>
+              <option
+                value="text"
+                disabled={!catalog.operators["text_segmentation@2"]}
+              >
+                文字
+              </option>
+            </select>
+          </label>
           <div className="catalog-list" aria-label="可添加节点目录">
             <ModelServices
               catalog={catalog}
@@ -551,40 +1187,40 @@ function App() {
                 addOperator(operator, undefined, backend)
               }
             />
-            {Object.entries(catalog.operators)
-              .filter(
-                ([key]) =>
-                  key.toLowerCase().includes(filter.toLowerCase()) &&
-                  (!registeredOnly ||
-                    [...catalog.adapters, ...(catalog.backends || [])].some(
-                      (adapter) => adapter.operators.includes(key),
-                    )),
-              )
-              .map(([key, op]) => (
-                <button
-                  draggable
-                  key={key}
-                  className="catalog-item"
-                  onDragStart={(e) => {
-                    e.dataTransfer.setData("application/operator", key);
-                    e.dataTransfer.effectAllowed = "move";
-                  }}
-                  onClick={() => addOperator(key)}
-                >
-                  <strong>{op.name}</strong>
-                  <span>
-                    {[...catalog.adapters, ...(catalog.backends || [])].some(
-                      (adapter) => adapter.operators.includes(key),
-                    )
-                      ? "已注册实现"
-                      : "仅契约 · 未配置实现"}
-                  </span>
-                  <span>
-                    v{op.version} · {Object.keys(op.inputs).length} 输入 /{" "}
-                    {Object.keys(op.outputs).length} 输出
-                  </span>
-                </button>
-              ))}
+            {visibleOperators.map(([key, op]) => (
+              <button
+                draggable
+                key={key}
+                className="catalog-item"
+                onDragStart={(e) => {
+                  e.dataTransfer.setData("application/operator", key);
+                  e.dataTransfer.effectAllowed = "move";
+                }}
+                onClick={() => addOperator(key)}
+              >
+                <strong>{readableOperatorLabel(op.name)}</strong>
+                <span>{op.name}</span>
+                <span>
+                  {[...catalog.adapters, ...(catalog.backends || [])].some(
+                    (adapter) => adapter.operators.includes(key),
+                  )
+                    ? "已注册实现"
+                    : "仅契约 · 未配置实现"}
+                </span>
+                <span>
+                  v{op.version} · {Object.keys(op.inputs).length} 输入 /{" "}
+                  {Object.keys(op.outputs).length} 输出
+                </span>
+                <span className="catalog-item-action">
+                  点击添加到画布 · 也可拖动
+                </span>
+              </button>
+            ))}
+            {!visibleOperators.length && (
+              <p className="catalog-empty">
+                没有匹配的算子。尝试清除搜索或取消“只看已注册实现”。
+              </p>
+            )}
             <div className="templates">
               <div className="section-label">示例管线</div>
               {catalog.templates.map((t) => (
@@ -592,15 +1228,13 @@ function App() {
                   key={t.id}
                   disabled={!!configurationBlockedReason}
                   onClick={() => {
-                    if (
-                      window.confirm("加载示例会替换当前未保存画布，继续？")
-                    ) {
-                      loadPipeline(t.pipeline);
-                      setTab(catalog.execution_enabled ? "run" : "plan");
-                    }
+                    setPendingLoad({
+                      label: `加载示例「${t.label}」`,
+                      pipeline: t.pipeline,
+                    });
                   }}
                 >
-                  {t.label}
+                  <strong className="template-name">{t.label}</strong>
                   {t.execution_ready !== undefined && (
                     <small>
                       {
@@ -623,7 +1257,7 @@ function App() {
             </div>
           </div>
         </aside>
-        <main className="canvas">
+        <main className={`canvas${nodePreviewOpen ? " with-preview" : ""}`}>
           <ReactFlow
             nodes={nodes}
             edges={edges}
@@ -642,7 +1276,18 @@ function App() {
             nodeTypes={nodeTypes}
             onConnect={connect}
             onNodeClick={(_, n) => setSelected(n.id)}
+            zoomOnDoubleClick={false}
+            onNodeDoubleClick={(_, node) => {
+              setSelected(node.id);
+              void flow.fitView({ nodes: [{ id: node.id }], padding: 0.2, minZoom: 0.75, maxZoom: 1 });
+            }}
             onPaneClick={() => setSelected(undefined)}
+            onPaneContextMenu={(event) => {
+              event.preventDefault();
+              openNodePalette(
+                flow.screenToFlowPosition({ x: event.clientX, y: event.clientY }),
+              );
+            }}
             onNodesChange={(changes) => {
               setNodes((previous) => applyNodeChanges(changes, previous));
               const removed = new Set(
@@ -710,13 +1355,14 @@ function App() {
                 );
             }}
             fitView
+            fitViewOptions={{ maxZoom: 1, padding: 0.18 }}
             minZoom={0.15}
             maxZoom={2}
             deleteKeyCode={["Backspace", "Delete"]}
           >
             <Background gap={24} color="#dce3e9" />
             <Controls />
-            <MiniMap pannable zoomable nodeColor="#bccddb" />
+            {minimapOpen && <MiniMap pannable zoomable nodeColor="#bccddb" />}
           </ReactFlow>
           {catalog.execution_enabled && (
             <div
@@ -748,11 +1394,22 @@ function App() {
             </div>
           )}
           <div className="canvas-note">
-            拖动连接端口 · Delete 删除节点 ·{" "}
+            双击标题聚焦 · 拖动连接端口 · Delete 删除节点 ·{" "}
             {catalog.execution_enabled ? "草稿与运行独立" : "不执行模型"}
           </div>
         </main>
-        <aside className="inspector">
+        {inspectorOpen && (
+          <PanelResizeHandle
+            width={inspectorWidth}
+            onChange={setInspectorWidth}
+          />
+        )}
+        <aside
+          id="workspace-inspector"
+          ref={inspectorRef}
+          className="inspector"
+          hidden={!inspectorOpen}
+        >
           <nav>
             <button
               className={tab === "inspector" ? "active" : ""}
@@ -768,8 +1425,8 @@ function App() {
             </button>
             {catalog.execution_enabled && (
               <button
-                className={tab === "run" ? "active" : ""}
-                onClick={() => setTab("run")}
+                className={historyOpen ? "active" : ""}
+                onClick={() => setHistoryOpen(true)}
               >
                 运行
               </button>
@@ -797,44 +1454,7 @@ function App() {
               </button>
             </section>
           )}
-          {catalog.execution_enabled && (
-            <div hidden={tab !== "run"}>
-              <ExecutionPanel
-                pipeline={pipeline}
-                configurationBlockedReason={configurationBlockedReason}
-                selectedNode={selected}
-                previewHost={previewHost}
-                onLoadDraft={(draft) => {
-                  if (
-                    pipelineRef.current !== pipeline ||
-                    layoutRef.current !== layout
-                  )
-                    throw Error(
-                      "读取运行配置期间画布已修改，保留当前编辑；请重新载入。",
-                    );
-                  loadPipeline(draft);
-                  setTab("plan");
-                }}
-                profile={catalog.execution_profile}
-                executionReason={
-                  compilePending
-                    ? "正在检查当前配置…"
-                    : !(result as { ok?: boolean } | undefined)?.ok
-                      ? compileMessage
-                      : (
-                            result as {
-                              execution_ready?: boolean;
-                              execution_reason?: string;
-                            }
-                          ).execution_ready
-                        ? undefined
-                        : (result as { execution_reason?: string })
-                            .execution_reason || "当前配置不适用于执行入口"
-                }
-              />
-            </div>
-          )}
-          {tab === "run" ? null : tab === "plan" ? (
+          {tab === "plan" ? (
             <>
               <p>
                 编译反馈为后端权威结果。静态契约通过不代表模型推理成功。修改图后自动重新编译；启动运行时后端再次校验。
@@ -881,70 +1501,6 @@ function App() {
             </>
           ) : (
             <>
-              <div className="section-label">草稿</div>
-              <label>
-                保存名称
-                <input
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                />
-              </label>
-              <div className="row">
-                <button
-                  disabled={busy || !draft}
-                  onClick={() =>
-                    guarded(async () => {
-                      await api(`/api/drafts/${encodeURIComponent(draft)}`, {
-                        method: "PUT",
-                        body: JSON.stringify({ pipeline, layout }),
-                      });
-                      setDrafts((await api("/api/drafts")).drafts);
-                      setMessage(
-                        pipelineRef.current !== pipeline ||
-                          layoutRef.current !== layout
-                          ? "已保存请求时的草稿；之后的编辑尚未保存。"
-                          : "草稿已保存；未编译的草稿也可以保存。",
-                      );
-                    })
-                  }
-                >
-                  保存草稿
-                </button>
-                <select
-                  aria-label="加载草稿"
-                  value=""
-                  disabled={busy}
-                  onChange={(e) => {
-                    const name = e.target.value;
-                    if (!name) return;
-                    void guarded(async () => {
-                      if (!window.confirm("加载草稿会替换当前画布，继续？"))
-                        return;
-                      const d = await api(
-                        `/api/drafts/${encodeURIComponent(name)}`,
-                      );
-                      if (
-                        pipelineRef.current !== pipeline ||
-                        layoutRef.current !== layout
-                      ) {
-                        setMessage(
-                          "加载期间画布已修改，保留当前编辑；请重新加载草稿。",
-                        );
-                        return;
-                      }
-                      loadPipeline(d.pipeline, d.layout);
-                      setDraft(name);
-                      setMessage("已加载草稿。");
-                    });
-                  }}
-                >
-                  <option value="">加载草稿…</option>
-                  {drafts.map((n) => (
-                    <option key={n}>{n}</option>
-                  ))}
-                </select>
-              </div>
-              <hr />
               {selected ? (
                 <>
                   <div className="section-label">
@@ -1020,7 +1576,7 @@ function App() {
                         </select>
                       </label>
                       <label>
-                        Backend 配置
+                        模型 / Backend 配置
                         <select
                           disabled={pendingParameterIds.includes(selected)}
                           aria-label="节点 Backend"
@@ -1052,7 +1608,7 @@ function App() {
                             ),
                           ].map((backend) => (
                             <option key={backend} value={backend}>
-                              {backend}
+                              {backendLabel(catalog, backend)}
                             </option>
                           ))}
                           {node.backend &&
@@ -1109,55 +1665,78 @@ function App() {
                           }
                         />
                       </fieldset>
-                      <label>
-                        节点参数 · JSON
-                        <textarea
-                          spellCheck={false}
-                          aria-label="节点参数 JSON"
-                          value={parameters}
+                      <details
+                        key={`advanced-parameters:${selected}`}
+                        open={selectedDraft.json !== undefined}
+                      >
+                        <summary>高级：完整参数 JSON</summary>
+                        <p>
+                          用于批量编辑或表单尚不支持的字段；应用后替换此节点的显式参数。
+                        </p>
+                        <label>
+                          节点参数 · JSON
+                          <textarea
+                            spellCheck={false}
+                            aria-label="节点参数 JSON"
+                            value={parameters}
+                            disabled={
+                              Object.keys(selectedDraft.fields).length > 0
+                            }
+                            onChange={(e) =>
+                              changeParameterDraft(selected, (draft) => ({
+                                ...draft,
+                                json: e.target.value,
+                              }))
+                            }
+                          />
+                        </label>
+                        <button
                           disabled={
+                            selectedDraft.json === undefined ||
                             Object.keys(selectedDraft.fields).length > 0
                           }
-                          onChange={(e) =>
-                            changeParameterDraft(selected, (draft) => ({
-                              ...draft,
-                              json: e.target.value,
-                            }))
-                          }
-                        />
-                      </label>
-                      <button
-                        disabled={
-                          selectedDraft.json === undefined ||
-                          Object.keys(selectedDraft.fields).length > 0
-                        }
-                        onClick={() => {
-                          try {
-                            const value = parseParameterObject(parameters);
-                            if (
-                              !value ||
-                              typeof value !== "object" ||
-                              Array.isArray(value)
-                            )
-                              throw Error("参数必须是 JSON 对象");
-                            update({
-                              ...pipeline,
-                              nodes: {
-                                ...pipeline.nodes,
-                                [selected]: { ...node, parameters: value },
-                              },
+                          onClick={() => {
+                            try {
+                              const value = parseParameterObject(parameters);
+                              if (
+                                !value ||
+                                typeof value !== "object" ||
+                                Array.isArray(value)
+                              )
+                                throw Error("参数必须是 JSON 对象");
+                              update({
+                                ...pipeline,
+                                nodes: {
+                                  ...pipeline.nodes,
+                                  [selected]: { ...node, parameters: value },
+                                },
+                              });
+                              changeParameterDraft(selected, () =>
+                                emptyParameterDraft(),
+                              );
+                              setMessage("参数已应用。");
+                            } catch (e) {
+                              setMessage(String(e));
+                            }
+                          }}
+                        >
+                          应用参数
+                        </button>
+                        <button
+                          disabled={selectedDraft.json === undefined}
+                          onClick={() => {
+                            changeParameterDraft(selected, (draft) => {
+                              const { json: _json, ...remaining } = draft;
+                              return remaining;
                             });
-                            changeParameterDraft(selected, () =>
-                              emptyParameterDraft(),
+                            setMessage(
+                              `已放弃 ${selected} 的 JSON 编辑，保留已应用参数。`,
                             );
-                            setMessage("参数已应用。");
-                          } catch (e) {
-                            setMessage(String(e));
-                          }
-                        }}
-                      >
-                        应用参数
-                      </button>
+                          }}
+                        >
+                          放弃当前节点 JSON 编辑
+                        </button>
+                      </details>
                       <details>
                         <summary>参数契约</summary>
                         <pre>
@@ -1298,6 +1877,78 @@ function App() {
                 </p>
               )}
               <hr />
+              <div className="section-label">草稿</div>
+              <label>
+                保存名称
+                <input
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                />
+              </label>
+              <div className="row">
+                <button
+                  disabled={busy || !draft || !!configurationBlockedReason}
+                  title={
+                    configurationBlockedReason ||
+                    "保存已应用的图、参数和布局；实际输入不保存"
+                  }
+                  onClick={() =>
+                    guarded(async () => {
+                      if (pendingParameterIdsRef.current.length)
+                        throw Error("参数尚未应用，请先应用或放弃编辑再保存。");
+                      const savedParameterDrafts = parameterDraftsRef.current;
+                      await api(`/api/drafts/${encodeURIComponent(draft)}`, {
+                        method: "PUT",
+                        body: JSON.stringify({ pipeline, layout }),
+                      });
+                      setDrafts((await api("/api/drafts")).drafts);
+                      setMessage(
+                        pipelineRef.current !== pipeline ||
+                          layoutRef.current !== layout ||
+                          parameterDraftsRef.current !== savedParameterDrafts
+                          ? "已保存请求时的草稿；之后的编辑尚未保存。"
+                          : "已保存图和参数；实际输入未保存，重新加载后需重新提供。",
+                      );
+                    })
+                  }
+                >
+                  保存草稿
+                </button>
+                <select
+                  aria-label="加载草稿"
+                  value=""
+                  disabled={busy}
+                  onChange={(e) => {
+                    const name = e.target.value;
+                    if (!name) return;
+                    void guarded(async () => {
+                      const d = await api(
+                        `/api/drafts/${encodeURIComponent(name)}`,
+                      );
+                      if (
+                        pipelineRef.current !== pipeline ||
+                        layoutRef.current !== layout
+                      ) {
+                        setMessage(
+                          "加载期间画布已修改，保留当前编辑；请重新加载草稿。",
+                        );
+                        return;
+                      }
+                      setPendingLoad({
+                        label: `加载草稿「${name}」`,
+                        pipeline: d.pipeline,
+                        layout: d.layout,
+                      });
+                    });
+                  }}
+                >
+                  <option value="">加载草稿…</option>
+                  {drafts.map((n) => (
+                    <option key={n}>{n}</option>
+                  ))}
+                </select>
+              </div>
+              <hr />
               <div className="section-label">历史状态 · 只读</div>
               <button onClick={() => runInput.current?.click()}>
                 打开 BuildRun JSON
@@ -1314,6 +1965,110 @@ function App() {
           )}
         </aside>
       </div>
+      {catalog.execution_enabled && (
+        <section
+          className="run-history-dock"
+          aria-label="运行记录与诊断面板"
+          hidden={!historyOpen}
+          style={{ flexBasis: `${historyHeight}px` }}
+        >
+          <HistoryResizeHandle
+            height={historyHeight}
+            onChange={setHistoryHeight}
+          />
+          <div className="run-history-heading">
+            <strong>运行记录与诊断</strong>
+            <span>查看历史不修改当前草稿；下次执行使用画布配置。</span>
+            <button onClick={() => setHistoryOpen(false)}>收起运行记录</button>
+          </div>
+          <div className="run-history-content">
+            <ExecutionPanel
+              onOpenHistory={() => setHistoryOpen(true)}
+              pipeline={pipeline}
+              configurationBlockedReason={configurationBlockedReason}
+              onEditBlockedConfiguration={() => {
+                const id = pendingParameterIds[0];
+                if (!id) return;
+                setInspectorOpen(true);
+                setTab("inspector");
+                setSelected(id);
+                void flow.fitView({
+                  nodes: [{ id }],
+                  padding: 0.2,
+                  minZoom: 0.75,
+                  maxZoom: 1,
+                });
+              }}
+              selectedNode={selected}
+              previewHost={previewHost}
+              onRunViewChange={setRunView}
+              onFreshnessChange={setNodeFreshness}
+              inputHosts={inputHosts}
+              onLocateInput={(name) => {
+                void flow.fitView({
+                  nodes: [{ id: inputId(name) }],
+                  padding: 0.3,
+                  maxZoom: 1,
+                });
+                const inputControls = Array.from(
+                  inputHosts[name]?.querySelectorAll<HTMLElement>(
+                    "textarea, input, select, button, summary",
+                  ) || [],
+                ).filter(
+                  (element) =>
+                    element.checkVisibility() &&
+                    !element.hasAttribute("disabled"),
+                );
+                (
+                  inputControls.find((element) =>
+                    ["INPUT", "TEXTAREA", "SELECT"].includes(element.tagName),
+                  ) || inputControls[0]
+                )?.focus({ preventScroll: true });
+              }}
+              onLocateNode={(nodeId) => {
+                if (!pipelineRef.current.nodes[nodeId]) return;
+                setInspectorOpen(true);
+                setTab("inspector");
+                setSelected(nodeId);
+                void flow.fitView({
+                  nodes: [{ id: nodeId }],
+                  padding: 0.2,
+                  minZoom: 0.75,
+                  maxZoom: 1,
+                });
+              }}
+              workspaceRevision={workspaceRevision}
+              controlsHost={controlsHost}
+              onLoadDraft={(draft) => {
+                if (
+                  pipelineRef.current !== pipeline ||
+                  layoutRef.current !== layout
+                )
+                  throw Error(
+                    "读取运行配置期间画布已修改，保留当前编辑；请重新载入。",
+                  );
+                setPendingLoad({ pipeline: draft, label: "载入历史运行配置" });
+              }}
+              profile={catalog.execution_profile}
+              executionReason={
+                compilePending
+                  ? "正在检查当前配置…"
+                  : !(result as { ok?: boolean } | undefined)?.ok
+                    ? compileMessage
+                    : (
+                          result as {
+                            execution_ready?: boolean;
+                            execution_reason?: string;
+                          }
+                        ).execution_ready
+                      ? undefined
+                      : (result as { execution_reason?: string })
+                          .execution_reason || "当前配置不适用于执行入口"
+              }
+            />
+          </div>
+        </section>
+      )}
       <footer role="status">
         <span className="dot" />
         {busy ? "处理中…" : message}
@@ -1337,8 +2092,10 @@ function App() {
                 );
                 return;
               }
-              loadPipeline(p);
-              setMessage("YAML 已导入，请编译校验。");
+              setPendingLoad({
+                label: `导入 YAML「${file.name}」`,
+                pipeline: p,
+              });
             });
           e.target.value = "";
         }}

@@ -24,6 +24,11 @@ test("edited configuration marks kept historical preview stale without dispatch"
     bindings: { encode: { parameters: {} } },
   };
   let changed = false;
+  const pageErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(String(error)));
+  page.on("console", (message) => {
+    if (message.type() === "error") pageErrors.push(message.text());
+  });
   let starts = 0;
   await page.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
@@ -82,6 +87,7 @@ test("edited configuration marks kept historical preview stale without dispatch"
   page.on("dialog", (d) => d.accept());
   await page.goto("/");
   await page.getByRole("button", { name: "freshness", exact: true }).click();
+  await page.getByRole("button", { name: "继续替换", exact: true }).click();
   await page.getByLabel("选择运行").selectOption("old");
   await page.locator('.react-flow__node[data-id="encode"]').click();
   const preview = page.getByRole("region", { name: "选中节点预览" });
@@ -101,6 +107,10 @@ test("edited configuration marks kept historical preview stale without dispatch"
   changed = true;
   await page.getByLabel("管线名称", { exact: true }).fill("changed");
   await expect(preview.getByLabel("预览配置状态")).toContainText("结果过期");
+  const badge = page.locator(
+    '.react-flow__node[data-id="encode"] .blueprint-stale-status',
+  );
+  await expect(badge).toHaveText("需更新");
   await expect(preview.getByRole("img")).toBeVisible();
   await expect(
     page.getByRole("region", { name: "配置变化影响" }),
@@ -113,4 +123,14 @@ test("edited configuration marks kept historical preview stale without dispatch"
     }),
   ).toBeVisible();
   expect(starts).toBe(0);
+  changed = false;
+  await page.getByLabel("管线名称", { exact: true }).fill("freshness");
+  await expect(preview.getByLabel("预览配置状态")).toContainText("配置匹配");
+  await expect(badge).toHaveCount(0);
+  await expect(preview.getByRole("img")).toBeVisible();
+  expect(
+    pageErrors.filter((message) =>
+      /Maximum update depth|Too many re-renders/.test(message),
+    ),
+  ).toEqual([]);
 });

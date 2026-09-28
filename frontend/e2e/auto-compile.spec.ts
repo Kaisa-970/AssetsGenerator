@@ -76,7 +76,9 @@ test("template opens execution, parameter changes compile automatically and old 
   page.on("dialog", (dialog) => dialog.accept());
   await page.goto("/");
   await page.getByRole("button", { name: "CPU 自动检查", exact: true }).click();
-  await expect(page.getByLabel("图片来源", { exact: true })).toBeVisible();
+  if (await page.getByRole("button", { name: "继续替换", exact: true }).count())
+    await page.getByRole("button", { name: "继续替换", exact: true }).click();
+  await expect(page.getByLabel("当前图片来源", { exact: true })).toBeVisible();
   await expect(page.getByLabel("当前配置编译状态")).toContainText("编译通过");
   await expect
     .poll(() => requests.some((p) => p.pipeline === "auto_test"))
@@ -84,7 +86,9 @@ test("template opens execution, parameter changes compile automatically and old 
   expect(starts).toBe(0);
   await page.locator('.react-flow__node[data-id="resize"]').click();
   await page.getByRole("button", { name: "配置", exact: true }).click();
-  const width = page.getByLabel("参数 width", { exact: true });
+  const width = page
+    .locator(".inspector")
+    .getByLabel("参数 width", { exact: true });
   await expect(width).toBeVisible();
   holdNext = true;
   await width.fill("5");

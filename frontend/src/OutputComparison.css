@@ -1,3 +1,11 @@
+.comparison-overlay > .output-comparison {
+  min-height: 0;
+  overflow: auto;
+  flex: 1;
+}
+.comparison-overlay > header {
+  flex-shrink: 0;
+}
 .output-comparison-columns {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -15,4 +23,12 @@
 .comparison-artifact {
   font-family: monospace;
   font-size: 0.8rem;
+}
+.comparison-mesh-preview {
+  min-width: 0;
+  border-top: 1px solid #758396;
+  padding-top: 8px;
+}
+.comparison-mesh-preview canvas {
+  display: block;
 }

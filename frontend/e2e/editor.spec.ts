@@ -110,8 +110,12 @@ test("uploaded images bind exact references only after explicit run creation", a
   });
   await page.goto("/");
   await page.getByRole("button", { name: "运行", exact: true }).click();
+  if (!(await page.getByLabel("图片来源", { exact: true }).isVisible()))
+    await page.getByText("高级：图片来源", { exact: true }).click();
   await page.getByLabel("图片来源", { exact: true }).selectOption("path");
   await page.getByLabel("运行图片路径").fill("/data/previous.png");
+  if (!(await page.getByLabel("图片来源", { exact: true }).isVisible()))
+    await page.getByText("高级：图片来源", { exact: true }).click();
   await page.getByLabel("图片来源", { exact: true }).selectOption("upload");
   const start = page.getByRole("button", {
     name: "启动新运行 · 检查执行范围",
@@ -139,6 +143,8 @@ test("uploaded images bind exact references only after explicit run creation", a
   ).toBeVisible();
   await expect(start).toBeDisabled();
   expect(starts).toHaveLength(1);
+  if (!(await page.getByLabel("图片来源", { exact: true }).isVisible()))
+    await page.getByText("高级：图片来源", { exact: true }).click();
   await page.getByLabel("图片来源", { exact: true }).selectOption("path");
   await start.click();
   await expect.poll(() => starts.length).toBe(2);
@@ -199,6 +205,7 @@ test("edits a template, saves layout, compiles and reloads a draft", async ({
   await page.goto("/");
   page.on("dialog", (d) => d.accept());
   await page.getByRole("button", { name: "单图测试", exact: true }).click();
+  await page.getByRole("button", { name: "继续替换", exact: true }).click();
   await page.getByRole("button", { name: "配置", exact: true }).click();
   await expect(page.locator(".react-flow__node")).toHaveCount(2);
   await expect(page.locator(".react-flow__edge")).toHaveCount(1);
@@ -209,7 +216,9 @@ test("edits a template, saves layout, compiles and reloads a draft", async ({
     page.locator('.react-flow__node[data-id="copy_renamed"]'),
   ).toBeVisible();
   await page.getByRole("button", { name: "保存草稿", exact: true }).click();
-  await expect(page.getByRole("status")).toContainText("草稿已保存");
+  await expect(page.getByRole("status")).toContainText(
+    "已保存图和参数；实际输入未保存",
+  );
   expect(saved).toMatchObject({
     pipeline: {
       nodes: {
@@ -229,6 +238,7 @@ test("edits a template, saves layout, compiles and reloads a draft", async ({
   );
   await page.getByRole("button", { name: "配置", exact: true }).click();
   await page.getByLabel("加载草稿").selectOption("my-pipeline");
+  await page.getByRole("button", { name: "继续替换", exact: true }).click();
   await expect(page.getByRole("status")).toContainText("已加载草稿");
   expect(errors).toEqual([]);
 });
@@ -276,15 +286,18 @@ test("combined deletion persists and dragging keeps canvas stable", async ({
   page.on("dialog", (d) => d.accept());
   await page.goto("/");
   await page.getByRole("button", { name: "删除测试", exact: true }).click();
+  await page.getByRole("button", { name: "继续替换", exact: true }).click();
+  await page.getByRole("button", { name: "查看全图", exact: true }).click();
   await page.getByRole("button", { name: "配置", exact: true }).click();
   const c = page.locator('.react-flow__node[data-id="C"]');
   await c.click();
   const viewport = await page
     .locator(".react-flow__viewport")
     .getAttribute("style");
-  const box = await c.boundingBox();
-  if (!box) throw Error("missing C");
-  const start = { x: box.x + box.width / 2, y: box.y + 20 };
+  const handle = c.locator(".blueprint-node-drag-handle");
+  const box = await handle.boundingBox();
+  if (!box) throw Error("missing C drag handle");
+  const start = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
   await page.mouse.move(start.x, start.y);
   await page.mouse.down();
   const xs: number[] = [];
@@ -302,7 +315,9 @@ test("combined deletion persists and dragging keeps canvas stable", async ({
   for (let i = 1; i < xs.length; i++)
     expect(xs[i]).toBeGreaterThanOrEqual(xs[i - 1] - 1);
   await page.getByRole("button", { name: "保存草稿", exact: true }).click();
-  await expect(page.getByRole("status")).toContainText("草稿已保存");
+  await expect(page.getByRole("status")).toContainText(
+    "已保存图和参数；实际输入未保存",
+  );
   expect(saved.layout.C).toBeDefined();
   // Focus the independent edge and use React Flow keyboard multi-selection.
   const independent = page.locator('.react-flow__edge[data-id="B:image"]');
@@ -316,7 +331,9 @@ test("combined deletion persists and dragging keeps canvas stable", async ({
   await expect(c).toHaveCount(0);
   await expect(page.getByLabel("实例 ID")).toHaveCount(0);
   await page.getByRole("button", { name: "保存草稿", exact: true }).click();
-  await expect(page.getByRole("status")).toContainText("草稿已保存");
+  await expect(page.getByRole("status")).toContainText(
+    "已保存图和参数；实际输入未保存",
+  );
   expect(saved.pipeline.nodes.C).toBeUndefined();
   expect(saved.pipeline.nodes.B.inputs.image).toBeUndefined();
 });
@@ -406,6 +423,8 @@ test("execution uses frozen server runs and explicit revisioned actions", async 
   await page.goto("/");
   await page.getByRole("button", { name: "运行", exact: true }).click();
   await expect(page.getByText("执行环境：trellis-local")).toBeVisible();
+  if (!(await page.getByLabel("图片来源", { exact: true }).isVisible()))
+    await page.getByText("高级：图片来源", { exact: true }).click();
   await page.getByLabel("图片来源", { exact: true }).selectOption("path");
   await page.getByLabel("运行图片路径").fill("/data/robot.png");
   await page
@@ -493,6 +512,8 @@ test("lost create response is never automatically resubmitted", async ({
   });
   await page.goto("/");
   await page.getByRole("button", { name: "运行", exact: true }).click();
+  if (!(await page.getByLabel("图片来源", { exact: true }).isVisible()))
+    await page.getByText("高级：图片来源", { exact: true }).click();
   await page.getByLabel("图片来源", { exact: true }).selectOption("path");
   await page.getByLabel("运行图片路径").fill("/data/robot.png");
   await page
@@ -532,6 +553,8 @@ test("compiled graph can be ineligible for the current execution endpoint", asyn
     page.getByLabel("当前配置编译状态", { exact: true }),
   ).toContainText(reason);
   await page.getByRole("button", { name: "运行", exact: true }).click();
+  if (!(await page.getByLabel("图片来源", { exact: true }).isVisible()))
+    await page.getByText("高级：图片来源", { exact: true }).click();
   await page.getByLabel("图片来源", { exact: true }).selectOption("path");
   await page.getByLabel("运行图片路径").fill("/tmp/photo.png");
   await expect(page.getByRole("alert")).toContainText(reason);
@@ -612,104 +635,183 @@ test("parameter form sends typed values and preserves other instances", async ({
   await page.goto("/");
   page.on("dialog", (d) => d.accept());
   await page.getByRole("button", { name: "forms", exact: true }).click();
+  await page.getByRole("button", { name: "继续替换", exact: true }).click();
   await page.locator('.react-flow__node[data-id="first"]').click();
   await page.getByRole("button", { name: "配置", exact: true }).click();
-  await expect(page.getByLabel("参数 seed", { exact: true })).toHaveValue("42");
-  await page.getByLabel("参数 seed", { exact: true }).fill("1.5");
-  await page.getByLabel("参数 seed", { exact: true }).press("Tab");
   await expect(
-    page.getByRole("alert", { name: "参数错误 · seed", exact: true }),
+    page.locator(".inspector").getByLabel("参数 seed", { exact: true }),
+  ).toHaveValue("42");
+  await page
+    .locator(".inspector")
+    .getByLabel("参数 seed", { exact: true })
+    .fill("1.5");
+  await page
+    .locator(".inspector")
+    .getByLabel("参数 seed", { exact: true })
+    .press("Tab");
+  await expect(
+    page
+      .locator(".inspector")
+      .getByRole("alert", { name: "参数错误 · seed", exact: true }),
   ).toContainText("尚未应用");
   await page
+    .locator(".inspector")
     .getByRole("button", { name: "放弃字段编辑 · seed", exact: true })
     .click();
   await page.getByRole("button", { name: "配置", exact: true }).click();
-  await expect(page.getByLabel("参数 seed", { exact: true })).toHaveValue("42");
+  await expect(
+    page.locator(".inspector").getByLabel("参数 seed", { exact: true }),
+  ).toHaveValue("42");
   await expect(page.getByRole("alert")).toHaveCount(0);
-  await page.getByLabel("参数 matrix JSON", { exact: true }).fill("{}");
   await page
+    .locator(".inspector")
+    .getByLabel("参数 matrix JSON", { exact: true })
+    .fill("{}");
+  await page
+    .locator(".inspector")
     .getByRole("button", { name: "应用字段 · matrix", exact: true })
     .click();
-  await page.getByLabel("参数 seed", { exact: true }).fill("1.5");
-  await page.getByLabel("参数 seed", { exact: true }).press("Tab");
-  await expect(page.getByRole("alert", { name: /参数错误 ·/ })).toHaveCount(2);
   await page
+    .locator(".inspector")
+    .getByLabel("参数 seed", { exact: true })
+    .fill("1.5");
+  await page
+    .locator(".inspector")
+    .getByLabel("参数 seed", { exact: true })
+    .press("Tab");
+  await expect(
+    page.locator(".inspector").getByRole("alert", { name: /参数错误 ·/ }),
+  ).toHaveCount(2);
+  await page
+    .locator(".inspector")
     .getByRole("button", { name: "放弃字段编辑 · seed", exact: true })
     .click();
   await expect(
-    page.getByRole("alert", { name: "参数错误 · matrix", exact: true }),
+    page
+      .locator(".inspector")
+      .getByRole("alert", { name: "参数错误 · matrix", exact: true }),
   ).toBeVisible();
   await page
+    .locator(".inspector")
     .getByRole("button", { name: "放弃字段编辑 · matrix", exact: true })
     .click();
   await expect(page.getByRole("alert")).toHaveCount(0);
-  await page.getByLabel("参数 seed", { exact: true }).fill("99");
-  await page.getByLabel("参数 seed", { exact: true }).press("Tab");
-  await page.getByLabel("参数 size", { exact: true }).selectOption("1");
   await page
+    .locator(".inspector")
+    .getByLabel("参数 seed", { exact: true })
+    .fill("99");
+  await page
+    .locator(".inspector")
+    .getByLabel("参数 seed", { exact: true })
+    .press("Tab");
+  await page
+    .locator(".inspector")
+    .getByLabel("参数 size", { exact: true })
+    .selectOption("1");
+  await page
+    .locator(".inspector")
     .getByLabel("参数 options JSON", { exact: true })
     .fill('{"label":"pending"}');
-  await page.getByLabel("参数 enabled", { exact: true }).selectOption("false");
-  await expect(
-    page.getByLabel("参数 options JSON", { exact: true }),
-  ).toHaveValue('{"label":"pending"}');
-  await page.getByLabel("参数 matrix JSON", { exact: true }).fill("{}");
   await page
+    .locator(".inspector")
+    .getByLabel("参数 enabled", { exact: true })
+    .selectOption("false");
+  await expect(
+    page.locator(".inspector").getByLabel("参数 options JSON", { exact: true }),
+  ).toHaveValue('{"label":"pending"}');
+  await page
+    .locator(".inspector")
+    .getByLabel("参数 matrix JSON", { exact: true })
+    .fill("{}");
+  await page
+    .locator(".inspector")
     .getByRole("button", { name: "应用字段 · matrix", exact: true })
     .click();
   await expect(
-    page.getByRole("alert", { name: "参数错误 · matrix", exact: true }),
+    page
+      .locator(".inspector")
+      .getByRole("alert", { name: "参数错误 · matrix", exact: true }),
   ).toContainText("尚未应用");
   await page
+    .locator(".inspector")
     .getByLabel("参数 matrix JSON", { exact: true })
     .fill("[1, 0, 0, 1]");
   await page
+    .locator(".inspector")
     .getByRole("button", { name: "应用字段 · matrix", exact: true })
     .click();
   await expect(
-    page.getByLabel("参数 options JSON", { exact: true }),
+    page.locator(".inspector").getByLabel("参数 options JSON", { exact: true }),
   ).toHaveValue('{"label":"pending"}');
   await expect(
-    page.getByText("options 尚未应用；应用或放弃编辑后才能启动新运行。", {
-      exact: false,
-    }),
+    page
+      .locator(".inspector")
+      .getByText("options 尚未应用；应用或放弃编辑后才能启动新运行。", {
+        exact: false,
+      }),
   ).toBeVisible();
-  await page.getByLabel("参数 matrix JSON", { exact: true }).fill("[9]");
   await page
+    .locator(".inspector")
+    .getByLabel("参数 matrix JSON", { exact: true })
+    .fill("[9]");
+  await page
+    .locator(".inspector")
     .getByRole("button", { name: "放弃字段编辑 · matrix", exact: true })
     .click();
   await expect(
-    page.getByLabel("参数 matrix JSON", { exact: true }),
+    page.locator(".inspector").getByLabel("参数 matrix JSON", { exact: true }),
   ).toHaveValue(JSON.stringify([1, 0, 0, 1], null, 2));
   await expect(
-    page.getByLabel("参数 options JSON", { exact: true }),
+    page.locator(".inspector").getByLabel("参数 options JSON", { exact: true }),
   ).toHaveValue('{"label":"pending"}');
   // Applying an equivalent value must settle this field without dropping others.
-  await page.getByLabel("参数 matrix JSON", { exact: true }).fill("[1,0,0,1]");
   await page
+    .locator(".inspector")
+    .getByLabel("参数 matrix JSON", { exact: true })
+    .fill("[1,0,0,1]");
+  await page
+    .locator(".inspector")
     .getByRole("button", { name: "应用字段 · matrix", exact: true })
     .click();
   await expect(
-    page.getByRole("button", { name: "应用字段 · matrix", exact: true }),
+    page
+      .locator(".inspector")
+      .getByRole("button", { name: "应用字段 · matrix", exact: true }),
   ).toBeDisabled();
   await expect(
-    page.getByLabel("参数 options JSON", { exact: true }),
+    page.locator(".inspector").getByLabel("参数 options JSON", { exact: true }),
   ).toHaveValue('{"label":"pending"}');
-  await page.getByLabel("参数 seed", { exact: true }).fill("099");
-  await page.getByLabel("参数 seed", { exact: true }).press("Tab");
-  await page.getByRole("button", { name: "配置", exact: true }).click();
-  await expect(page.getByLabel("参数 seed", { exact: true })).toHaveValue("99");
-  await page.getByLabel("参数 options JSON", { exact: true }).fill("null");
   await page
+    .locator(".inspector")
+    .getByLabel("参数 seed", { exact: true })
+    .fill("099");
+  await page
+    .locator(".inspector")
+    .getByLabel("参数 seed", { exact: true })
+    .press("Tab");
+  await page.getByRole("button", { name: "配置", exact: true }).click();
+  await expect(
+    page.locator(".inspector").getByLabel("参数 seed", { exact: true }),
+  ).toHaveValue("99");
+  await page
+    .locator(".inspector")
+    .getByLabel("参数 options JSON", { exact: true })
+    .fill("null");
+  await page
+    .locator(".inspector")
     .getByRole("button", { name: "应用字段 · options", exact: true })
     .click();
   await expect(
-    page.getByRole("alert", { name: "参数错误 · options", exact: true }),
+    page
+      .locator(".inspector")
+      .getByRole("alert", { name: "参数错误 · options", exact: true }),
   ).toContainText("尚未应用");
   await page
+    .locator(".inspector")
     .getByLabel("参数 options JSON", { exact: true })
     .fill('{"label":"example"}');
   await page
+    .locator(".inspector")
     .getByRole("button", { name: "应用字段 · options", exact: true })
     .click();
   await page.getByRole("button", { name: "编译校验", exact: true }).click();
@@ -725,7 +827,8 @@ test("parameter form sends typed values and preserves other instances", async ({
   await page.getByRole("button", { name: "配置", exact: true }).click();
   await page.locator('.react-flow__node[data-id="first"]').click();
   await page
-    .getByRole("button", { name: "移除覆盖 · matrix", exact: true })
+    .locator(".inspector")
+    .getByRole("button", { name: "清除可选参数 · matrix", exact: true })
     .click();
   await page.getByRole("button", { name: "编译校验", exact: true }).click();
   await expect
@@ -740,9 +843,17 @@ test("parameter form sends typed values and preserves other instances", async ({
     page.locator('.react-flow__node[data-id="first_copy"]'),
   ).toBeVisible();
   await page.getByRole("button", { name: "配置", exact: true }).click();
-  await expect(page.getByLabel("参数 seed", { exact: true })).toHaveValue("99");
-  await page.getByLabel("参数 seed", { exact: true }).fill("123");
-  await page.getByLabel("参数 seed", { exact: true }).press("Tab");
+  await expect(
+    page.locator(".inspector").getByLabel("参数 seed", { exact: true }),
+  ).toHaveValue("99");
+  await page
+    .locator(".inspector")
+    .getByLabel("参数 seed", { exact: true })
+    .fill("123");
+  await page
+    .locator(".inspector")
+    .getByLabel("参数 seed", { exact: true })
+    .press("Tab");
   await page.getByRole("button", { name: "编译校验", exact: true }).click();
   await expect
     .poll(() => submitted.nodes.first_copy?.parameters.seed)
@@ -954,6 +1065,7 @@ for (const implementation of ["local", "remote"]) {
     await page.goto("/");
     page.on("dialog", (d) => d.accept());
     await page.getByRole("button", { name: "pair", exact: true }).click();
+    await page.getByRole("button", { name: "继续替换", exact: true }).click();
     await page.getByRole("button", { name: "配置", exact: true }).click();
     await page.locator('.react-flow__node[data-id="left"]').click();
     await expect(page.getByRole("alert")).toContainText("stale-deployment");
@@ -973,10 +1085,15 @@ for (const implementation of ["local", "remote"]) {
     expect(saved.nodes.right.parameters).toEqual({ profile_digest: "old" });
     await page.locator('.react-flow__node[data-id="left"]').click();
     await page
-      .getByLabel("节点 Backend", { exact: true })
+      .getByLabel("节点 left 的模型", { exact: true })
       .selectOption("other");
+    await expect(page.getByLabel("节点 Backend", { exact: true })).toHaveValue(
+      "other",
+    );
     await expect(
-      page.getByLabel("参数 profile_digest", { exact: true }),
+      page
+        .locator(".inspector")
+        .getByLabel("参数 profile_digest", { exact: true }),
     ).toContainText("new");
     await page.getByRole("button", { name: "编译校验", exact: true }).click();
     await expect.poll(() => saved?.nodes.left.backend).toBe("other");
@@ -990,7 +1107,9 @@ for (const implementation of ["local", "remote"]) {
       "local@1",
     );
     await expect(
-      page.getByLabel("参数 profile_digest", { exact: true }),
+      page
+        .locator(".inspector")
+        .getByLabel("参数 profile_digest", { exact: true }),
     ).toContainText("old");
     await page.getByRole("button", { name: "编译校验", exact: true }).click();
     await expect.poll(() => saved.nodes.left.backend).toBeUndefined();
@@ -1038,6 +1157,8 @@ test("lost creation response preserves exact intent through reload and explicit 
   });
   await page.goto("/");
   await page.getByRole("button", { name: "运行", exact: true }).click();
+  if (!(await page.getByLabel("图片来源", { exact: true }).isVisible()))
+    await page.getByText("高级：图片来源", { exact: true }).click();
   await page.getByLabel("图片来源", { exact: true }).selectOption("path");
   await page.getByLabel("运行图片路径").fill("/data/original.png");
   const start = page.getByRole("button", {
@@ -1058,6 +1179,8 @@ test("lost creation response preserves exact intent through reload and explicit 
   await page.getByRole("button", { name: "运行", exact: true }).click();
   await expect(retry).toBeEnabled();
   expect(starts).toHaveLength(1);
+  if (!(await page.getByLabel("图片来源", { exact: true }).isVisible()))
+    await page.getByText("高级：图片来源", { exact: true }).click();
   await page.getByLabel("图片来源", { exact: true }).selectOption("path");
   await page.getByLabel("运行图片路径").fill("/data/changed.png");
   await page.getByLabel("管线名称").fill("changed_after_submission");
@@ -1129,6 +1252,8 @@ test("creation is not sent if browser cannot persist its receipt", async ({
   });
   await page.goto("/");
   await page.getByRole("button", { name: "运行", exact: true }).click();
+  if (!(await page.getByLabel("图片来源", { exact: true }).isVisible()))
+    await page.getByText("高级：图片来源", { exact: true }).click();
   await page.getByLabel("图片来源", { exact: true }).selectOption("path");
   await page.getByLabel("运行图片路径").fill("/data/robot.png");
   await page
@@ -1202,18 +1327,38 @@ test("multi-view creation preserves observation reference across reload retry", 
   });
   await page.goto("/");
   await page.getByRole("button", { name: "multiview", exact: true }).click();
+  await page.getByRole("button", { name: "继续替换", exact: true }).click();
   await page.getByRole("button", { name: "运行", exact: true }).click();
+  const png = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aZ0sAAAAASUVORK5CYII=",
+    "base64",
+  );
   await page.getByLabel("上传多视图照片").setInputFiles([
-    { name: "first.png", mimeType: "image/png", buffer: Buffer.from("first") },
+    { name: "first.png", mimeType: "image/png", buffer: png },
     {
       name: "second.png",
       mimeType: "image/png",
-      buffer: Buffer.from("second"),
+      buffer: png,
     },
   ]);
   await expect(page.getByLabel("观测包 Artifact ID")).toHaveValue(
     "sha256:" + "a".repeat(64),
   );
+  await page
+    .getByText("已导入 2 个视图 · 查看顺序与缩略图", { exact: true })
+    .click();
+  await expect(
+    page.getByAltText("视图 1缩略图", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByAltText("视图 2缩略图", { exact: true }),
+  ).toBeVisible();
+  await page.getByText("高级：观测包引用", { exact: true }).click();
+  await page.getByLabel("观测包 Artifact ID").fill("sha256:" + "b".repeat(64));
+  await expect(page.getByAltText("视图 1缩略图", { exact: true })).toHaveCount(
+    0,
+  );
+  await page.getByLabel("观测包 Artifact ID").fill("sha256:" + "a".repeat(64));
   expect(uploads).toBe(2);
   expect(requests).toHaveLength(0);
   await expect(page.getByLabel("运行图片路径")).toHaveCount(0);
@@ -1554,8 +1699,11 @@ test("RGBA canvas upload uses the explicit endpoint and preserves returned refer
   await page.goto("/");
   page.on("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "远程 RGBA", exact: true }).click();
+  await page.getByRole("button", { name: "继续替换", exact: true }).click();
   await page.getByRole("button", { name: "运行", exact: true }).click();
   await expect(page.getByText(/此流程不自动抠图/)).toBeVisible();
+  if (!(await page.getByLabel("图片来源", { exact: true }).isVisible()))
+    await page.getByText("高级：图片来源", { exact: true }).click();
   await page.getByLabel("图片来源", { exact: true }).selectOption("upload");
   await expect(page.getByLabel("上传运行图片")).toHaveAttribute(
     "accept",
@@ -1591,8 +1739,12 @@ test("RGBA canvas upload uses the explicit endpoint and preserves returned refer
   await expect(page.getByLabel("图片来源", { exact: true })).toHaveValue(
     "reference",
   );
+  await expect(page.getByLabel("当前图片来源")).toContainText("历史输出");
+  await page.getByText("高级：输入引用", { exact: true }).click();
   await expect(
-    page.getByText("historical_rgba_exact", { exact: true }),
+    page
+      .locator('[data-id="input:image"]')
+      .getByText("historical_rgba_exact", { exact: true }),
   ).toBeVisible();
   expect(starts).toHaveLength(1);
   await page
@@ -1604,6 +1756,7 @@ test("RGBA canvas upload uses the explicit endpoint and preserves returned refer
   });
   expect(uploads).toEqual(["/api/inputs/rgba"]);
   await page.getByRole("button", { name: "普通 RGB", exact: true }).click();
+  await page.getByRole("button", { name: "继续替换", exact: true }).click();
   await page.getByRole("button", { name: "运行", exact: true }).click();
   await expect(
     page.getByRole("button", {
@@ -1666,14 +1819,6 @@ for (const editDuringLoad of [false, true]) {
     await page
       .getByLabel("选择运行", { exact: true })
       .selectOption("dag_original");
-    page.once("dialog", (dialog) => dialog.dismiss());
-    await page
-      .getByRole("button", { name: "将配置载入画布", exact: true })
-      .click();
-    await expect(
-      page.getByRole("button", { name: "将配置载入画布", exact: true }),
-    ).toBeVisible();
-    page.once("dialog", (dialog) => dialog.accept());
     await page
       .getByRole("button", { name: "将配置载入画布", exact: true })
       .click();
@@ -1684,6 +1829,25 @@ for (const editDuringLoad of [false, true]) {
       await expect(page.getByText(/读取运行配置期间画布已修改/)).toBeVisible();
       await expect(page.getByLabel("管线名称")).toHaveValue("new_local_config");
     } else {
+      const confirmation = page.getByRole("alertdialog", {
+        name: "确认替换画布",
+      });
+      await expect(confirmation).toBeVisible();
+      await expect(page.getByLabel("管线名称")).toHaveValue(
+        "my_asset_pipeline",
+      );
+      await confirmation
+        .getByRole("button", { name: "取消", exact: true })
+        .click();
+      await expect(page.getByLabel("管线名称")).toHaveValue(
+        "my_asset_pipeline",
+      );
+      await page
+        .getByRole("button", { name: "将配置载入画布", exact: true })
+        .click();
+      await confirmation
+        .getByRole("button", { name: "继续替换", exact: true })
+        .click();
       await expect(page.locator('input[value="original_run"]')).toBeVisible();
     }
     expect(writes).toBe(0);
@@ -1831,6 +1995,7 @@ test("compile diagnostics locate known nodes without changing the graph", async 
   await page.goto("/");
   page.on("dialog", (d) => d.accept());
   await page.getByRole("button", { name: "diagnostic", exact: true }).click();
+  await page.getByRole("button", { name: "继续替换", exact: true }).click();
   await page.getByRole("button", { name: "编译校验", exact: true }).click();
   await expect(page.getByRole("alert")).toHaveCount(3);
   await expect(page.getByRole("button", { name: /定位节点/ })).toHaveCount(1);
@@ -1908,6 +2073,72 @@ test("current failure is visible while old successful-retry errors remain in his
     page.getByRole("alert", { name: "执行错误 · recovered" }),
   ).toHaveCount(0);
   expect(mutations).toBe(0);
+});
+
+test("top action opens and focuses the selected run's human task", async ({
+  page,
+}) => {
+  const mutations: string[] = [];
+  await page.route("**/api/**", async (route) => {
+    if (await executionBoundary(route, true)) return;
+    const path = new URL(route.request().url()).pathname;
+    if (route.request().method() !== "GET") mutations.push(path);
+    await route.fulfill({
+      json:
+        path === "/api/catalog"
+          ? {
+              operators: {},
+              adapters: [],
+              templates: [],
+              execution_enabled: true,
+            }
+          : path === "/api/drafts"
+            ? { drafts: [] }
+            : path === "/api/runs"
+              ? {
+                  runs: [
+                    { run_id: "dag_waiting", status: "waiting_for_input" },
+                  ],
+                }
+              : {
+                  run: {
+                    run_id: "dag_waiting",
+                    status: "waiting_for_input",
+                    dag: {
+                      revision: 1,
+                      node_states: {
+                        choose: {
+                          status: "waiting_for_input",
+                          attempts: [
+                            { attempt: 1, status: "waiting_for_input" },
+                          ],
+                        },
+                      },
+                    },
+                  },
+                },
+    });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "运行", exact: true }).click();
+  await page.getByLabel("选择运行").selectOption("dag_waiting");
+  const action = page.getByRole("button", {
+    name: "处理人工待办 · choose",
+    exact: true,
+  });
+  await expect(action).toBeVisible();
+  await page.getByRole("button", { name: "收起运行记录", exact: true }).click();
+  await expect(
+    page.getByRole("region", { name: "运行记录与诊断面板" }),
+  ).toBeHidden();
+  await expect(action).toBeVisible();
+  await action.click();
+  await expect(
+    page.getByRole("region", { name: "运行记录与诊断面板" }),
+  ).toBeVisible();
+  const node = page.locator("#run-action-dag_waiting-choose");
+  await expect(node).toBeFocused();
+  expect(mutations).toEqual([]);
 });
 
 test("operator catalog distinguishes registered implementations from contracts", async ({
@@ -2024,8 +2255,15 @@ test("new nodes do not choose between ambiguous adapters by catalog order", asyn
   await page
     .getByRole("button", { name: "定位节点 · generate", exact: true })
     .click();
-  await page.getByLabel("Adapter", { exact: true }).selectOption("second@1");
-  await page.getByRole("button", { name: "编译校验", exact: true }).click();
+  await expect(page.getByLabel("实例 ID", { exact: true })).toHaveValue(
+    "generate",
+  );
+  await page
+    .getByLabel("节点 generate 的实现", { exact: true })
+    .selectOption("second@1");
+  await expect(page.getByLabel("Adapter", { exact: true })).toHaveValue(
+    "second@1",
+  );
   await expect.poll(() => compiled.nodes.generate.adapter).toBe("second@1");
 });
 
@@ -2274,6 +2512,7 @@ test("node inspector exposes authoritative input and output port contracts", asy
   page.on("dialog", (dialog) => dialog.accept());
   await page.goto("/");
   await page.getByRole("button", { name: "contracts", exact: true }).click();
+  await page.getByRole("button", { name: "继续替换", exact: true }).click();
   await page.getByRole("button", { name: "配置", exact: true }).click();
   await page.locator('.react-flow__node[data-id="reconstruct"]').click();
   await page.getByText("输入输出端口契约", { exact: true }).click();
@@ -2308,13 +2547,13 @@ test("input contract editing rejects malformed kinds without corrupting the canv
   await expect(page.getByRole("status")).toContainText("无效输入：image");
   await expect(
     page.locator('.react-flow__node[data-id="input:image"]'),
-  ).toContainText("rgb_image");
+  ).toContainText("图片");
   await input.fill('{"kind":"rgba_image","carriers":["artifact_ref"]}');
   await page.getByRole("button", { name: "应用输入契约", exact: true }).click();
   await expect(page.getByRole("status")).toContainText("输入契约已更新");
   await expect(
     page.locator('.react-flow__node[data-id="input:image"]'),
-  ).toContainText("rgba_image");
+  ).toContainText("透明图片");
   expect(errors).toEqual([]);
 });
 
@@ -2391,8 +2630,11 @@ test("recovery evidence diagnostics expose exact references without dispatch", a
   let mutations = 0;
   const bad = { "sha256:missing-output": "blob not found" };
   await page.route("**/api/**", (route) => {
-    if (route.request().method() !== "GET") mutations++;
     const path = new URL(route.request().url()).pathname;
+    // Automatic compilation is read-only; every other non-GET remains forbidden.
+    if (path === "/api/compile")
+      return route.fulfill({ json: { ok: true, execution_ready: false } });
+    if (route.request().method() !== "GET") mutations++;
     return route.fulfill({
       json:
         path === "/api/catalog"
@@ -2566,6 +2808,7 @@ test("multi-input editor uploads RGB and mask and submits complete bindings", as
   await page.goto("/");
   page.on("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "RGB + mask", exact: true }).click();
+  await page.getByRole("button", { name: "继续替换", exact: true }).click();
   await page.getByRole("button", { name: "运行", exact: true }).click();
   await page.getByLabel("上传输入 image").setInputFiles({
     name: "image.png",
@@ -2589,11 +2832,14 @@ test("multi-input editor uploads RGB and mask and submits complete bindings", as
     mask: { artifact_id: "mask_ref" },
   });
   expect(starts[0]).not.toHaveProperty("image_ref");
-  await page
-    .getByRole("button", {
-      name: "用作输入 image · encode · image",
-      exact: true,
-    })
+  const imageInput = page.locator('[data-id="input:image"]');
+  await expect(imageInput.getByLabel("输入 image Artifact ID")).toBeHidden();
+  await imageInput.getByText("从历史结果选择 · image", { exact: true }).click();
+  await expect(
+    imageInput.getByText("来源运行：dag_mask", { exact: true }),
+  ).toBeVisible();
+  await imageInput
+    .getByRole("button", { name: "选用 encode.image → image", exact: true })
     .click();
   await expect(page.getByLabel("输入 image Artifact ID")).toHaveValue(
     "reusable_rgb",
@@ -2606,7 +2852,9 @@ test("multi-input editor uploads RGB and mask and submits complete bindings", as
     buffer: Buffer.from("invalid"),
   });
   await expect(
-    page.getByText(/输入 mask 上传失败：.*invalid replacement mask/),
+    page
+      .locator('[data-id="input:mask"]')
+      .getByText(/输入 mask 上传失败：.*invalid replacement mask/),
   ).toBeVisible();
   await expect(page.getByLabel("输入 mask Artifact ID")).toHaveValue("");
   await expect(start).toBeDisabled();
@@ -2625,137 +2873,191 @@ test("multi-input editor uploads RGB and mask and submits complete bindings", as
     buffer: Buffer.from("mask"),
   });
   await sent;
-  await page.getByRole("button", { name: "＋ 管线输入", exact: true }).click();
-  await expect(page.getByLabel("输入 input Artifact ID")).toBeVisible();
+  await page.getByLabel("添加输入节点").selectOption("mask");
+  await expect(page.locator('[data-id="input:mask_2"]')).toBeVisible();
+  await expect(page.getByLabel("输入 mask_2 Artifact ID")).toBeHidden();
   releaseMask!();
   await expect(
-    page.getByText("上传期间输入契约已修改，请为当前输入重新选择文件。"),
+    page
+      .locator('[data-id="input:mask"]')
+      .getByText("上传期间输入契约已修改，请为当前输入重新选择文件。"),
   ).toBeVisible();
   await expect(page.getByLabel("输入 mask Artifact ID")).toHaveValue("");
   await expect(start).toBeDisabled();
   expect(starts).toHaveLength(1);
 });
 
-test("changing previewed run preserves explicitly selected historical input", async ({
-  page,
-}) => {
-  const runs = ["run_a", "run_b"];
-  await page.route("**/api/**", async (route) => {
-    if (await executionBoundary(route, true)) return;
-    const path = new URL(route.request().url()).pathname;
-    let body: any = {};
-    if (path === "/api/catalog") {
-      body = {
-        operators: {
-          "apply_binary_mask@1": {
-            name: "apply_binary_mask",
-            version: "1",
-            inputs: {
-              image: { kinds: ["rgb_image"], carriers: ["artifact_ref"] },
-              mask: {
-                kinds: ["binary_mask"],
-                carriers: ["artifact_ref"],
-                schema_name: "png",
-                schema_version: "1.0",
-              },
-            },
-            outputs: {
-              rgba: { kinds: ["rgba_image"], carriers: ["artifact_ref"] },
-            },
-          },
-        },
-        adapters: [
-          {
-            name: "apply_binary_mask",
-            version: "1",
-            operators: ["apply_binary_mask@1"],
-          },
-        ],
-        templates: [
-          {
-            id: "mask",
-            label: "RGB + mask",
-            pipeline: {
-              pipeline: "mask",
+for (const mismatch of [false, true]) {
+  test(`changing previewed run preserves explicitly selected historical input (mismatch=${mismatch})`, async ({
+    page,
+  }) => {
+    const runs = ["run_a", "run_b"];
+    const previewRequests: string[] = [];
+    await page.route("**/api/**", async (route) => {
+      if (await executionBoundary(route, true)) return;
+      const path = new URL(route.request().url()).pathname;
+      let body: any = {};
+      if (path === "/api/catalog") {
+        body = {
+          operators: {
+            "apply_binary_mask@1": {
+              name: "apply_binary_mask",
               version: "1",
               inputs: {
-                image: { kind: "rgb_image", carriers: ["artifact_ref"] },
+                image: { kinds: ["rgb_image"], carriers: ["artifact_ref"] },
                 mask: {
-                  kind: "binary_mask",
+                  kinds: ["binary_mask"],
                   carriers: ["artifact_ref"],
                   schema_name: "png",
                   schema_version: "1.0",
                 },
               },
-              nodes: {
-                composite: {
-                  operator: "apply_binary_mask@1",
-                  inputs: {
-                    image: "pipeline.inputs.image",
-                    mask: "pipeline.inputs.mask",
+              outputs: {
+                rgba: { kinds: ["rgba_image"], carriers: ["artifact_ref"] },
+              },
+            },
+          },
+          adapters: [
+            {
+              name: "apply_binary_mask",
+              version: "1",
+              operators: ["apply_binary_mask@1"],
+            },
+          ],
+          templates: [
+            {
+              id: "mask",
+              label: "RGB + mask",
+              pipeline: {
+                pipeline: "mask",
+                version: "1",
+                inputs: {
+                  image: { kind: "rgb_image", carriers: ["artifact_ref"] },
+                  mask: {
+                    kind: "binary_mask",
+                    carriers: ["artifact_ref"],
+                    schema_name: "png",
+                    schema_version: "1.0",
+                  },
+                },
+                nodes: {
+                  composite: {
+                    operator: "apply_binary_mask@1",
+                    inputs: {
+                      image: "pipeline.inputs.image",
+                      mask: "pipeline.inputs.mask",
+                    },
                   },
                 },
               },
             },
+          ],
+          execution_enabled: true,
+        };
+      } else if (path === "/api/drafts") body = { drafts: [] };
+      else if (path === "/api/runs")
+        body = {
+          runs: runs.map((run_id) => ({ run_id, status: "succeeded" })),
+        };
+      else if (path.includes("/snapshot-output/")) {
+        previewRequests.push(route.request().url());
+        await route.fulfill({
+          contentType: "image/png",
+          body: Buffer.from(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aZ0sAAAAASUVORK5CYII=",
+            "base64",
+          ),
+        });
+        return;
+      } else if (path.includes("/snapshot-reference/"))
+        body = {
+          source_run_id: "run_a",
+          node_id: "encode",
+          port: "image",
+          kind: "rgb_image",
+          reference: { artifact_id: "old" },
+          source_snapshot: {
+            artifact_id: mismatch ? "wrong-snapshot" : "snap-a",
           },
-        ],
-        execution_enabled: true,
-      };
-    } else if (path === "/api/drafts") body = { drafts: [] };
-    else if (path === "/api/runs")
-      body = { runs: runs.map((run_id) => ({ run_id, status: "succeeded" })) };
-    else if (path.endsWith("/references/encode/image"))
-      body = {
-        source_run_id: "run_a",
-        node_id: "encode",
-        port: "image",
-        kind: "rgb_image",
-        reference: { artifact_id: "old" },
-      };
-    else
-      body = {
-        run: {
-          run_id: path.includes("run_b") ? "run_b" : "run_a",
-          status: "succeeded",
-          dag: { revision: 1, node_states: {} },
-        },
-        outputs: [
-          {
-            node_id: "encode",
-            port: "image",
-            kind: "rgb_image",
-            url: "/output.png",
+        };
+      else if (path.endsWith("/references/encode/image"))
+        body = {
+          source_run_id: "run_a",
+          node_id: "encode",
+          port: "image",
+          kind: "rgb_image",
+          reference: { artifact_id: "old" },
+        };
+      else
+        body = {
+          snapshot_ref: {
+            artifact_id: path.includes("run_b") ? "snap-b" : "snap-a",
           },
-        ],
-      };
-    await route.fulfill({ json: body });
+          run: {
+            run_id: path.includes("run_b") ? "run_b" : "run_a",
+            status: "succeeded",
+            dag: { revision: 1, node_states: {} },
+          },
+          outputs: [
+            {
+              node_id: "encode",
+              port: "image",
+              kind: "rgb_image",
+              url: "/output.png",
+            },
+          ],
+        };
+      await route.fulfill({ json: body });
+    });
+    await page.goto("/");
+    page.on("dialog", (d) => d.accept());
+    await page.getByRole("button", { name: "RGB + mask", exact: true }).click();
+    await page.getByRole("button", { name: "继续替换", exact: true }).click();
+    await page.getByRole("button", { name: "运行", exact: true }).click();
+    await page.getByLabel("选择运行").selectOption("run_a");
+    await page
+      .getByRole("button", {
+        name: "用作输入 image · encode · image",
+        exact: true,
+      })
+      .click();
+    await expect(page.getByLabel("输入 image Artifact ID")).toHaveValue("old");
+    await page.getByLabel("选择运行").selectOption("run_b");
+    // Product §3.3: changing the viewed run is not an explicit input selection.
+    await expect(
+      page.getByText(/下游输入来源：run_a \/ encode.image/),
+    ).toBeVisible();
+    await expect(page.getByLabel("输入 image Artifact ID")).toHaveValue("old");
+    await expect(page.getByLabel("输入 mask Artifact ID")).toHaveValue("");
+    await page
+      .locator('[data-id="input:image"] .blueprint-node-header')
+      .click();
+    const current = page.getByRole("region", { name: "当前输入预览" });
+    if (mismatch) {
+      await expect(current.getByRole("alert")).toContainText(
+        "无法核实当前输入",
+      );
+      await expect(current.getByRole("img")).toHaveCount(0);
+      expect(previewRequests).toHaveLength(0);
+    } else {
+      await expect(current.getByRole("img")).toBeVisible();
+      await expect(current).toContainText("run_a / encode / image");
+      // StrictMode may repeat a read-only mount; every read must stay pinned.
+      expect(previewRequests.length).toBeGreaterThan(0);
+      for (const url of previewRequests)
+        expect(url).toContain(
+          "/run_a/snapshot-output/encode/image?snapshot=snap-a",
+        );
+    }
+
+    await expect(
+      page.getByRole("button", {
+        name: "启动新运行 · 检查执行范围",
+        exact: true,
+      }),
+    ).toBeDisabled();
   });
-  await page.goto("/");
-  page.on("dialog", (d) => d.accept());
-  await page.getByRole("button", { name: "RGB + mask", exact: true }).click();
-  await page.getByRole("button", { name: "运行", exact: true }).click();
-  await page.getByLabel("选择运行").selectOption("run_a");
-  await page
-    .getByRole("button", {
-      name: "用作输入 image · encode · image",
-      exact: true,
-    })
-    .click();
-  await expect(page.getByLabel("输入 image Artifact ID")).toHaveValue("old");
-  await page.getByLabel("选择运行").selectOption("run_b");
-  // Product §3.3: changing the viewed run is not an explicit input selection.
-  await expect(
-    page.getByText(/下游输入来源：run_a \/ encode.image/),
-  ).toBeVisible();
-  await expect(page.getByLabel("输入 image Artifact ID")).toHaveValue("old");
-  await expect(page.getByLabel("输入 mask Artifact ID")).toHaveValue("");
-  await expect(
-    page.getByRole("button", {
-      name: "启动新运行 · 检查执行范围",
-      exact: true,
-    }),
-  ).toBeDisabled();
-});
+}
 
 test("backend-only node exposes the unique adapter parameter form", async ({
   page,
@@ -2811,13 +3113,20 @@ test("backend-only node exposes the unique adapter parameter form", async ({
   });
   await page.goto("/");
   await page.getByRole("button", { name: "mask_only", exact: true }).click();
+  await page.getByRole("button", { name: "继续替换", exact: true }).click();
   await page
     .locator(".react-flow__node")
     .filter({ hasText: "text_segmentation@1" })
     .click();
   await page.getByRole("button", { name: "配置", exact: true }).click();
-  await page.getByLabel("参数 prompt", { exact: true }).fill("robot");
-  await page.getByLabel("参数 prompt", { exact: true }).blur();
+  await page
+    .locator(".inspector")
+    .getByLabel("参数 prompt", { exact: true })
+    .fill("robot");
+  await page
+    .locator(".inspector")
+    .getByLabel("参数 prompt", { exact: true })
+    .blur();
   await page.getByRole("button", { name: "编译校验", exact: true }).click();
   await expect
     .poll(() => compiled?.nodes.segment.parameters.prompt)
@@ -2913,23 +3222,34 @@ test("run to selection omits downstream and node preview stays visible in config
   });
   await page.goto("/");
   await page.getByRole("button", { name: "partial", exact: true }).click();
+  await page.getByRole("button", { name: "继续替换", exact: true }).click();
   await page
-    .locator(".react-flow__node")
-    .filter({ hasText: "segment@1" })
+    .locator('.react-flow__node[data-id="segment"] .blueprint-node-header')
     .click();
   await page.getByRole("button", { name: "编译校验", exact: true }).click();
   await page.getByRole("button", { name: "运行", exact: true }).click();
   await page
     .getByRole("checkbox", { name: "只运行到选中节点（包含必要上游）" })
     .check();
-  await page.getByLabel("图片来源", { exact: true }).selectOption("path");
-  await page.getByLabel("运行图片路径").fill("/image.png");
-  await expect(page.getByLabel("上传输入 unrelated_mask")).toHaveCount(0);
+  await page
+    .locator('[data-id="input:image"]')
+    .getByText("高级：输入引用", { exact: true })
+    .click();
+  await page
+    .getByLabel("输入 image Artifact ID", { exact: true })
+    .fill("image-ref");
+  // The graph keeps all editable inputs; the submitted run is still sliced.
+  await expect(
+    page.locator('.react-flow__node[data-id="input:unrelated_mask"]'),
+  ).toBeVisible();
   await page
     .getByRole("button", { name: "运行到这里 · 检查执行范围", exact: true })
     .click();
   await confirmExecution(page);
   expect(Object.keys(submitted?.pipeline.inputs || {})).toEqual(["image"]);
+  expect(submitted?.input_refs).toEqual({
+    image: { artifact_id: "image-ref" },
+  });
   await expect
     .poll(() => Object.keys(submitted?.pipeline.nodes || {}))
     .toEqual(["segment"]);

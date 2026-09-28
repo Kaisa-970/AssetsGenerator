@@ -1,6 +1,39 @@
-import { pipelineThrough, duplicateNode } from "./graph";
+import { pipelineThrough, duplicateNode, backendLabel } from "./graph";
 import { describe, it, expect } from "vitest";
 import { load, dump } from "js-yaml";
+
+it("keeps same-name model deployments distinguishable and unknown identities intact", () => {
+  const catalog: Catalog = {
+    operators: {},
+    adapters: [],
+    templates: [],
+    model_services: [
+      {
+        backend: "model_a",
+        display_name: "Mesh",
+        endpoint: "http://a",
+        operator: "shape@1",
+        descriptor_digest: "a",
+        frame_id: "native",
+        up_axis: "+Z",
+        unit: "relative",
+      },
+      {
+        backend: "model_b",
+        display_name: "Mesh",
+        endpoint: "http://b",
+        operator: "shape@1",
+        descriptor_digest: "b",
+        frame_id: "native",
+        up_axis: "+Z",
+        unit: "relative",
+      },
+    ],
+  };
+  expect(backendLabel(catalog, "model_a")).toBe("Mesh · model_a");
+  expect(backendLabel(catalog, "model_b")).toBe("Mesh · model_b");
+  expect(backendLabel(catalog, "unregistered")).toBe("unregistered");
+});
 import {
   bind,
   compatible,

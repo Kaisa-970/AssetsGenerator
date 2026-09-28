@@ -66,6 +66,8 @@ test("upload defaults and local thumbnails revoke URLs without starting runs", a
     )
     .toBe(true);
   const second = await image.getAttribute("src");
+  if (!(await page.getByLabel("图片来源", { exact: true }).isVisible()))
+    await page.getByText("高级：图片来源", { exact: true }).click();
   await page.getByLabel("图片来源", { exact: true }).selectOption("path");
   await expect(image).toHaveCount(0);
   await expect
@@ -115,19 +117,22 @@ test("multi-input image and mask thumbnails disappear when bindings change", asy
   page.on("dialog", (dialog) => dialog.accept());
   await page.goto("/");
   await page.getByRole("button", { name: "inputs", exact: true }).click();
+  await page.getByRole("button", { name: "继续替换", exact: true }).click();
   await page.getByRole("button", { name: "运行", exact: true }).click();
   for (const name of ["image", "mask"]) {
-    await page
-      .getByLabel(`上传输入 ${name}`)
-      .setInputFiles({
-        name: name + ".png",
-        mimeType: "image/png",
-        buffer: png,
-      });
+    await page.getByLabel(`上传输入 ${name}`).setInputFiles({
+      name: name + ".png",
+      mimeType: "image/png",
+      buffer: png,
+    });
     await expect(
       page.getByAltText(`输入 ${name}缩略图`, { exact: true }),
     ).toBeVisible();
   }
+  await page
+    .locator('[data-id="input:mask"]')
+    .getByText("高级：输入引用", { exact: true })
+    .click();
   await page
     .getByLabel("输入 mask Artifact ID", { exact: true })
     .fill("other_mask");

@@ -64,6 +64,14 @@ export type Catalog = {
     service_status?: string;
   }[];
 };
+
+/** Presentation only: backend identity remains the select value and plan binding. */
+export function backendLabel(catalog: Catalog, backend: string): string {
+  const name = catalog.model_services?.find(
+    (service) => service.backend === backend,
+  )?.display_name;
+  return name && name !== backend ? `${name} · ${backend}` : backend;
+}
 export const inputId = (name: string) => `input:${name}`;
 export function parseReference(
   ref: string,
@@ -429,7 +437,7 @@ export function dependencyLayout(p: Pipeline): Layout {
   const levels = new Map<string, number>();
   Object.keys(p.inputs).forEach((name, row) => {
     levels.set(inputId(name), 0);
-    positions[inputId(name)] = { x: 30, y: 80 + row * 330 };
+    positions[inputId(name)] = { x: 30, y: 80 + row * 550 };
   });
   const pending = new Set(Object.keys(p.nodes).sort());
   while (pending.size) {
@@ -459,7 +467,7 @@ export function dependencyLayout(p: Pipeline): Layout {
   for (const id of Object.keys(p.nodes).sort()) {
     const level = levels.get(id)!;
     const row = rows.get(level) || 0;
-    positions[id] = { x: 30 + level * 430, y: 80 + row * 330 };
+    positions[id] = { x: 30 + level * 430, y: 80 + row * 550 };
     rows.set(level, row + 1);
   }
   return positions;

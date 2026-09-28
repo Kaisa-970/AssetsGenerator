@@ -79,6 +79,7 @@ it.each(["triangle_mesh", "gltf_asset"])(
       }),
     );
     expect(html).toContain("预览模型 · A");
+    expect(html).toContain("此结果未提供模型与参数摘要");
     expect(html).not.toContain("此类型暂无可视预览");
     expect(selected).toBe(false);
   },

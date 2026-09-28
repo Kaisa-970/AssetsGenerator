@@ -111,9 +111,15 @@ export function ModelServices({
       <button onClick={() => setOpen(!open)} aria-expanded={open}>
         ＋ 添加模型服务
       </button>
+      <p className="muted">地址添加目前仅支持图生 Mesh。</p>
       {open && (
         <div className="model-service-form">
           <p>填写符合统一协议的图生 Mesh 服务地址。检测不会启动推理。</p>
+          <p>
+            SAM3
+            文字分割等其他服务目前需要管理员配置；已配置后，在对应节点的“模型”中选择。
+            普通模型网页或 Gradio 地址不能直接添加。
+          </p>
           <label>
             服务地址
             <input

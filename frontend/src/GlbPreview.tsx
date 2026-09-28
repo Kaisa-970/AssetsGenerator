@@ -58,11 +58,13 @@ export function GlbPreview({
   nodeId,
   url,
   onClose,
+  embedded = false,
 }: {
   runId: string;
   nodeId: string;
   url: string;
   onClose: () => void;
+  embedded?: boolean;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const reset = useRef<() => void>(() => {});
@@ -196,9 +198,9 @@ export function GlbPreview({
   }, [url, runId, nodeId]);
   return (
     <div
-      className="run-graph-overlay"
-      role="dialog"
-      aria-modal="true"
+      className={embedded ? "comparison-mesh-preview" : "run-graph-overlay"}
+      role={embedded ? "region" : "dialog"}
+      aria-modal={embedded ? undefined : true}
       aria-label="模型预览"
     >
       <header>
@@ -208,7 +210,15 @@ export function GlbPreview({
       <p>{runId}</p>
       <p role="status">{status}</p>
       <button onClick={() => reset.current()}>重置视角</button>
-      <div ref={host} style={{ flex: 1, minHeight: 300, width: "100%" }} />
+      <div
+        ref={host}
+        style={{
+          flex: 1,
+          minHeight: 300,
+          height: embedded ? 360 : undefined,
+          width: "100%",
+        }}
+      />
       <a href={url} download>
         下载原始 GLB
       </a>

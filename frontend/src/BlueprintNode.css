@@ -1,0 +1,240 @@
+.blueprint-node {
+  width: 340px;
+  color: #dae3ef;
+  background: #202630;
+  border: 1px solid #4d5765;
+  border-radius: 7px;
+  box-shadow: 0 5px 18px #0004;
+  font-size: 12px;
+}
+.blueprint-node-selected {
+  border-color: #f3b953;
+  box-shadow: 0 0 0 2px #f3b95360;
+}
+.blueprint-node .blueprint-node-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 9px 12px;
+  background: #36506b;
+  border-radius: 6px 6px 0 0;
+  cursor: grab;
+  border-bottom: 1px solid #718ca233;
+}
+.blueprint-node-input .blueprint-node-header {
+  background: #41604e;
+}
+.blueprint-node-header strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.blueprint-node-instance {
+  flex: 1;
+  min-width: 0;
+  color: #b9cde0;
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.blueprint-node-category,
+.blueprint-history-status {
+  font-size: 10px;
+  white-space: nowrap;
+}
+.blueprint-history-status {
+  color: #d5e5f6;
+}
+.blueprint-controls {
+  padding: 10px 12px;
+}
+.blueprint-controls label {
+  color: #c8d6e8;
+  display: grid;
+  gap: 5px;
+  margin: 0 0 10px;
+}
+.blueprint-controls input:not([type="checkbox"]),
+.blueprint-controls select,
+.blueprint-controls textarea {
+  width: 100%;
+  min-width: 0;
+  color: #edf2f8;
+  background: #141a22;
+  border: 1px solid #526073;
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+.blueprint-controls textarea {
+  min-height: 64px;
+  max-height: 160px;
+  resize: vertical;
+}
+.blueprint-controls button {
+  color: #d8e4f2;
+  background: #344150;
+  border-color: #607189;
+  font-size: 11px;
+  padding: 5px 8px;
+}
+.blueprint-controls :focus-visible {
+  outline: 2px solid #f3b953;
+  outline-offset: 2px;
+}
+.blueprint-controls p,
+.blueprint-controls span {
+  color: #bac8d9;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.blueprint-controls [role="alert"] {
+  color: #ffce9f;
+}
+.blueprint-controls button:disabled,
+.blueprint-controls select:disabled {
+  opacity: 0.6;
+}
+.blueprint-parameter-fields {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+.parameter-summary {
+  margin: 0 0 7px;
+  color: #aebfd2;
+  font-size: 10px;
+  line-height: 1.4;
+}
+.parameter-missing {
+  color: #ffbd82;
+}
+.blueprint-parameter-fields .section-label {
+  display: none;
+}
+.blueprint-parameter-fields section > p:not([role="alert"]) {
+  display: none;
+}
+.blueprint-parameter-fields label > button {
+  justify-self: start;
+}
+.blueprint-parameter-fields label > span {
+  display: block;
+}
+.blueprint-technical {
+  margin-top: 8px;
+  color: #aab8ca;
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+.blueprint-technical summary {
+  cursor: pointer;
+}
+.blueprint-ports {
+  padding: 3px 0;
+}
+.blueprint-input-summary {
+  padding: 6px 15px 2px;
+  color: #b7c9dc;
+  font-size: 10px;
+  line-height: 1.4;
+}
+.blueprint-input-missing {
+  color: #ffbd82;
+}
+.blueprint-config-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 15px;
+  color: #b5c9d8;
+  background: #26323d;
+  font-size: 10px;
+  line-height: 1.4;
+}
+.blueprint-config-summary-warning {
+  color: #ffd09a;
+  background: #3a2d20;
+}
+.blueprint-config-dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 7px;
+  border-radius: 50%;
+  background: #91adbf;
+}
+.blueprint-config-summary-warning .blueprint-config-dot {
+  background: #f0ad5f;
+}
+.blueprint-output-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 15px;
+  color: #c8d8e6;
+  background: #26323d;
+  font-size: 10px;
+}
+.blueprint-output-summary button {
+  padding: 3px 7px;
+  color: #dbeef5;
+  background: #315e70;
+  border: 1px solid #4a8193;
+  font-size: 10px;
+}
+.blueprint-parameter-heading {
+  margin: 2px 0 6px;
+  color: #d4e2ef;
+  font-size: 10px;
+  font-weight: 600;
+}
+.blueprint-port {
+  position: relative;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-height: 32px;
+  padding: 5px 15px;
+}
+.blueprint-port-output {
+  justify-content: flex-end;
+}
+.blueprint-port-input {
+  flex-wrap: wrap;
+}
+.blueprint-port .blueprint-binding {
+  flex-basis: 100%;
+  overflow-wrap: anywhere;
+}
+.blueprint-port small {
+  font-size: 10px;
+  color: #a7bad1;
+}
+.blueprint-port .react-flow__handle {
+  width: 11px;
+  height: 11px;
+  background: #8abbdd;
+  border: 2px solid #1c222b;
+}
+.blueprint-port-output .react-flow__handle {
+  background: #dfbe83;
+}
+.blueprint-stale-status {
+  color: #8a3d00;
+  background: #fff0dc;
+}
+.blueprint-failure-status {
+  color: #8e1c1c;
+  background: #ffe4e4;
+}
+
+/* Keep expanded photo lists reachable inside the canvas viewport. */
+.blueprint-node-input .blueprint-controls:has([aria-label="上传多视图照片"]) {
+  max-height: 320px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}

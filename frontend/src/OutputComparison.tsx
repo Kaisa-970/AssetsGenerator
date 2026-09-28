@@ -17,6 +17,12 @@ export type ComparisonSlot = {
   reference: { artifact_id: string };
   schema_name?: string;
   schema_version?: string;
+  execution?: {
+    adapter: string;
+    backend?: string | null;
+    parameters: Record<string, unknown>;
+    implementation_digest: string;
+  };
 };
 
 export function comparisonOutputUrl(slot: ComparisonSlot) {
@@ -70,7 +76,9 @@ export function OutputComparison({
   onUse: (slot: ComparisonSlot, inputName: string) => void;
   onClear: (side: ComparisonSide) => void;
 }) {
-  const [model, setModel] = useState<ComparisonSlot>();
+  const [openModels, setOpenModels] = useState<
+    Partial<Record<ComparisonSide, string>>
+  >({});
   return (
     <section className="output-comparison" aria-label="比较两份结果">
       <h3>比较两份结果</h3>
@@ -102,6 +110,32 @@ export function OutputComparison({
             <article key={`${side}:${identity}`} aria-label={`比较 ${side}`}>
               <h4>{side} · 历史结果</h4>
               <p>这份结果来自已完成的运行，可单独预览。</p>
+              <p>
+                来源：{slot.runId} / {slot.nodeId} / {slot.port}
+              </p>
+              {slot.execution ? (
+                <>
+                  {typeof slot.execution.parameters.service_id === "string" && (
+                    <p>生成服务：{slot.execution.parameters.service_id}</p>
+                  )}
+                  <p>
+                    模型 / 实现：
+                    {slot.execution.backend || slot.execution.adapter}
+                  </p>
+                  <details>
+                    <summary>本次运行参数</summary>
+                    <pre>
+                      {JSON.stringify(slot.execution.parameters, null, 2)}
+                    </pre>
+                    <p>实现：{slot.execution.adapter}</p>
+                    <p className="comparison-artifact">
+                      实现摘要：{slot.execution.implementation_digest}
+                    </p>
+                  </details>
+                </>
+              ) : (
+                <p>此结果未提供模型与参数摘要，不能从当前草稿推断。</p>
+              )}
               <details>
                 <summary>查看来源详情</summary>
                 <p>
@@ -124,9 +158,27 @@ export function OutputComparison({
                 />
               ) : slot.kind === "gltf_asset" ||
                 slot.kind === "triangle_mesh" ? (
-                <button onClick={() => setModel(structuredClone(slot))}>
-                  预览模型 · {side}
-                </button>
+                openModels[side] === identity ? (
+                  <Suspense fallback={<p role="status">正在加载模型预览…</p>}>
+                    <GlbPreview
+                      embedded
+                      runId={slot.runId}
+                      nodeId={slot.nodeId}
+                      url={url}
+                      onClose={() =>
+                        setOpenModels((old) => ({ ...old, [side]: undefined }))
+                      }
+                    />
+                  </Suspense>
+                ) : (
+                  <button
+                    onClick={() =>
+                      setOpenModels((old) => ({ ...old, [side]: identity }))
+                    }
+                  >
+                    预览模型 · {side}
+                  </button>
+                )
               ) : (
                 <p>此类型暂无可视预览：{slot.kind}</p>
               )}
@@ -150,16 +202,6 @@ export function OutputComparison({
           );
         })}
       </div>
-      {model && (
-        <Suspense fallback={<p role="status">正在加载模型预览…</p>}>
-          <GlbPreview
-            runId={model.runId}
-            nodeId={model.nodeId}
-            url={comparisonOutputUrl(model)}
-            onClose={() => setModel(undefined)}
-          />
-        </Suspense>
-      )}
     </section>
   );
 }

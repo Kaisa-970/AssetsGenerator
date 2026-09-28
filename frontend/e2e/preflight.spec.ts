@@ -119,10 +119,12 @@ test("a definite changed-preflight rejection does not leave an unknown creation 
 }) => {
   const state = await setup(page);
   state.reject();
+  await page.getByRole("button", { name: "配置", exact: true }).click();
   await page
     .getByRole("button", { name: "启动新运行 · 检查执行范围", exact: true })
     .click();
   await expect.poll(() => state.starts.length).toBe(1);
+  await expect(page.locator(".execution-toolbar")).toContainText("条件已变化，请重新检查");
   await expect
     .poll(() =>
       page.evaluate(() =>

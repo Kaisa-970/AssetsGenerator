@@ -1,3 +1,4 @@
+import { newRequestId } from "./requestId";
 import { useRef, useState } from "react";
 import { request } from "./executionApi";
 type Proposal = {
@@ -122,7 +123,7 @@ export function ReuseHumanDecision({
                     source_snapshot: active.source_snapshot,
                     confirm: true,
                     reviewer: reviewer.trim(),
-                    idempotency_key: crypto.randomUUID(),
+                    idempotency_key: newRequestId(),
                   },
                 };
                 sessionStorage.setItem(

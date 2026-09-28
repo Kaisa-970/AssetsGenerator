@@ -107,12 +107,13 @@ test("node preview follows selected output and empty-node run status without dis
   page.on("dialog", (dialog) => dialog.accept());
   await page.goto("/");
   await page.getByRole("button", { name: "预览测试模板", exact: true }).click();
+  await page.getByRole("button", { name: "继续替换", exact: true }).click();
   await page.getByLabel("选择运行").selectOption("historical");
   const selectNode = async (id: string) => {
     await page.getByRole("button", { name: "Fit View", exact: true }).click();
     await page
       .locator(`.react-flow__node[data-id="${id}"]`)
-      .getByText(id, { exact: true })
+      .locator(".blueprint-node-header")
       .click();
   };
   const preview = page.getByRole("region", { name: "选中节点预览" });

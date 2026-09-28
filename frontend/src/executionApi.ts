@@ -24,6 +24,22 @@ export type NodeState = {
     remote_binding?: { service_id: string; submission_key: string };
   }[];
 };
+export function executionFailureSummary(state: NodeState): string | undefined {
+  const attempt = state.attempts?.at(-1);
+  if (!attempt?.error_code && !attempt?.error_detail) return undefined;
+  const detail = attempt.error_detail || "";
+  if (attempt.error_code === "remote_transport_unknown")
+    return "远端状态未知 · 先核实作业";
+  if (
+    /out of memory|CUDA_ERROR_OUT_OF_MEMORY|cudaErrorMemoryAllocation/i.test(
+      detail,
+    )
+  )
+    return "显存不足 · 调低模型分辨率或释放 GPU 后重试";
+  if (attempt.error_code === "backend_failed")
+    return "模型执行失败 · 查看运行记录";
+  return `${attempt.error_code || "执行失败"} · 查看运行记录`;
+}
 export type Run = {
   run_id: string;
   status: string;

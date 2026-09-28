@@ -1,7 +1,17 @@
+import { newRequestId } from "./requestId";
+import {
+  InputHistorySelector,
+  inputReferenceMismatch,
+} from "./InputHistorySelector";
+import { CurrentInputPreview } from "./CurrentInputPreview";
 import { selectedPreviewPort, previewEmptyMessage } from "./selectedPreview";
 import { ReuseHumanDecision } from "./ReuseHumanDecision";
 import { useResultFreshness } from "./useResultFreshness";
-import { request, type Envelope } from "./executionApi";
+import {
+  executionFailureSummary,
+  request,
+  type Envelope,
+} from "./executionApi";
 import { useRunCreation, type CreationRequest } from "./useRunCreation";
 import { OutputComparison, type ComparisonSlot } from "./OutputComparison";
 import { NodeActionHint } from "./NodeActionHint";
@@ -16,12 +26,30 @@ import { createPortal } from "react-dom";
 import { remoteStatusMessage } from "./remoteStatus";
 import { ImageOutput } from "./ImageOutput";
 import { RunGraph } from "./RunGraph";
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { pipelineThrough, type Pipeline } from "./graph";
 
 const GlbPreview = lazy(() =>
   import("./GlbPreview").then((module) => ({ default: module.GlbPreview })),
 );
+
+function ExecutionPortal({
+  host,
+  children,
+}: {
+  host?: HTMLElement | null;
+  children: ReactNode;
+}) {
+  return host ? createPortal(children, host) : children;
+}
 
 export function ExecutionPanel({
   pipeline,
@@ -30,7 +58,16 @@ export function ExecutionPanel({
   configurationBlockedReason,
   selectedNode,
   previewHost,
+  inputHosts,
+  controlsHost,
+  workspaceRevision = 0,
   onLoadDraft,
+  onRunViewChange,
+  onFreshnessChange,
+  onLocateInput,
+  onLocateNode,
+  onOpenHistory,
+  onEditBlockedConfiguration,
 }: {
   pipeline: Pipeline;
   profile?: string;
@@ -38,7 +75,25 @@ export function ExecutionPanel({
   configurationBlockedReason?: string;
   selectedNode?: string;
   previewHost?: HTMLElement | null;
+  inputHosts?: Record<string, HTMLElement>;
+  controlsHost?: HTMLElement | null;
+  workspaceRevision?: number;
   onLoadDraft: (pipeline: Pipeline) => void;
+  onLocateInput?: (name: string) => void;
+  onLocateNode?: (nodeId: string) => void;
+  onOpenHistory?: () => void;
+  onEditBlockedConfiguration?: () => void;
+  onRunViewChange?: (
+    view:
+      | {
+          runId: string;
+          status: string;
+          outputs: { node_id: string; port: string; kind?: string }[];
+          states: Record<string, { status: string; failureSummary?: string }>;
+        }
+      | undefined,
+  ) => void;
+  onFreshnessChange?: (statuses: Record<string, string>) => void;
 }) {
   const [comparison, setComparison] = useState<
     Partial<Record<"A" | "B", ComparisonSlot>>
@@ -108,7 +163,7 @@ export function ExecutionPanel({
   const [imagePath, setImagePath] = useState("");
   const [reusedImage, setReusedImage] = useState<{ artifact_id: string }>();
   const [observationsId, setObservationsId] = useState("");
-  const [observationFiles, setObservationFiles] = useState<string[]>([]);
+  const [observationFiles, setObservationFiles] = useState<File[]>([]);
   const [inputRefs, setInputRefs] = useState<
     Record<string, Record<string, unknown>>
   >({});
@@ -124,7 +179,7 @@ export function ExecutionPanel({
       }
     >
   >({});
-  const inputSignature = JSON.stringify(effectivePipeline.inputs);
+  const inputSignature = JSON.stringify([workspaceRevision, pipeline.inputs]);
   const inputGeneration = useRef({ signature: inputSignature, revision: 0 });
   if (inputGeneration.current.signature !== inputSignature) {
     inputGeneration.current = {
@@ -132,23 +187,93 @@ export function ExecutionPanel({
       revision: inputGeneration.current.revision + 1,
     };
   }
+  const previousInputs = useRef(pipeline.inputs);
+  const previousWorkspaceRevision = useRef(workspaceRevision);
   useEffect(() => {
-    setInputRefs({});
-    setInputOrigins({});
-    setReusedImage(undefined);
-  }, [inputSignature]);
+    const workspaceChanged =
+      previousWorkspaceRevision.current !== workspaceRevision;
+    const oldInputs = previousInputs.current;
+    const compatible = new Set(
+      Object.keys(pipeline.inputs).filter(
+        (name) =>
+          !workspaceChanged &&
+          JSON.stringify(oldInputs[name]) ===
+            JSON.stringify(pipeline.inputs[name]),
+      ),
+    );
+    const keep = <T,>(values: Record<string, T>) =>
+      Object.fromEntries(
+        Object.entries(values).filter(([name]) => compatible.has(name)),
+      );
+    const wasSingleImage =
+      Object.keys(oldInputs).length === 1 && "image" in oldInputs;
+    const isSingleImage =
+      Object.keys(pipeline.inputs).length === 1 && "image" in pipeline.inputs;
+    const enteringMulti =
+      compatible.has("image") && wasSingleImage && !isSingleImage;
+    const leavingMulti =
+      compatible.has("image") && !wasSingleImage && isSingleImage;
+    const imageReference =
+      imageSource === "reference"
+        ? reusedImage
+        : imageSource === "upload"
+          ? uploaded?.ref
+          : undefined;
+    setInputRefs((values) => ({
+      ...keep(values),
+      ...(enteringMulti && imageReference ? { image: imageReference } : {}),
+    }));
+    setInputOrigins((values) => keep(values));
+    setInputFiles((values) => ({
+      ...keep(values),
+      ...(enteringMulti && imageSource === "upload" && uploaded && uploadedFile
+        ? {
+            image: {
+              file: uploadedFile,
+              artifactId: String(uploaded.ref.artifact_id),
+            },
+          }
+        : {}),
+    }));
+    if (leavingMulti) {
+      const id = inputRefs.image?.artifact_id;
+      setReusedImage(
+        typeof id === "string" && id ? { artifact_id: id } : undefined,
+      );
+      setImageSource(typeof id === "string" && id ? "reference" : "upload");
+      setUploaded(undefined);
+      setUploadedFile(undefined);
+    }
+    if (!compatible.has("image")) {
+      setReusedImage(undefined);
+      setUploaded(undefined);
+      setUploadedFile(undefined);
+      setImagePath("");
+    }
+    if (!compatible.has("observations")) {
+      setObservationsId("");
+      setObservationFiles([]);
+    }
+    previousInputs.current = pipeline.inputs;
+    previousWorkspaceRevision.current = workspaceRevision;
+  }, [inputSignature, pipeline.inputs, workspaceRevision]);
   useEffect(() => {
     if (reusedImage) setImageSource("reference");
   }, [reusedImage]);
   const multiView =
-    Object.keys(effectivePipeline.inputs).length === 1 &&
-    "observations" in effectivePipeline.inputs;
+    Object.keys(pipeline.inputs).length === 1 &&
+    "observations" in pipeline.inputs;
   const multiInput =
-    Object.keys(effectivePipeline.inputs).length > 1 ||
-    Object.values(effectivePipeline.inputs).some(
-      (port) => port.kind === "text" || port.kinds?.[0] === "text",
+    !multiView &&
+    !(
+      Object.keys(pipeline.inputs).length === 1 &&
+      ["rgb_image", "rgba_image"].includes(
+        pipeline.inputs.image?.kind || pipeline.inputs.image?.kinds?.[0] || "",
+      )
     );
-  const rgbaInput = effectivePipeline.inputs.image?.kind === "rgba_image";
+  const rgbaInput =
+    (pipeline.inputs.image?.kind || pipeline.inputs.image?.kinds?.[0]) ===
+    "rgba_image";
   const [imageSource, setImageSource] = useState("upload");
   const [uploaded, setUploaded] = useState<{
     name: string;
@@ -159,10 +284,6 @@ export function ExecutionPanel({
     Record<string, { file: File; artifactId: string }>
   >({});
   const [uploadedFile, setUploadedFile] = useState<File>();
-  useEffect(() => {
-    setInputFiles({});
-    setUploadedFile(undefined);
-  }, [inputSignature]);
   const [uploading, setUploading] = useState(false);
   const uploadPending = useRef(false);
   const [uploadMessage, setUploadMessage] = useState("");
@@ -263,6 +384,27 @@ export function ExecutionPanel({
   };
   const unresolvedCreation = !!creation.request || !!creation.error;
   const run = envelope?.run;
+  const runView = JSON.stringify(
+    run
+      ? {
+          runId: run.run_id,
+          status: run.status,
+          outputs: (envelope?.outputs || []).map(({ node_id, port, kind }) => ({ node_id, port, kind })),
+          states: Object.fromEntries(
+            Object.entries(run.dag?.node_states || {}).map(([id, state]) => [
+              id,
+              {
+                status: state.status,
+                failureSummary: executionFailureSummary(state),
+              },
+            ]),
+          ),
+        }
+      : null,
+  );
+  useEffect(() => {
+    onRunViewChange?.(JSON.parse(runView) || undefined);
+  }, [runView, onRunViewChange]);
   useEffect(() => {
     setPreviewPort("");
   }, [selectedNode, run?.run_id]);
@@ -271,11 +413,61 @@ export function ExecutionPanel({
     envelope?.actions?.revision === run?.dag?.revision
       ? envelope?.actions
       : undefined;
+  const currentInputName = selectedNode?.startsWith("input:")
+    ? selectedNode.slice(6)
+    : undefined;
+  const currentInput = currentInputName
+    ? pipeline.inputs[currentInputName]
+    : undefined;
+  const currentInputRef = currentInputName
+    ? multiInput
+      ? inputRefs[currentInputName]
+      : multiView
+        ? { artifact_id: observationsId }
+        : imageSource === "reference"
+          ? reusedImage
+          : imageSource === "upload"
+            ? uploaded?.ref
+            : undefined
+    : undefined;
+  const currentInputId =
+    typeof currentInputRef?.artifact_id === "string"
+      ? currentInputRef.artifact_id
+      : undefined;
+  const currentInputFile =
+    currentInputName && currentInputId
+      ? multiInput
+        ? inputFiles[currentInputName]?.artifactId === currentInputId
+          ? inputFiles[currentInputName].file
+          : undefined
+        : imageSource === "upload"
+          ? uploadedFile
+          : undefined
+      : undefined;
   const reuseStates = run?.dag?.node_states;
   const nodeFreshness = useResultFreshness(effectivePipeline, selected);
+  const freshnessView = JSON.stringify(nodeFreshness);
+  useEffect(() => {
+    onFreshnessChange?.(JSON.parse(freshnessView));
+  }, [freshnessView, onFreshnessChange]);
 
+  const missingInputs = Object.keys(effectivePipeline.inputs).filter((name) => {
+    if (multiInput) return !String(inputRefs[name]?.artifact_id || "").trim();
+    if (multiView) return !observationsId.trim();
+    return imageSource === "reference"
+      ? !reusedImage
+      : imageSource === "path"
+        ? !imagePath.trim()
+        : !uploaded || uploaded.rgba !== rgbaInput;
+  });
   const executing = pending || !!envelope?.busy;
   const setInputArtifact = (name: string, artifactId: string) => {
+    // A manually assigned reference does not inherit an earlier selection's origin.
+    setInputOrigins((old) => {
+      const next = { ...old };
+      delete next[name];
+      return next;
+    });
     setInputFiles((old) => {
       const next = { ...old };
       delete next[name];
@@ -296,8 +488,7 @@ export function ExecutionPanel({
       return;
     }
     const kind =
-      effectivePipeline.inputs[name]?.kind ||
-      effectivePipeline.inputs[name]?.kinds?.[0];
+      pipeline.inputs[name]?.kind || pipeline.inputs[name]?.kinds?.[0];
     const endpoint =
       kind === "text"
         ? "/api/inputs/text"
@@ -346,6 +537,7 @@ export function ExecutionPanel({
   };
   const upload = async (file?: File) => {
     if (uploadPending.current) return;
+    const revision = inputGeneration.current.revision;
     setUploaded(undefined);
     setUploadedFile(undefined);
     setUploadMessage("");
@@ -369,6 +561,10 @@ export function ExecutionPanel({
       if (!response.ok) throw Error(value.error || `HTTP ${response.status}`);
       if (!value.image_ref || typeof value.image_ref.artifact_id !== "string")
         throw Error("服务未返回有效的图片引用");
+      if (inputGeneration.current.revision !== revision) {
+        setUploadMessage("上传期间输入契约已修改，请重新选择文件。");
+        return;
+      }
       setUploaded({ name: file.name, rgba: rgbaInput, ref: value.image_ref });
       setUploadedFile(file);
       setUploadMessage("图片已上传；点击启动新运行才会执行模型。");
@@ -381,8 +577,9 @@ export function ExecutionPanel({
   };
   const uploadObservations = async (files: File[]) => {
     if (uploadPending.current) return;
+    const revision = inputGeneration.current.revision;
     setObservationsId("");
-    setObservationFiles([]);
+    setObservationFiles(files);
     setUploadMessage("");
     if (
       files.length < 2 ||
@@ -408,12 +605,17 @@ export function ExecutionPanel({
         images.push(value.image_ref);
       }
       const bundle = await request("/api/inputs/observations", { images });
+      if (inputGeneration.current.revision !== revision) {
+        setUploadMessage("上传期间输入契约已修改，请重新选择文件。");
+        return;
+      }
       setObservationsId(bundle.observations_ref.artifact_id);
-      setObservationFiles(files.map((f) => f.name));
+      setObservationFiles(files);
       setUploadMessage("观测包已创建；点击启动才会执行模型。");
     } catch (error) {
+      if (inputGeneration.current.revision !== revision) return;
       setUploadMessage(
-        `导入失败：${String(error)}。未创建运行，可重新选择文件。`,
+        `导入失败：${String(error)}。照片已保留，可重试导入；尚不能启动运行。`,
       );
     } finally {
       uploadPending.current = false;
@@ -447,6 +649,7 @@ export function ExecutionPanel({
           reference: source.reference,
           schema_name: source.schema_name,
           schema_version: source.schema_version,
+          execution: source.execution,
         },
       }));
       setMessage(`已固定比较项 ${side}，不改变下游输入。`);
@@ -454,8 +657,9 @@ export function ExecutionPanel({
   };
   const reuseOutput = (output: RunOutput, name: string) => {
     if (!run) return;
-    const port = effectivePipeline.inputs[name];
-    if (!multiInput) setImageSource("reference");
+    // Inputs belong to the editable graph, even while execution is scoped to a branch.
+    const port = pipeline.inputs[name];
+    if (!port) return;
     const revision = inputGeneration.current.revision;
     void mutate(async () => {
       const source = await request(
@@ -463,21 +667,13 @@ export function ExecutionPanel({
       );
       if (inputGeneration.current.revision !== revision)
         throw Error("输入契约已修改，请重新选择输出");
-      if (
-        source.source_run_id !== run.run_id ||
-        source.node_id !== output.node_id ||
-        source.port !== output.port ||
-        !(port.kinds || [port.kind]).includes(source.kind) ||
-        (port.schema_name && source.schema_name !== port.schema_name) ||
-        (port.schema_version &&
-          source.schema_version !== port.schema_version) ||
-        typeof source.reference?.artifact_id !== "string"
-      )
-        throw Error("输出引用与目标输入契约不匹配");
+      const mismatch = inputReferenceMismatch(source, run.run_id, output, port);
+      if (mismatch) throw Error(`输出引用与目标输入契约不匹配：${mismatch}`);
       setInputOrigins((old) => ({
         ...old,
         [name]: {
           artifactId: source.reference.artifact_id,
+          snapshot: envelope?.snapshot_ref?.artifact_id,
           runId: source.source_run_id,
           nodeId: source.node_id,
           port: source.port,
@@ -521,7 +717,7 @@ export function ExecutionPanel({
       )}
       {comparisonOpen && (
         <div
-          className="run-graph-overlay"
+          className="run-graph-overlay comparison-overlay"
           role="dialog"
           aria-label="比较两次结果"
         >
@@ -618,82 +814,130 @@ export function ExecutionPanel({
             <div className="section-label">
               节点预览 · {selectedNode || "请选择节点"}
             </div>
-            <p>来源运行：{run?.run_id || "未选择运行"}。历史结果保持不变。</p>
-            <p aria-label="预览配置状态">
-              {selectedNode && nodeFreshness[selectedNode]
-                ? nodeFreshness[selectedNode].includes("需要更新") ||
-                  nodeFreshness[selectedNode].includes("上游需更新")
-                  ? "结果过期：配置或上游已变化；保留旧预览供比较。"
-                  : nodeFreshness[selectedNode]
-                : "待核验：尚未确认此结果是否对应当前配置。"}
-            </p>
-            <label>
-              输出端口
-              <select
-                aria-label="预览输出端口"
-                value={activePreviewPort}
-                onChange={(e) => setPreviewPort(e.target.value)}
-              >
-                {!selectedOutputs.length && <option value="">暂无输出</option>}
-                {envelope?.outputs
-                  ?.filter((o) => o.node_id === selectedNode)
-                  .map((o) => (
-                    <option key={o.port} value={o.port}>
-                      {o.port === "mask" ? "mask · 联合遮罩" : o.port}
-                    </option>
-                  ))}
-              </select>
-            </label>
-            {run &&
-              selectedOutputs
-                .filter((o) => o.port === activePreviewPort)
-                .map((output) =>
-                  ["rgb_image", "rgba_image", "binary_mask"].includes(
-                    output.kind || "",
-                  ) ? (
-                    <ImageOutput
-                      key={`selected:${run.run_id}:${output.node_id}:${output.port}`}
-                      runId={run.run_id}
-                      nodeId={output.node_id}
-                      port={output.port}
-                      url={output.url}
-                      defaultOpen
-                    />
-                  ) : output.kind === "gltf_asset" ||
-                    output.kind === "triangle_mesh" ? (
-                    <button
-                      key={output.port}
-                      onClick={() =>
-                        setPreview({
-                          runId: run.run_id,
-                          nodeId: output.node_id,
-                          url: output.url,
-                        })
-                      }
-                    >
-                      预览模型 · {output.port}
-                    </button>
-                  ) : (
-                    <a
-                      key={output.port}
-                      href={output.url}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      {output.port}
-                    </a>
-                  ),
+            {currentInput && currentInputName ? (
+              <CurrentInputPreview
+                name={currentInputName}
+                kind={currentInput.kind || currentInput.kinds?.[0]}
+                artifactId={currentInputId}
+                origin={inputOrigins[currentInputName]}
+                file={currentInputFile}
+                path={
+                  !multiInput && imageSource === "path" ? imagePath : undefined
+                }
+              />
+            ) : (
+              <>
+                <p>
+                  来源运行：{run?.run_id || "未选择运行"}。历史结果保持不变。
+                </p>
+                {run && (
+                  <p>
+                    执行状态：{executionStatus(run.status)}
+                    {envelope?.busy ? " · 后台处理中" : ""}
+                  </p>
                 )}
-            {!envelope?.outputs?.some((o) => o.node_id === selectedNode) && (
-              <p>
-                {previewEmptyMessage(
-                  selectedNode,
-                  run?.run_id,
-                  selectedNode
-                    ? run?.dag?.node_states[selectedNode]?.status
-                    : undefined,
+                {Object.values(nodeFreshness).some(
+                  (value) =>
+                    value.includes("需要更新") || value.includes("上游需更新"),
+                ) && (
+                  <section aria-label="配置变化影响">
+                    <p>
+                      受影响节点：
+                      {Object.entries(nodeFreshness)
+                        .filter(
+                          ([, value]) =>
+                            value.includes("需要更新") ||
+                            value.includes("上游需更新"),
+                        )
+                        .map(([id]) => id)
+                        .join("、")}
+                    </p>
+                    <p>
+                      旧运行和预览保留。下方启动将创建新运行；是否复用其他节点，以执行预检为准。
+                    </p>
+                  </section>
                 )}
-              </p>
+                <p aria-label="预览配置状态">
+                  {selectedNode && nodeFreshness[selectedNode]
+                    ? nodeFreshness[selectedNode].includes("需要更新") ||
+                      nodeFreshness[selectedNode].includes("上游需更新")
+                      ? "结果过期：配置或上游已变化；保留旧预览供比较。"
+                      : nodeFreshness[selectedNode]
+                    : "待核验：尚未确认此结果是否对应当前配置。"}
+                </p>
+                <label>
+                  输出端口
+                  <select
+                    aria-label="预览输出端口"
+                    value={activePreviewPort}
+                    onChange={(e) => setPreviewPort(e.target.value)}
+                  >
+                    {!selectedOutputs.length && (
+                      <option value="">暂无输出</option>
+                    )}
+                    {envelope?.outputs
+                      ?.filter((o) => o.node_id === selectedNode)
+                      .map((o) => (
+                        <option key={o.port} value={o.port}>
+                          {o.port === "mask" ? "mask · 联合遮罩" : o.port}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+                {run &&
+                  selectedOutputs
+                    .filter((o) => o.port === activePreviewPort)
+                    .map((output) =>
+                      ["rgb_image", "rgba_image", "binary_mask"].includes(
+                        output.kind || "",
+                      ) ? (
+                        <ImageOutput
+                          key={`selected:${run.run_id}:${output.node_id}:${output.port}`}
+                          runId={run.run_id}
+                          nodeId={output.node_id}
+                          port={output.port}
+                          url={output.url}
+                          defaultOpen
+                        />
+                      ) : output.kind === "gltf_asset" ||
+                        output.kind === "triangle_mesh" ? (
+                        <button
+                          key={output.port}
+                          onClick={() =>
+                            setPreview({
+                              runId: run.run_id,
+                              nodeId: output.node_id,
+                              url: output.url,
+                            })
+                          }
+                        >
+                          预览模型 · {output.port}
+                        </button>
+                      ) : (
+                        <a
+                          key={output.port}
+                          href={output.url}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          {output.port}
+                        </a>
+                      ),
+                    )}
+                {!envelope?.outputs?.some(
+                  (o) => o.node_id === selectedNode,
+                ) && (
+                  <p>
+                    {previewEmptyMessage(
+                      selectedNode,
+                      run?.run_id,
+                      selectedNode
+                        ? run?.dag?.node_states[selectedNode]?.status
+                        : undefined,
+                    )}
+                  </p>
+                )}
+              </>
             )}
           </section>,
           previewHost,
@@ -723,29 +967,10 @@ export function ExecutionPanel({
           ))}
         </section>
       )}
-      {Object.values(nodeFreshness).some(
-        (value) => value.includes("需要更新") || value.includes("上游需更新"),
-      ) && (
-        <section aria-label="配置变化影响">
-          <p>
-            受影响节点：
-            {Object.entries(nodeFreshness)
-              .filter(
-                ([, value]) =>
-                  value.includes("需要更新") || value.includes("上游需更新"),
-              )
-              .map(([id]) => id)
-              .join("、")}
-          </p>
-          <p>
-            旧运行和预览保留。下方启动将创建新运行；是否复用其他节点，以执行预检为准。
-          </p>
-        </section>
-      )}
-      <div className="section-label">创建新运行</div>
-      <p>执行环境：{profile || "本地服务配置"}</p>
       <ExecutionInputs
-        pipeline={effectivePipeline}
+        workspaceRevision={workspaceRevision}
+        pipeline={pipeline}
+        inputHosts={inputHosts}
         {...{
           multiInput,
           multiView,
@@ -756,11 +981,40 @@ export function ExecutionPanel({
           inputRefs,
           inputFiles,
           inputOrigins,
+          clearInput: (name: string) => {
+            if (pending || uploading) return;
+            setInputArtifact(name, "");
+            setUploadMessage("");
+            if (!multiInput && multiView) {
+              setObservationsId("");
+              setObservationFiles([]);
+            } else if (!multiInput) {
+              setUploaded(undefined);
+              setUploadedFile(undefined);
+              setReusedImage(undefined);
+              setImagePath("");
+              setImageSource("upload");
+            }
+          },
+          historySelector: (name) =>
+            pipeline.inputs[name] ? (
+              <InputHistorySelector
+                name={name}
+                port={pipeline.inputs[name]}
+                runId={run?.run_id}
+                outputs={envelope?.outputs || []}
+                disabled={pending || uploading || unresolvedCreation}
+                onSelect={reuseOutput}
+              />
+            ) : null,
           setInputArtifact,
           uploadInputArtifact,
           observationFiles,
           observationsId,
-          setObservationsId,
+          setObservationsId: (value: string) => {
+            setObservationsId(value);
+            setObservationFiles([]);
+          },
           uploadObservations,
           imageSource,
           setImageSource,
@@ -773,140 +1027,220 @@ export function ExecutionPanel({
           upload,
         }}
       />
-      <p>启动时后端重新编译当前草稿并固定计划。修改画布只影响下一次新运行。</p>
-      {configurationBlockedReason && (
-        <p role="alert">{configurationBlockedReason}</p>
-      )}
-      {effectiveReason && (
-        <p role="alert">当前入口不可运行：{effectiveReason}</p>
-      )}
-      {envelope?.snapshot_ref && (
-        <label>
-          <input
-            type="checkbox"
-            checked={reuseResults}
-            onChange={(e) => setReuseResults(e.target.checked)}
-          />
-          复用所选运行的有效节点结果（后端核对身份与证据）
-        </label>
-      )}
-      <label>
-        <input
-          type="checkbox"
-          checked={runToSelection}
-          onChange={(e) => setRunToSelection(e.target.checked)}
-        />
-        只运行到选中节点（包含必要上游）
-      </label>
-      {runToSelection && (
-        <p>
-          目标：{selectedNode || "请在画布选择算子"}
-          。本次创建独立运行，不执行下游。
-        </p>
-      )}
-      <ExecutionPreflight
-        disabled={
-          (runToSelection &&
-            (!selectedNode || !pipeline.nodes[selectedNode])) ||
-          pending ||
-          unresolvedCreation ||
-          uploading ||
-          (multiInput
-            ? Object.keys(effectivePipeline.inputs).some(
-                (name) => !String(inputRefs[name]?.artifact_id || "").trim(),
-              )
-            : multiView
-              ? !observationsId.trim()
-              : imageSource === "reference"
-                ? !reusedImage
-                : imageSource === "path"
-                  ? !imagePath.trim()
-                  : !uploaded || uploaded.rgba !== rgbaInput) ||
-          !!effectiveReason ||
-          !!configurationBlockedReason
-        }
-        intent={{
-          pipeline: structuredClone(effectivePipeline),
-          ...(reuseResults && envelope?.snapshot_ref
-            ? { reuse_source: envelope.snapshot_ref }
-            : {}),
-          ...(multiInput
-            ? {
-                input_refs: Object.fromEntries(
-                  Object.keys(effectivePipeline.inputs).map((name) => [
-                    name,
-                    structuredClone(inputRefs[name]),
-                  ]),
-                ),
-              }
-            : multiView
-              ? { observations_ref: { artifact_id: observationsId.trim() } }
-              : imageSource === "reference"
-                ? { image_ref: structuredClone(reusedImage!) }
-                : imageSource === "path"
-                  ? { image_path: imagePath.trim() }
-                  : { image_ref: structuredClone(uploaded?.ref || {}) }),
-        }}
-        onConfirm={(prepared) =>
-          mutate(() =>
-            submitCreation({
-              ...prepared,
-              idempotency_key: crypto.randomUUID(),
-            }),
-          )
-        }
-        label={
-          runToSelection
-            ? "运行到这里"
-            : reuseResults &&
-                envelope?.snapshot_ref &&
-                Object.values(nodeFreshness).some(
-                  (value) =>
-                    value.includes("需要更新") || value.includes("上游需更新"),
-                )
-              ? "重新执行受影响节点"
-              : "启动新运行"
-        }
-      />
-      {unresolvedCreation && (
-        <div className="run-node">
-          <p role="alert">
-            {creation.error ||
-              "上次创建请求尚未确认。重试会发送原来的管线和图片，不使用当前草稿；不会重复创建已登记的运行。"}
+      <ExecutionPortal host={controlsHost}>
+        <div className="execution-controls">
+          <p>执行环境：{profile || "本地服务配置"}</p>
+          <p>
+            启动时后端重新编译当前草稿并固定计划。修改画布只影响下一次新运行。
           </p>
-          {creation.request && (
-            <>
-              <p className="run-identity">
-                请求 ID：{creation.request.idempotency_key}
+          <select
+            aria-label="选择运行"
+            value={selected}
+            disabled={pending}
+            onChange={(e) => choose(e.target.value)}
+          >
+            <option value="">选择运行…</option>
+            {runs.map((item) => (
+              <option key={item.run_id} value={item.run_id}>
+                {item.run_id} · {executionStatus(item.status)}
+              </option>
+            ))}
+          </select>
+          {run &&
+            Object.entries(run.dag?.node_states || {})
+              .filter(([, state]) =>
+                [
+                  "waiting_for_input",
+                  "failed",
+                  "interrupted",
+                  "recovery_blocked",
+                ].includes(state.status),
+              )
+              .map(([id, state]) => (
+                <button
+                  key={id}
+                  onClick={() => {
+                    onLocateNode?.(id);
+                    onOpenHistory?.();
+                    requestAnimationFrame(() => {
+                      const element = document.getElementById(
+                        `run-action-${run.run_id}-${id}`,
+                      );
+                      element?.scrollIntoView({ block: "nearest" });
+                      element?.focus({ preventScroll: true });
+                    });
+                  }}
+                >
+                  {state.status === "waiting_for_input"
+                    ? "处理人工待办"
+                    : "查看运行问题"}{" "}
+                  · {id}
+                </button>
+              ))}
+          {configurationBlockedReason && (
+            <div>
+              <p role="alert">{configurationBlockedReason}</p>
+              {onEditBlockedConfiguration && (
+                <button onClick={onEditBlockedConfiguration}>
+                  定位未应用参数
+                </button>
+              )}
+            </div>
+          )}
+          {effectiveReason && (
+            <p role="alert">当前入口不可运行：{effectiveReason}</p>
+          )}
+          {envelope?.snapshot_ref && (
+            <label>
+              <input
+                type="checkbox"
+                checked={reuseResults}
+                onChange={(e) => setReuseResults(e.target.checked)}
+              />
+              复用所选运行的有效节点结果（后端核对身份与证据）
+            </label>
+          )}
+          <label>
+            <input
+              type="checkbox"
+              checked={runToSelection}
+              onChange={(e) => setRunToSelection(e.target.checked)}
+            />
+            只运行到选中节点（包含必要上游）
+          </label>
+          {!runToSelection && (
+            <section className="selected-execution-context" aria-label="所选节点执行动作">
+              <strong>当前节点：{selectedNode && pipeline.nodes[selectedNode] ? selectedNode : "未选择处理节点"}</strong>
+              <p>只执行此节点及完成它所需的上游；下游节点不会运行。</p>
+              <button
+                type="button"
+                disabled={!selectedNode || !pipeline.nodes[selectedNode]}
+                onClick={() => setRunToSelection(true)}
+              >
+                运行此节点及必要上游
+              </button>
+            </section>
+          )}
+          {runToSelection && (
+            <section className="selected-execution-context selected-execution-context-active" aria-label="当前执行范围">
+              <strong>执行范围：{selectedNode || "未选择节点"}</strong>
+              <p>包含必要上游；本次创建独立运行，不执行下游。</p>
+              <button type="button" onClick={() => setRunToSelection(false)}>
+                改为运行完整管线
+              </button>
+            </section>
+          )}
+          {!!missingInputs.length && !uploading && (
+            <div className="missing-inputs" aria-label="缺少运行输入">
+              <span>请先提供输入：</span>
+              {missingInputs.map((name) =>
+                onLocateInput ? (
+                  <button key={name} onClick={() => onLocateInput(name)}>
+                    定位输入 · {name}
+                  </button>
+                ) : (
+                  <span key={name}>{name} </span>
+                ),
+              )}
+            </div>
+          )}
+          {uploading && <p role="status">正在上传并校验输入，请稍候…</p>}
+          <ExecutionPreflight
+            disabled={
+              (runToSelection &&
+                (!selectedNode || !pipeline.nodes[selectedNode])) ||
+              pending ||
+              unresolvedCreation ||
+              uploading ||
+              missingInputs.length > 0 ||
+              !!effectiveReason ||
+              !!configurationBlockedReason
+            }
+            intent={{
+              pipeline: structuredClone(effectivePipeline),
+              ...(reuseResults && envelope?.snapshot_ref
+                ? { reuse_source: envelope.snapshot_ref }
+                : {}),
+              ...(multiInput
+                ? {
+                    input_refs: Object.fromEntries(
+                      Object.keys(effectivePipeline.inputs).map((name) => [
+                        name,
+                        structuredClone(inputRefs[name]),
+                      ]),
+                    ),
+                  }
+                : multiView
+                  ? { observations_ref: { artifact_id: observationsId.trim() } }
+                  : imageSource === "reference"
+                    ? { image_ref: structuredClone(reusedImage!) }
+                    : imageSource === "path"
+                      ? { image_path: imagePath.trim() }
+                      : { image_ref: structuredClone(uploaded?.ref || {}) }),
+            }}
+            onConfirm={(prepared) =>
+              mutate(() =>
+                submitCreation({
+                  ...prepared,
+                  idempotency_key: newRequestId(),
+                }),
+              )
+            }
+            label={
+              runToSelection
+                ? "运行到这里"
+                : reuseResults &&
+                    envelope?.snapshot_ref &&
+                    Object.values(nodeFreshness).some(
+                      (value) =>
+                        value.includes("需要更新") ||
+                        value.includes("上游需更新"),
+                    )
+                  ? "重新执行受影响节点"
+                  : "启动新运行"
+            }
+          />
+          {unresolvedCreation && (
+            <div className="run-node">
+              <p role="alert">
+                {creation.error ||
+                  "上次创建请求尚未确认。重试会发送原来的管线和图片，不使用当前草稿；不会重复创建已登记的运行。"}
+              </p>
+              {creation.request && (
+                <>
+                  <p className="run-identity">
+                    请求 ID：{creation.request.idempotency_key}
+                  </p>
+                  <button
+                    disabled={pending}
+                    onClick={() =>
+                      void mutate(() => submitCreation(creation.request!))
+                    }
+                  >
+                    重试原创建请求
+                  </button>
+                </>
+              )}
+              <p>
+                放弃本地请求不会取消服务器可能已创建的运行；请先检查运行列表，再发起新的运行。
               </p>
               <button
                 disabled={pending}
-                onClick={() =>
-                  void mutate(() => submitCreation(creation.request!))
-                }
+                onClick={() => {
+                  try {
+                    clearCreation();
+                    setMessage("已放弃本地待确认请求；服务器运行不会被取消。");
+                  } catch (error) {
+                    setMessage(`无法清除请求：${String(error)}`);
+                  }
+                }}
               >
-                重试原创建请求
+                放弃待确认请求，允许新建
               </button>
-            </>
+            </div>
           )}
-          <p>
-            放弃本地请求不会取消服务器可能已创建的运行；请先检查运行列表，再发起新的运行。
-          </p>
-          <button
-            disabled={pending}
-            onClick={() => {
-              try {
-                clearCreation();
-                setMessage("已放弃本地待确认请求；服务器运行不会被取消。");
-              } catch (error) {
-                setMessage(`无法清除请求：${String(error)}`);
-              }
-            }}
-          >
-            放弃待确认请求，允许新建
-          </button>
         </div>
-      )}
+      </ExecutionPortal>
       <hr />
       <div className="section-label">运行记录</div>
       <button
@@ -917,31 +1251,12 @@ export function ExecutionPanel({
       >
         刷新运行列表
       </button>
-      <select
-        aria-label="选择运行"
-        value={selected}
-        disabled={pending}
-        onChange={(e) => choose(e.target.value)}
-      >
-        <option value="">选择运行…</option>
-        {runs.map((item) => (
-          <option key={item.run_id} value={item.run_id}>
-            {item.run_id} · {executionStatus(item.status)}
-          </option>
-        ))}
-      </select>
       {run && (
         <>
           <p className="run-identity">{run.run_id}</p>
           <button
             disabled={pending || !!creation.request}
             onClick={() => {
-              if (
-                !window.confirm(
-                  "将原运行配置载入画布，覆盖当前未保存草稿？不会启动运行或复用人工决定。",
-                )
-              )
-                return;
               void mutate(async () => {
                 const draft = await request(
                   `/api/runs/${encodeURIComponent(run.run_id)}/draft`,
@@ -953,7 +1268,7 @@ export function ExecutionPanel({
                   throw Error("原运行计划身份不匹配");
                 onLoadDraft(draft.pipeline);
                 setMessage(
-                  "已载入原运行配置。请重新编译，提供输入并明确启动新运行；人工节点需要重新确认。",
+                  "已读取原运行配置，请在页面上确认是否替换画布。不会启动运行或复用人工决定。",
                 );
               });
             }}
@@ -972,10 +1287,7 @@ export function ExecutionPanel({
             />
           )}
 
-          <strong>
-            执行状态：{executionStatus(run.status)}
-            {envelope.busy ? " · 后台处理中" : ""}
-          </strong>
+          <strong>运行记录详情</strong>
           <p>状态仅对应此运行的固定计划，画布仍是可编辑草稿。</p>
           <MeshAppearancePanel
             runId={run.run_id}
@@ -1021,7 +1333,14 @@ export function ExecutionPanel({
               )
             }
           >
-            恢复 / 继续此运行
+            {Object.values(run.dag?.node_states || {}).some(
+              (state) =>
+                state.status === "running" &&
+                state.attempts?.at(-1)?.error_code ===
+                  "remote_transport_unknown",
+            )
+              ? "核实远程作业"
+              : "恢复 / 继续此运行"}
           </button>
           <RunOutputs
             runId={run.run_id}
@@ -1047,7 +1366,7 @@ export function ExecutionPanel({
               mutate(() =>
                 submitCreation({
                   ...prepared,
-                  idempotency_key: crypto.randomUUID(),
+                  idempotency_key: newRequestId(),
                 }),
               )
             }
@@ -1055,9 +1374,20 @@ export function ExecutionPanel({
             onUseAsInput={reuseOutput}
           />
           {Object.entries(run.dag?.node_states || {}).map(([id, state]) => (
-            <div className="run-node" key={id}>
+            <div
+              className="run-node"
+              key={id}
+              id={`run-action-${run.run_id}-${id}`}
+              tabIndex={-1}
+            >
               <strong>{id}</strong>
-              <span>{executionStatus(state.status)}</span>
+              <span>
+                {state.status === "running" &&
+                state.attempts?.at(-1)?.error_code ===
+                  "remote_transport_unknown"
+                  ? "远端状态未知"
+                  : executionStatus(state.status)}
+              </span>
               {(state.attempts?.at(-1)?.request ||
                 state.attempts?.at(-1)?.decision ||
                 state.status === "waiting_for_input") && (
@@ -1259,12 +1589,18 @@ export function ExecutionPanel({
           />
         </div>
       )}
-      {preview && (
-        <Suspense fallback={<p role="status">正在加载预览组件…</p>}>
-          <GlbPreview {...preview} onClose={() => setPreview(undefined)} />
-        </Suspense>
+      {preview &&
+        createPortal(
+          <Suspense fallback={<p role="status">正在加载预览组件…</p>}>
+            <GlbPreview {...preview} onClose={() => setPreview(undefined)} />
+          </Suspense>,
+          document.body,
+        )}
+      {message && (
+        <ExecutionPortal host={controlsHost}>
+          <p role="status">{message}</p>
+        </ExecutionPortal>
       )}
-      {message && <p role="status">{message}</p>}
     </section>
   );
 }
