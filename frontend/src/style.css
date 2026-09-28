@@ -1084,3 +1084,9 @@ footer {
   color: #90a6b8 !important;
   font-size: 10px !important;
 }
+
+.node-palette-section-note {
+  margin: -6px 0 8px;
+  color: #71808b;
+  font-size: 11px;
+}

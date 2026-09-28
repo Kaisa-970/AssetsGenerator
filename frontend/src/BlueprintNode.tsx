@@ -494,7 +494,9 @@ function BlueprintNodeBody({
                       aria-expanded={moreParameters}
                       onClick={() => setMoreParameters((open) => !open)}
                     >
-                      {moreParameters ? "收起更多参数" : "更多参数"}
+                      {moreParameters
+                        ? "收起全部参数"
+                        : `展开全部 ${parameterFields.all.length} 个参数`}
                     </button>
                   </>
                 )}

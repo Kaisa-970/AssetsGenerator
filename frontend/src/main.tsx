@@ -156,7 +156,7 @@ function App() {
   const nodePaletteTrigger = useRef<HTMLButtonElement>(null);
   const [inspectorOpen, setInspectorOpen] = useState(true);
   const [inspectorWidth, setInspectorWidth] = useState(300);
-  const [nodePreviewOpen, setNodePreviewOpen] = useState(true);
+  const [nodePreviewOpen, setNodePreviewOpen] = useState(false);
   const [inputHosts, setInputHosts] = useState<Record<string, HTMLElement>>({});
   const [controlsHost, setControlsHost] = useState<HTMLDivElement | null>(null);
   const registerInputHost = useCallback(
@@ -1002,7 +1002,10 @@ function App() {
                 {!paletteInputs.length && <p>没有匹配的输入类型。</p>}
               </div>
               <div className="node-palette-section">
-                <h3>处理算子</h3>
+                <h3>通用处理算子</h3>
+                <p className="node-palette-section-note">
+                  添加后在节点内选择模型与参数
+                </p>
                 {paletteOperators.map(([key, op]) => (
                   <button
                     key={key}
@@ -1021,7 +1024,10 @@ function App() {
                 {!paletteOperators.length && <p>没有匹配的处理算子。</p>}
               </div>
               <div className="node-palette-section">
-                <h3>已配置模型</h3>
+                <h3>已配置模型服务</h3>
+                <p className="node-palette-section-note">
+                  添加后已预选 Backend
+                </p>
                 {paletteServices.map((service) => (
                   <button
                     key={service.backend}
@@ -1044,7 +1050,8 @@ function App() {
               </div>
             </div>
             <footer>
-              添加后选中节点即可在节点内或右侧“配置”中修改模型和参数。
+              通用算子在节点内选择模型；模型服务项会预选
+              Backend。选中节点后可继续编辑参数。
             </footer>
           </section>
         </NodePaletteDialog>
