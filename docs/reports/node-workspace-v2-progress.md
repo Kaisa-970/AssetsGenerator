@@ -569,3 +569,13 @@ Vitest 95 项通过；Playwright 98 项首轮 84 通过、14 失败。主要证�
 - 后端新增只读 `GET /api/runs/{run_id}/input-references?snapshot=<artifact_id>`，核对运行归属、快照 Artifact、每个 named actual input 的 manifest 和 blob digest；不触发执行。相关节点编辑器 Python 测试 35 项通过。
 - 前端载入历史配置时获取经过核验的输入来源；确认替换后每个输入节点显示来源及“使用历史输入 · <name>”，逐项绑定并提示重新预检。切换模板/新建/导入会清除旧来源。
 - TypeScript 编译、前端单元测试 97 项、生产构建通过。浏览器端逐项历史输入绑定回归已通过：image/text 来源均可显式绑定，且无 runs POST；冻结源码完整浏览器回归 99/99 通过。仍未进行真实模型新运行；此首片不等于完整 v2 验收。
+
+### 真实 TRELLIS 节点参数迭代（2026-09-28）
+
+- 在提交 `34f0529` 的最新工作树服务上，从历史运行 `dag_fff36438989f4b9785a9151e0846d2d5` 载入配置，重新提供经 Artifact 身份核验的原图和 `sofa` 文本。
+- 节点内将 TRELLIS `seed` 从 42 改为 43，旧预览标记为结果过期；预检报告显示 `segment`、`extract` 为 `reuse/verified_exact_match`，`shape` 为 `execute`。
+- 确认执行后新运行 `dag_936b8f67bfbd466aa74e4217a8807ee7` 成功。segment/extract 各一次复用 attempt，shape 一次新 attempt；canonicalize、QA、assemble、publish 全部成功。
+- shape 的持久化 remote payload 明确记录 `pipeline_type=512`、`seed=43`，输入 Artifact 与原运行一致，发布 GLB 已生成。证据：`<EVIDENCE_ROOT>/node-model-iteration-submit-20260928-b/acceptance.json`。
+- 该回放证明节点内参数修改、预览新鲜度、受控复用和真实 Backend 请求绑定；尚未完成新旧 GLB 的视觉/质量 A/B 结论，也不代表完整 v2 验收关闭。
+
+- A/B 真实预览复核：seed 42 的原运行与 seed 43 的新运行均能独立加载、旋转、重置和关闭；两次读取前后 node_states 一致且没有非 GET 运行请求。证据：`<EVIDENCE_ROOT>/published-history-iteration-20260928/acceptance.json`。这证明来源固定和比较入口可用，不构成视觉质量优劣结论。
