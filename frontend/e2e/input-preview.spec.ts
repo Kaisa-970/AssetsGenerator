@@ -228,7 +228,7 @@ test("historical multi-input sources require explicit per-input reuse without cr
     await route.fulfill({ json: body });
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "运行", exact: true }).click();
+  await page.getByRole("button", { name: "运行记录与诊断", exact: true }).click();
   await page
     .getByLabel("选择运行", { exact: true })
     .selectOption("dag_history");

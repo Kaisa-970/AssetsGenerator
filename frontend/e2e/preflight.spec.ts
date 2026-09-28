@@ -73,7 +73,7 @@ async function setup(page: import("@playwright/test").Page) {
     await route.fulfill({ json: body });
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "运行", exact: true }).click();
+  await page.getByRole("button", { name: "运行记录与诊断", exact: true }).click();
   await page.getByLabel("上传运行图片").setInputFiles({
     name: "input.png",
     mimeType: "image/png",

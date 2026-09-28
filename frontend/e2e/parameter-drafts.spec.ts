@@ -226,7 +226,7 @@ test("unapplied parameters survive node and tab changes; history badges name the
   await expect(
     page.getByRole("button", { name: "保存草稿", exact: true }),
   ).toBeDisabled();
-  await page.getByRole("button", { name: "运行", exact: true }).click();
+  await page.getByRole("button", { name: "运行记录与诊断", exact: true }).click();
   await expect(page.getByLabel("未应用参数", { exact: true })).toBeVisible();
   await page
     .getByRole("button", { name: "编辑待应用参数 · first", exact: true })
@@ -278,7 +278,7 @@ test("unapplied parameters survive node and tab changes; history badges name the
   await expect(
     page.locator('.react-flow__node[data-id="first"]'),
   ).toContainText("历史 · 完成");
-  await page.getByRole("button", { name: "运行", exact: true }).click();
+  await page.getByRole("button", { name: "运行记录与诊断", exact: true }).click();
   await expect(page.getByLabel("画布历史状态来源")).toBeVisible();
   expect(starts).toBe(0);
 });

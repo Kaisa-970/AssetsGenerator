@@ -108,7 +108,7 @@ test("single historical input reaches prepared and created inputs; upload replac
     if (isHeldReference) lateResponseDelivered = true;
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "运行", exact: true }).click();
+  await page.getByRole("button", { name: "运行记录与诊断", exact: true }).click();
   await page.getByLabel("选择运行", { exact: true }).selectOption("history");
   await page
     .getByRole("button", { name: "将配置载入画布", exact: true })
@@ -127,6 +127,7 @@ test("single historical input reaches prepared and created inputs; upload replac
   await page
     .getByLabel("定位画布节点", { exact: true })
     .selectOption("input:image");
+  await page.getByRole("button", { name: "展开节点预览", exact: true }).click();
   await expect(
     page.getByText("固定历史来源：history / input:image / image"),
   ).toBeVisible();

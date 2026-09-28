@@ -94,7 +94,7 @@ test("continue extraction checks fixed snapshot and confirms exact independent c
     await route.fulfill({ json: body });
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "运行", exact: true }).click();
+  await page.getByRole("button", { name: "运行记录与诊断", exact: true }).click();
   await page.getByLabel("选择运行", { exact: true }).selectOption("source_run");
   await page
     .getByRole("button", { name: "继续提取 · segment", exact: true })
@@ -180,7 +180,7 @@ test("switching runs discards delayed continuation and refusals never create", a
     await route.fulfill({ json: body });
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "运行", exact: true }).click();
+  await page.getByRole("button", { name: "运行记录与诊断", exact: true }).click();
   await page.getByLabel("选择运行", { exact: true }).selectOption("a");
   await page
     .getByRole("button", { name: "继续提取 · segment", exact: true })
