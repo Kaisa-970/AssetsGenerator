@@ -72,6 +72,17 @@ class ShapeModelService:
                 raise ValueError("capability IDs must be nonempty strings")
             capability_schema = dict(raw.get("parameter_schema", schema))
             capability_defaults = dict(raw.get("defaults", values))
+            capability_frame = raw.get("frame_id", frame.frame_id)
+            capability_up_axis = raw.get("up_axis", frame.up_axis)
+            capability_unit = raw.get("unit", frame.unit)
+            if (capability_frame, capability_up_axis, capability_unit) != (
+                frame.frame_id,
+                frame.up_axis,
+                frame.unit,
+            ):
+                raise ValueError(
+                    "all shape capabilities must share the service output frame and unit"
+                )
             self.parameters[capability_id] = AdapterSpec(
                 "shape_model_service",
                 "1",
@@ -85,9 +96,9 @@ class ShapeModelService:
                     "display_name": raw.get("display_name", capability_id),
                     "operator": "shape_generation@1",
                     "transport": "remote_jobs@1",
-                    "frame_id": raw.get("frame_id", frame.frame_id),
-                    "up_axis": raw.get("up_axis", frame.up_axis),
-                    "unit": raw.get("unit", frame.unit),
+                    "frame_id": capability_frame,
+                    "up_axis": capability_up_axis,
+                    "unit": capability_unit,
                     "parameter_schema": capability_schema,
                     "defaults": capability_defaults,
                 }

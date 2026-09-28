@@ -3,6 +3,7 @@ import json
 import threading
 import time
 
+import pytest
 import trimesh
 from PIL import Image
 
@@ -211,6 +212,27 @@ def test_multiple_shape_capabilities_are_selected_and_validated(tmp_path):
         assert calls == [{"width": 1.0}, {"width": 3.0}]
     finally:
         service.close()
+
+
+def test_multiple_shape_capabilities_cannot_claim_different_output_frames(tmp_path):
+    with pytest.raises(ValueError, match="share the service output frame"):
+        ShapeModelService(
+            service_id="mixed-frame",
+            display_name="混合坐标示例",
+            deployment={"model": "fixture-v3"},
+            frame=BackendNativeFrame(
+                "native", "right", "+Y", None, "unknown", "relative_unit"
+            ),
+            infer=lambda _path, _parameters: b"glb",
+            directory=tmp_path / "service",
+            capabilities={
+                "mesh_fast": {"parameter_schema": {"type": "object", "properties": {}}},
+                "mesh_other": {
+                    "frame_id": "other-native",
+                    "parameter_schema": {"type": "object", "properties": {}},
+                },
+            },
+        )
 
 
 def test_restart_unknown_running_blocks_inference(tmp_path):
