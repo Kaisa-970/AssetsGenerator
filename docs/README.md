@@ -8,6 +8,7 @@
 
 规定界面面向人的行为：主路径、状态词汇、绝不允许出现的状态。不是系统契约，也不是操作步骤。
 
+- [节点资产工作区 v2（实现中，验收未完成）](product/node-workspace-v2.md)
 - [节点编辑器交互设计 v1（部分实现）](product/node-editor-ux.md)
 - [交互首片验证与剩余边界](reports/node-editor-product-cpu-smoke.md)
 - [预检与显式确认 CPU 浏览器验收](reports/node-editor-preflight-cpu-smoke.md)

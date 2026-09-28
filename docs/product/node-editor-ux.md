@@ -1,5 +1,7 @@
 # 节点编辑器交互设计 v1
 
+节点内配置、输入与工作区布局的新目标见[节点资产工作区 v2](node-workspace-v2.md)；该目标仍在实现中，不代表当前已全部完成。
+
 状态：部分实现；完整交互验收尚未完成。更新：2026-09-24。
 当前能力见 [工作台状态表](../reports/node-editor-b2-status.md)，验证范围见
 [预检与启动](../reports/node-editor-preflight-cpu-smoke.md)、

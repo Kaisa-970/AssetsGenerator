@@ -1,5 +1,19 @@
 # SAM3 文字遮罩接入首版
 
+## 当前工作区的推荐操作
+
+前提：管理员已经配置 SAM3 Backend，服务与 worker 正常运行；“添加模型服务”目前只支持图生 Mesh，不能用于自行登记 SAM3。
+
+1. 加载 `sam3_text_auto_extract_v1`，画布包含 image、text、segment、extract。
+2. 在 image 节点上传 RGB 图片，在 text 节点填写 `chair` 等目标词并点击“应用文本”。
+3. segment 节点选择 SAM3，按需修改 confidence；普通参数在节点内编辑，完整参数在右侧属性中查看。
+4. 顶部点击“启动新运行”。模型返回的候选自动合成联合 mask，不需要人工选择。
+5. 点击 segment，在底部选中节点预览中查看 mask；点击 extract 查看透明背景的提取图片。
+
+只需要 mask 时，选中 segment 后使用“运行到这里”，核对范围后确认。该运行不会执行 extract。文字指的是图片中的目标，不是从纯文字凭空生成一张遮罩。
+
+以下包含旧版参数式提示词和历史验证记录；新版 text 输入节点不使用 prompt 参数。
+
 新增 text_segmentation@1（图片输入，prompt/confidence 节点参数）与 select_text_mask@1。
 模板 `pipelines/sam3_text_to_asset_v1.yaml`：兼容旧调用的内置 prompt 流程（image → 文字分割 → SAM3D → 发布）。
 模板 `pipelines/sam3_text_to_asset_v2.yaml`：文字输入（image + text）→ 联合遮罩 → SAM3D → canonicalize → QA → 组装 → 发布。
@@ -42,8 +56,8 @@ runner 增加 float 转换后使用新身份、新数据库重跑；旧失败保
 将 candidates~0 通过“用作输入 mask”绑定到提取模板，上传原图后仅 extract 节点执行，
 产出 561×688 RGBA PNG，alpha 同时包含 0 和 255。该路径未启动任何 3D 节点。
 只指定 Backend 且存在唯一兼容 Adapter 时，现在也会显示 prompt/confidence 参数表单。
-在左侧加载 sam3_text_masks_v1，点 segment 节点，在“配置”中填写 prompt，
-再到“运行”上传图片并启动。结果在“可查看的节点输出”内展开。
+在左侧加载 sam3_text_masks_v1，在 segment 节点填写 prompt，
+在 image 输入节点上传图片，使用顶部启动。结果在“可查看的节点输出”内展开。
 真实证据存于 `<DATASET_ROOT>/sam3-text-validation-20260921` 的
 mask-preview.png、extract-preview.png 和 extracted.png。
 
@@ -59,7 +73,7 @@ SAM3 输入边界拒绝 PNG 透明信息和非标准 EXIF 方向。空闲 worker
 推荐加载 `sam3_text_extract_v1`，它将 segment.mask 直接连接 extract.mask。
 点击 segment 在配置中填写 prompt（如 chair）；上传图片后可启动完整图，
 也可勾选“只运行到选中节点”，选择 segment 后点击“运行到这里”，仅执行分割。
-右下角节点预览窗口随画布选中节点切换；多输出通过端口下拉选择。
+底部节点预览窗口随画布选中节点切换；多输出通过端口下拉选择。
 预览来自所选运行，画布参数改动不会更新历史图像。运行列表可选择来源运行。
 本轮的“运行到这里”创建包含目标及全部祖先的独立计划，由后端重新编译；
 不执行下游或无关分支。切换目标再次启动会新建运行，可按下文复用所选历史运行的有效结果。
@@ -106,7 +120,7 @@ segment 没有 remote_binding 或 worker execution，extract 正常执行并输�
 ## 用输入节点提供文字
 
 `sam3_text_auto_extract_v1` 使用 `text_segmentation@2`，有 image、text 两个输入。
-加载模板后，在运行面板上传原图，在文本框填写 `chair`，点击“应用文本”，再启动。
+加载模板后，在 image 节点上传原图，在 text 节点文本框填写 `chair`，点击“应用文本”，再从顶部启动。
 text 输入的格式是 text / plain_text@1.0，载体为 ArtifactRef；也能连接其他节点输出的同契约文本。
 文本以 UTF-8 保存，分割提示词必须非空且最多 256 字符。修改文本会改变输入身份，不能复用旧文字的分割结果。
 V2 没有 prompt 参数；旧的 text_segmentation@1 及其 prompt 参数仍保留。
