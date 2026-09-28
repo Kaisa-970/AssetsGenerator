@@ -32,6 +32,7 @@ _REQUIRED_FIELDS = {
 _OPTIONAL_METADATA = {"frame_id", "up_axis", "unit"}
 _CAPABILITY_FIELDS = {
     "capability_id",
+    "display_name",
     "operator",
     "transport",
     "parameter_schema",
@@ -66,6 +67,12 @@ def _validate_capability(value: object, index: int) -> dict[str, Any]:
     capability_id = value.get("capability_id", operator)
     if not isinstance(capability_id, str) or not capability_id.strip() or len(capability_id) > 128:
         raise ContractError("model service capability_id is invalid")
+    if "display_name" in value and (
+        not isinstance(value["display_name"], str)
+        or not value["display_name"].strip()
+        or len(value["display_name"]) > 128
+    ):
+        raise ContractError("model service capability display_name is invalid")
     schema = value["parameter_schema"]
     if not isinstance(schema, dict) or schema.get("type") != "object":
         raise ContractError("model service capability parameters must describe an object")

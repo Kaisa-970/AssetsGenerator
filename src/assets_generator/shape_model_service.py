@@ -52,6 +52,7 @@ class ShapeModelService:
         directory: Path,
         parameter_schema: Mapping[str, Any] | None = None,
         defaults: Mapping[str, Any] | None = None,
+        capabilities: Mapping[str, Mapping[str, Any]] | None = None,
         port: int = 0,
     ) -> None:
         if not deployment:
@@ -59,13 +60,39 @@ class ShapeModelService:
         validate_backend_native_frame(frame)
         schema = dict(parameter_schema or {"type": "object", "properties": {}})
         values = dict(defaults or {})
-        self.parameters = AdapterSpec(
-            "shape_model_service",
-            "1",
-            ("shape_generation@1",),
-            parameter_schema=schema,
-            defaults=values,
-        )
+        raw_capabilities = capabilities or {
+            "shape_generation@1": {"parameter_schema": schema, "defaults": values}
+        }
+        if not raw_capabilities:
+            raise ValueError("capabilities must contain at least one capability")
+        self.parameters = {}
+        capability_descriptors = []
+        for capability_id, raw in raw_capabilities.items():
+            if not isinstance(capability_id, str) or not capability_id.strip():
+                raise ValueError("capability IDs must be nonempty strings")
+            capability_schema = dict(raw.get("parameter_schema", schema))
+            capability_defaults = dict(raw.get("defaults", values))
+            self.parameters[capability_id] = AdapterSpec(
+                "shape_model_service",
+                "1",
+                ("shape_generation@1",),
+                parameter_schema=capability_schema,
+                defaults=capability_defaults,
+            )
+            capability_descriptors.append(
+                {
+                    "capability_id": capability_id,
+                    "display_name": raw.get("display_name", capability_id),
+                    "operator": "shape_generation@1",
+                    "transport": "remote_jobs@1",
+                    "frame_id": raw.get("frame_id", frame.frame_id),
+                    "up_axis": raw.get("up_axis", frame.up_axis),
+                    "unit": raw.get("unit", frame.unit),
+                    "parameter_schema": capability_schema,
+                    "defaults": capability_defaults,
+                }
+            )
+        first = capability_descriptors[0]
         self.identity = RemoteIdentity(
             service_id,
             sha256_bytes(
@@ -73,8 +100,7 @@ class ShapeModelService:
                     {
                         "deployment": dict(deployment),
                         "frame": to_primitive(frame),
-                        "parameter_schema": schema,
-                        "defaults": values,
+                        "capabilities": capability_descriptors,
                         "wrapper_digest": sha256_bytes(Path(__file__).read_bytes()),
                     }
                 )
@@ -86,13 +112,14 @@ class ShapeModelService:
                 "display_name": display_name,
                 "service_id": service_id,
                 "backend_digest": self.identity.backend_digest,
-                "operator": "shape_generation@1",
-                "transport": "remote_jobs@1",
-                "frame_id": frame.frame_id,
-                "up_axis": frame.up_axis,
-                "unit": frame.unit,
-                "parameter_schema": schema,
-                "defaults": values,
+                "operator": first["operator"],
+                "transport": first["transport"],
+                "frame_id": first["frame_id"],
+                "up_axis": first["up_axis"],
+                "unit": first["unit"],
+                "parameter_schema": first["parameter_schema"],
+                "defaults": first["defaults"],
+                "capabilities": capability_descriptors,
             }
         )
         self.frame, self.infer = frame, infer
@@ -132,9 +159,14 @@ class ShapeModelService:
             raise ValueError("invalid shape request")
         if payload["operation"] != "shape_generation@1":
             raise ValueError("invalid shape request")
-        if payload.get("capability_id") not in (None, "shape_generation", "shape_generation@1"):
+        capability_id = payload.get("capability_id") or "shape_generation@1"
+        if capability_id == "shape_generation":
+            capability_id = "shape_generation@1"
+        if capability_id not in self.parameters:
             raise ValueError("invalid shape request")
-        parameters = thaw(self.parameters.normalize_parameters(payload["parameters"]))
+        parameters = thaw(
+            self.parameters[capability_id].normalize_parameters(payload["parameters"])
+        )
         with tempfile.TemporaryDirectory(prefix="inference-", dir=self.directory) as temporary:
             store = LocalArtifactStore(Path(temporary) / "store")
             rgba = import_shape_rgba(request, service, store)

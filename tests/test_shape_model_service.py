@@ -38,7 +38,7 @@ def make_service(tmp_path, calls):
     )
 
 
-def prepare(service, tmp_path, key="job", parameters=None):
+def prepare(service, tmp_path, key="job", parameters=None, capability_id=None):
     source = LocalArtifactStore(tmp_path / "source")
     buffer = io.BytesIO()
     Image.new("RGBA", (4, 4), (255, 0, 0, 255)).save(buffer, format="PNG")
@@ -62,6 +62,7 @@ def prepare(service, tmp_path, key="job", parameters=None):
             "input_blobs": {
                 "rgba": {"artifact_id": ref.artifact_id, "identity": to_primitive(identity)}
             },
+            **({"capability_id": capability_id} if capability_id else {}),
         },
     )
 
@@ -155,6 +156,59 @@ def test_wrong_capability_id_is_rejected_before_inference(tmp_path):
         job = service.store.lookup(request)
         assert job.state == "failed"
         assert json.loads(job.error_json or b"{}")["detail"] == "invalid shape request"
+    finally:
+        service.close()
+
+
+def test_multiple_shape_capabilities_are_selected_and_validated(tmp_path):
+    calls = []
+
+    def infer(path, parameters):
+        calls.append(dict(parameters))
+        return trimesh.creation.box(extents=[parameters["width"], 1, 1]).export(
+            file_type="glb"
+        )
+
+    service = ShapeModelService(
+        service_id="multi-shape",
+        display_name="多能力示例",
+        deployment={"model": "fixture-v2"},
+        frame=BackendNativeFrame("native", "right", "+Y", None, "unknown", "relative_unit"),
+        infer=infer,
+        directory=tmp_path / "service",
+        capabilities={
+            "mesh_fast": {
+                "display_name": "快速网格",
+                "parameter_schema": {
+                    "type": "object",
+                    "properties": {"width": {"type": "number", "minimum": 0.1}},
+                },
+                "defaults": {"width": 1.0},
+            },
+            "mesh_quality": {
+                "display_name": "高质量网格",
+                "parameter_schema": {
+                    "type": "object",
+                    "properties": {"width": {"type": "number", "minimum": 0.1}},
+                },
+                "defaults": {"width": 2.0},
+            },
+        },
+    )
+    first = prepare(service, tmp_path, "fast", {"width": 1.0}, "mesh_fast")
+    second = prepare(service, tmp_path, "quality", {"width": 3.0}, "mesh_quality")
+    service.store.submit(first)
+    service.store.submit(second)
+    service.start_worker()
+    try:
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline and len(calls) < 2:
+            time.sleep(0.02)
+        assert [item["capability_id"] for item in service.descriptor["capabilities"]] == [
+            "mesh_fast",
+            "mesh_quality",
+        ]
+        assert calls == [{"width": 1.0}, {"width": 3.0}]
     finally:
         service.close()
 
