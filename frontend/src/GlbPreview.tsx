@@ -59,12 +59,14 @@ export function GlbPreview({
   url,
   onClose,
   embedded = false,
+  compact = false,
 }: {
   runId: string;
   nodeId: string;
   url: string;
   onClose: () => void;
   embedded?: boolean;
+  compact?: boolean;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const reset = useRef<() => void>(() => {});
@@ -212,7 +214,7 @@ export function GlbPreview({
   }, [url, runId, nodeId]);
   return (
     <div
-      className={embedded ? "comparison-mesh-preview" : "run-graph-overlay"}
+      className={`${embedded ? "comparison-mesh-preview" : "run-graph-overlay"}${compact ? " glb-preview-compact" : ""}`}
       role={embedded ? "region" : "dialog"}
       aria-modal={embedded ? undefined : true}
       aria-label="模型预览"
@@ -228,8 +230,12 @@ export function GlbPreview({
         ref={host}
         style={{
           flex: 1,
-          minHeight: 300,
-          height: embedded ? 360 : undefined,
+          minHeight: compact ? 100 : 300,
+          height: compact
+            ? "clamp(110px, 18vh, 190px)"
+            : embedded
+              ? 360
+              : undefined,
           width: "100%",
         }}
       />

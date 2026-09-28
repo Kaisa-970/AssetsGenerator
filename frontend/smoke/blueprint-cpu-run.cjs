@@ -4,7 +4,10 @@ const fs = require("node:fs");
 const assert = require("node:assert/strict");
 const { chromium, expect } = require("@playwright/test");
 (async () => {
-  const [url, input, directory] = process.argv.slice(2);
+  const [url, input, directory, viewportWidth = "1440", glbPath] = process.argv.slice(2);
+  const width = Number(viewportWidth);
+  assert.ok([1440, 1920].includes(width), "Use an acceptance viewport: 1440 or 1920");
+  if (glbPath) assert.ok(fs.existsSync(glbPath), `GLB not found: ${glbPath}`);
   assert.ok(
     url && input && directory,
     "Supply URL, RGB image and evidence directory",
@@ -12,7 +15,7 @@ const { chromium, expect } = require("@playwright/test");
   fs.mkdirSync(directory, { recursive: false });
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({
-    viewport: { width: 1600, height: 1000 },
+    viewport: { width, height: width === 1440 ? 900 : 1080 },
   });
   const errors = [],
     starts = [],
@@ -56,6 +59,12 @@ const { chromium, expect } = require("@playwright/test");
     await page
       .locator('[data-id="resize_image"] .blueprint-node-header')
       .dblclick();
+    const nodeLayout = await page.locator('[data-id="resize_image"]').evaluate((el) => {
+      const rect = el.getBoundingClientRect();
+      return { width: rect.width, height: rect.height, scale: rect.width / el.offsetWidth };
+    });
+    assert.ok(nodeLayout.scale >= 0.75, `Normal parameter node must remain readable: ${JSON.stringify(nodeLayout)}`);
+    fs.writeFileSync(`${directory}/node-layout.json`, JSON.stringify({ viewportWidth: width, nodeLayout }, null, 2));
     for (const size of [
       [64, 32],
       [96, 48],
@@ -145,7 +154,15 @@ const { chromium, expect } = require("@playwright/test");
           2,
         ),
       );
-      await img.scrollIntoViewIfNeeded();
+      const visible = await img.evaluate(el => {
+        const rect = el.getBoundingClientRect();
+        const pane = el.closest('.node-preview-window');
+        const bounds = pane.getBoundingClientRect();
+        return { scrollTop: pane.scrollTop, height: rect.height,
+          visible: Math.max(0, Math.min(rect.bottom, bounds.bottom, innerHeight) - Math.max(rect.top, bounds.top, 0)) };
+      });
+      assert.equal(visible.scrollTop, 0, 'Output must be visible without scrolling preview');
+      assert.ok(visible.visible >= Math.min(visible.height, 30), JSON.stringify(visible));
       await page.screenshot({ path: `${directory}/${id}.png` });
     }
     assert.equal(

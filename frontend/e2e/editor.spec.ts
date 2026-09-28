@@ -1774,7 +1774,7 @@ test("RGBA canvas upload uses the explicit endpoint and preserves returned refer
   await expect(page.getByLabel("图片来源", { exact: true })).toHaveValue(
     "reference",
   );
-  await expect(page.getByLabel("当前图片来源")).toContainText("历史输出");
+  await expect(page.getByLabel("当前图片来源")).toContainText("历史节点输出");
   await page.getByText("高级：输入引用", { exact: true }).click();
   await expect(
     page
@@ -1957,9 +1957,7 @@ test("image outputs preview on demand and report errors without dispatch", async
   expect(
     await image.evaluate((element: HTMLImageElement) => element.naturalWidth),
   ).toBe(1);
-  await page
-    .getByRole("button", { name: "收起图片 · transform · image", exact: true })
-    .click();
+  await page.getByRole("button", { name: /收起图片/ }).first().click();
   await expect(image).toHaveCount(0);
   fail = true;
   await open.click();
@@ -3292,7 +3290,7 @@ test("run to selection omits downstream and node preview stays visible in config
   await expect(
     page
       .getByRole("region", { name: "选中节点预览" })
-      .getByRole("button", { name: "收起图片 · segment · mask", exact: true }),
+      .getByRole("button", { name: "收起图片", exact: true }),
   ).toBeVisible();
   await page.getByRole("button", { name: "配置", exact: true }).click();
   await expect(
@@ -3417,7 +3415,7 @@ test("execution completion remains distinct from QA warnings and relative scale"
   await page.goto("/");
   await page.getByRole("button", { name: "运行", exact: true }).click();
   await page.getByLabel("选择运行").selectOption("quality_run");
-  await expect(page.getByText("执行状态：完成", { exact: true })).toBeVisible();
+  await expect(page.getByText("运行状态：完成", { exact: true })).toBeVisible();
   await expect(
     page.getByText("QA 报告汇总：warn · 警告", { exact: true }),
   ).toBeVisible();

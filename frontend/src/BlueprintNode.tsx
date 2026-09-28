@@ -468,9 +468,6 @@ function BlueprintNodeBody({
                     </span>
                   )}
                 </div>
-                {primaryVisibleFields.length > 0 && (
-                  <div className="blueprint-parameter-heading">常用参数</div>
-                )}
                 <ParameterForm
                   adapter={data.parameterSchema}
                   visibleFields={
@@ -483,6 +480,7 @@ function BlueprintNodeBody({
                   setErrors={data.setErrors!}
                   onChange={data.onParametersChange!}
                   fieldLabelPrefix="节点参数"
+                  presentation="node"
                 />
                 {parameterFields.all.length > primaryVisibleFields.length && (
                   <>

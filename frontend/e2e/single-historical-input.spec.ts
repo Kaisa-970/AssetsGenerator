@@ -3,6 +3,12 @@ import { expect, test } from "@playwright/test";
 test("single historical input reaches prepared and created inputs; upload replaces its origin", async ({
   page,
 }) => {
+  let mismatch = false;
+  let holdReference = false;
+  let lateResponseDelivered = false;
+  let releaseReference: (() => void) | undefined;
+  let imageReads = 0;
+  let outputReads = 0;
   const starts: any[] = [];
   const prepared: any[] = [];
   const pipeline = {
@@ -23,6 +29,28 @@ test("single historical input reaches prepared and created inputs; upload replac
   await page.route("**/api/**", async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
+    if (path.includes("snapshot-output") || path.includes("snapshot-reference"))
+      outputReads++;
+    if (path.endsWith("/snapshot-input-image/image")) {
+      imageReads++;
+      expect(new URL(request.url()).searchParams.get("snapshot")).toBe(
+        "snapshot",
+      );
+      return route.fulfill({
+        contentType: "image/png",
+        body: Buffer.from(
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=",
+          "base64",
+        ),
+      });
+    }
+    const isHeldReference =
+      path.endsWith("/snapshot-input-reference/image") && holdReference;
+    if (isHeldReference) {
+      await new Promise<void>((resolve) => {
+        releaseReference = resolve;
+      });
+    }
     let body: any = {};
     if (path === "/api/catalog")
       body = {
@@ -36,6 +64,16 @@ test("single historical input reaches prepared and created inputs; upload replac
       body = { ok: true, execution_ready: true };
     else if (path === "/api/runs" && request.method() === "GET")
       body = { runs: [{ run_id: "history", status: "succeeded" }] };
+    else if (path.endsWith("/snapshot-input-reference/image"))
+      body = {
+        source_run_id: "history",
+        input_name: "image",
+        kind: "rgb_image",
+        reference: {
+          artifact_id: mismatch ? "wrong-image" : "historical-image",
+        },
+        source_snapshot: { artifact_id: "snapshot" },
+      };
     else if (path.endsWith("/draft"))
       body = { source_run_id: "history", source_plan_id: "plan", pipeline };
     else if (path.endsWith("/input-references"))
@@ -67,6 +105,7 @@ test("single historical input reaches prepared and created inputs; upload replac
       body = { image_ref: { artifact_id: "replacement-image" } };
     else body = envelope(path.split("/")[3]);
     await route.fulfill({ json: body });
+    if (isHeldReference) lateResponseDelivered = true;
   });
   await page.goto("/");
   await page.getByRole("button", { name: "运行", exact: true }).click();
@@ -81,6 +120,104 @@ test("single historical input reaches prepared and created inputs; upload replac
     .getByRole("button", { name: "使用历史输入 · image", exact: true })
     .click();
   await expect(node).toContainText("下游输入来源：history");
+  await expect(node.getByLabel("当前图片来源", { exact: true })).toContainText(
+    "历史运行的原始输入",
+  );
+  await expect(node).not.toContainText("明确选用一个输出");
+  await page
+    .getByLabel("定位画布节点", { exact: true })
+    .selectOption("input:image");
+  await expect(
+    page.getByText("固定历史来源：history / input:image / image"),
+  ).toBeVisible();
+  await expect.poll(() => imageReads).toBeGreaterThan(0);
+  expect(outputReads).toBe(0);
+  for (const viewport of [
+    { width: 1440, height: 900 },
+    { width: 1920, height: 1080 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await expect(
+      page.getByRole("button", { name: "放大图片", exact: true }),
+    ).toBeVisible();
+    const preview = page.getByLabel("当前输入预览", { exact: true });
+    await expect(preview.locator("img")).toBeVisible();
+    const geometry = await preview.evaluate((element) => {
+      const dock = element.closest(".node-preview-window")!;
+      const image = element.querySelector("img")!;
+      const button = [...element.querySelectorAll("button")].find(
+        (b) => b.textContent === "放大图片",
+      )!;
+      const bounds = (e: Element) => {
+        const r = e.getBoundingClientRect();
+        return { top: r.top, bottom: r.bottom, left: r.left, right: r.right };
+      };
+      return {
+        dock: bounds(dock),
+        image: bounds(image),
+        button: bounds(button),
+        scroll: dock.scrollTop,
+      };
+    });
+    expect(geometry.scroll).toBe(0);
+    for (const item of [geometry.image, geometry.button]) {
+      expect(item.top).toBeGreaterThanOrEqual(geometry.dock.top);
+      expect(item.bottom).toBeLessThanOrEqual(geometry.dock.bottom);
+      expect(item.left).toBeGreaterThanOrEqual(geometry.dock.left);
+      expect(item.right).toBeLessThanOrEqual(geometry.dock.right);
+    }
+  }
+
+  // Re-select the original input after changing the binding; a mismatched response
+  // must never expose an image or retain the old preview.
+  await node.getByRole("button", { name: "改为上传图片", exact: true }).click();
+  holdReference = true;
+  await node
+    .getByRole("button", { name: "使用历史输入 · image", exact: true })
+    .click();
+  await expect.poll(() => Boolean(releaseReference)).toBe(true);
+  await node.getByRole("button", { name: "改为上传图片", exact: true }).click();
+  await node.getByLabel("上传运行图片", { exact: true }).setInputFiles({
+    name: "late-response-replacement.png",
+    mimeType: "image/png",
+    buffer: Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=",
+      "base64",
+    ),
+  });
+  await expect(node).toContainText("late-response-replacement.png");
+  const readsBeforeLateResponse = imageReads;
+  releaseReference!();
+  holdReference = false;
+  await expect.poll(() => lateResponseDelivered).toBe(true);
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
+  await expect(
+    page.getByText("固定历史来源：history / input:image / image"),
+  ).toHaveCount(0);
+  await expect(
+    page.getByAltText("当前输入 image缩略图", { exact: true }),
+  ).toBeVisible();
+  expect(imageReads).toBe(readsBeforeLateResponse);
+  await expect(node).not.toContainText("下游输入来源：history");
+  mismatch = true;
+  await node
+    .getByRole("button", { name: "使用历史输入 · image", exact: true })
+    .click();
+  await expect(
+    page.getByText("无法核实当前输入的历史图片；绑定未改变，请重新核实来源。"),
+  ).toBeVisible();
+  const readsBeforeRetry = imageReads;
+  mismatch = false;
+  await page
+    .getByRole("button", { name: "重新读取输入预览", exact: true })
+    .click();
+  await expect.poll(() => imageReads).toBeGreaterThan(readsBeforeRetry);
+
   await page
     .getByLabel("复用所选运行的有效节点结果（后端核对身份与证据）")
     .uncheck();
@@ -98,13 +235,11 @@ test("single historical input reaches prepared and created inputs; upload replac
   await node.getByRole("button", { name: "改为上传图片", exact: true }).click();
   await expect(node).not.toContainText("下游输入来源：history");
   await expect(start).toBeDisabled();
-  await node
-    .getByLabel("上传运行图片", { exact: true })
-    .setInputFiles({
-      name: "replacement.png",
-      mimeType: "image/png",
-      buffer: Buffer.from("fixture"),
-    });
+  await node.getByLabel("上传运行图片", { exact: true }).setInputFiles({
+    name: "replacement.png",
+    mimeType: "image/png",
+    buffer: Buffer.from("fixture"),
+  });
   await expect(node).toContainText("replacement.png");
   await expect(node).not.toContainText("下游输入来源：history");
   await start.click();

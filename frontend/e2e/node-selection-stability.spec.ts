@@ -59,14 +59,24 @@ test("small nodes in a six-node graph remain hittable throughout double click", 
     .click();
   await page.getByRole("button", { name: "查看全图", exact: true }).click();
   const node = page.locator('[data-id="n2"]');
-  const canvasBefore = await page.locator(".canvas > .react-flow").boundingBox();
+  const canvasBefore = await page
+    .locator(".canvas > .react-flow")
+    .boundingBox();
+  const overviewWidth = (await node.boundingBox())!.width;
   await node.locator(".blueprint-node-header").dblclick();
   await expect(
     page.getByRole("button", { name: "聚焦所选节点", exact: true }),
   ).toBeEnabled();
   await expect
     .poll(async () => (await node.boundingBox())!.width)
-    .toBeGreaterThanOrEqual(250);
+    .toBeGreaterThan(overviewWidth);
+  const focused = (await node.boundingBox())!;
+  expect(focused.y).toBeGreaterThanOrEqual(canvasBefore!.y);
+  expect(focused.y + focused.height).toBeLessThanOrEqual(
+    canvasBefore!.y + canvasBefore!.height,
+  );
   await expect(node.locator("article")).toHaveClass(/blueprint-node-selected/);
-  expect(await page.locator(".canvas > .react-flow").boundingBox()).toEqual(canvasBefore);
+  expect(await page.locator(".canvas > .react-flow").boundingBox()).toEqual(
+    canvasBefore,
+  );
 });

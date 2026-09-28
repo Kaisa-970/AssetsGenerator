@@ -120,6 +120,14 @@ describe("run output presentation", () => {
     expect(options.onPreview).not.toHaveBeenCalled();
     expect(tree.filter((e) => e.type === ImageOutput)).toHaveLength(2);
   });
+  it("keeps distinct stable identities for comparison and input actions", () => {
+    const actions = elements(RunOutputs(props())).filter(
+      (e) => e.type === "button" && /^(加入比较|用作输入)/.test(text(e)),
+    );
+    expect(actions.length).toBeGreaterThan(2);
+    expect(actions.every((e) => typeof e.key === "string")).toBe(true);
+    expect(new Set(actions.map((e) => e.key)).size).toBe(actions.length);
+  });
   it("keeps continuation, comparison and input binding gates independent", () => {
     const tree = elements(
       RunOutputs({

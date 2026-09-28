@@ -185,3 +185,65 @@ def test_snapshot_reads_after_adapter_implementation_upgrade(fixture, monkeypatc
     )
     with pytest.raises(ContractError, match="registered execution bindings"):
         service.engine._plan(run)
+
+
+def test_original_input_preview_is_pinned_readonly_and_registry_independent(fixture, tmp_path):
+    from assets_generator.dag_adapters import AdapterRegistry
+
+    service, run, snapshot = fixture
+    expected = run.dag.named_actual_inputs["photo"]
+    service.engine.registry = AdapterRegistry()
+    (service.engine.store.root / "runs" / f"{run.run_id}.json").write_text("{}")
+    before = {str(p): p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()}
+    result = service.snapshot_input_reference(run.run_id, "photo", snapshot)
+    assert result == {
+        "source_run_id": run.run_id,
+        "input_name": "photo",
+        "kind": "rgb_image",
+        "reference": to_primitive(expected),
+        "source_snapshot": snapshot,
+    }
+    assert (
+        service.snapshot_input_image(run.run_id, "photo", snapshot).data
+        == service.engine.store.blob_path(expected).read_bytes()
+    )
+    assert before == {str(p): p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()}
+
+
+def test_original_input_preview_rejects_wrong_source_and_corrupt_evidence(fixture):
+    service, run, snapshot = fixture
+    other = service.engine.create(service.engine._plan(run), run.dag.named_actual_inputs)
+    from assets_generator.contracts import ContractError
+
+    with pytest.raises(ContractError):
+        service.snapshot_input_reference(other.run_id, "photo", snapshot)
+    with pytest.raises(ContractError, match="named scalar"):
+        service.snapshot_input_reference(run.run_id, "unknown", snapshot)
+    ref = run.dag.named_actual_inputs["photo"]
+    service.engine.store.blob_path(ref).write_bytes(b"corrupt")
+    with pytest.raises((ValueError, OSError)):
+        service.snapshot_input_image(run.run_id, "photo", snapshot)
+
+
+def test_original_input_preview_http_routes(fixture, tmp_path):
+    service, run, snapshot = fixture
+    server = create_editor_server(DraftEditor(tmp_path / "editor", execution=service), 0)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{server.server_port}/api/runs/{run.run_id}"
+    query = "?" + urlencode({"snapshot": snapshot["artifact_id"]})
+    try:
+        with urlopen(base + "/snapshot-input-reference/photo" + query) as response:
+            record = json.load(response)
+        assert record["reference"] == to_primitive(run.dag.named_actual_inputs["photo"])
+        with urlopen(base + "/snapshot-input-image/photo" + query) as response:
+            assert response.headers["Content-Type"] == "image/png"
+            assert response.read().startswith(b"\x89PNG")
+        for query in ("", "?snapshot=", "?snapshot=a&snapshot=b", "?snapshot=a&bad=b"):
+            with pytest.raises(HTTPError) as caught:
+                urlopen(base + "/snapshot-input-reference/photo" + query)
+            assert caught.value.code == 400
+    finally:
+        server.shutdown()
+        thread.join()
+        server.server_close()

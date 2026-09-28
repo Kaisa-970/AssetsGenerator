@@ -268,7 +268,31 @@ def create_editor_server(
                     self.respond(200, {"runs": editor.execution.list_runs()})
                 elif path.startswith("/api/runs/") and editor.execution:
                     parts = path.removeprefix("/api/runs/").split("/")
-                    if len(parts) == 4 and parts[1] in {"snapshot-output", "snapshot-reference"}:
+                    if len(parts) == 3 and parts[1] in {
+                        "snapshot-input-reference",
+                        "snapshot-input-image",
+                    }:
+                        query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
+                        if (
+                            set(query) != {"snapshot"}
+                            or len(query["snapshot"]) != 1
+                            or not query["snapshot"][0]
+                        ):
+                            raise ValueError("snapshot input requires one snapshot identity")
+                        snapshot = {"artifact_id": query["snapshot"][0]}
+                        if parts[1] == "snapshot-input-reference":
+                            self.respond(
+                                200,
+                                editor.execution.snapshot_input_reference(
+                                    parts[0], parts[2], snapshot
+                                ),
+                            )
+                        else:
+                            output = editor.execution.snapshot_input_image(
+                                parts[0], parts[2], snapshot
+                            )
+                            self.send(200, output.data, output.media_type)
+                    elif len(parts) == 4 and parts[1] in {"snapshot-output", "snapshot-reference"}:
                         query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
                         if (
                             set(query) != {"snapshot"}

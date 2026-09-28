@@ -248,6 +248,7 @@ test("historical multi-input sources require explicit per-input reuse without cr
   await page
     .getByRole("button", { name: "使用历史输入 · image", exact: true })
     .click();
+  await page.getByLabel("定位画布节点", { exact: true }).selectOption("input:text");
   await page
     .getByRole("button", { name: "使用历史输入 · text", exact: true })
     .click();

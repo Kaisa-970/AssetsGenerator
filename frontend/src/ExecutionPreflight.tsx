@@ -137,15 +137,17 @@ export function ExecutionPreflight({
               {active.report.entry_error || active.report.error?.detail}
             </p>
           )}
-          {Object.entries(active.report.nodes).map(([id, node]) => (
-            <div key={id}>
-              {id} · {labels[node.status] || "无法核实"}
-              <details>
-                <summary>原因</summary>
-                {node.detail} ({node.reason})
-              </details>
-            </div>
-          ))}
+          <div className="preflight-node-reports" aria-label="节点执行范围摘要">
+            {Object.entries(active.report.nodes).map(([id, node]) => (
+              <div key={id}>
+                {id} · {labels[node.status] || "无法核实"}
+                <details>
+                  <summary>原因</summary>
+                  {node.detail} ({node.reason})
+                </details>
+              </div>
+            ))}
+          </div>
           <p>检查范围：Core 契约与复用证据；服务可达性及运行资源尚未检查。</p>
           {intent.reuse_source && (
             <p>当前复用要求来源快照的完整证据均可核实。</p>

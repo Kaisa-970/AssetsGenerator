@@ -27,6 +27,7 @@ import { remoteStatusMessage } from "./remoteStatus";
 import { ImageOutput } from "./ImageOutput";
 import { RunGraph } from "./RunGraph";
 import {
+  Fragment as ReactFragment,
   lazy,
   Suspense,
   useEffect,
@@ -176,6 +177,12 @@ export function ExecutionPanel({
     submit: sendCreation,
     clear: clearCreation,
   } = useRunCreation();
+  const [inlineMeshPreview, setInlineMeshPreview] = useState<{
+    runId: string;
+    nodeId: string;
+    port: string;
+    url: string;
+  }>();
   const [preview, setPreview] = useState<{
     runId: string;
     nodeId: string;
@@ -333,6 +340,7 @@ export function ExecutionPanel({
   const choose = (id: string) => {
     onHistoricalInputSourceChange?.();
     setPreview(undefined);
+    setInlineMeshPreview(undefined);
     setShowGraph(false);
     setShowReview(false);
     selectedRef.current = id;
@@ -533,6 +541,39 @@ export function ExecutionPanel({
       [name]: artifactId.trim() ? { artifact_id: artifactId.trim() } : {},
     }));
   };
+  const onImageSourceChange = (source: string) => {
+    if (pending || uploading) return;
+    if (source === "path") {
+      // A failed or previous browser upload must not keep the image input
+      // bound, and its error must not block a server-path run.
+      setImageSource("path");
+      setInputArtifact("image", "");
+      setUploaded(undefined);
+      setUploadedFile(undefined);
+      setReusedImage(undefined);
+      setUploadMessage("");
+      return;
+    }
+    if (source === "reference") {
+      // Selecting the reference mode requires an explicit history choice;
+      // discard any upload/path state so it cannot be submitted accidentally.
+      setImageSource("reference");
+      setInputArtifact("image", "");
+      setUploaded(undefined);
+      setUploadedFile(undefined);
+      setImagePath("");
+      setUploadMessage("");
+      setReusedImage(undefined);
+      return;
+    }
+    // Upload mode starts with no bound artifact and waits for a new file.
+    setImageSource("upload");
+    setInputArtifact("image", "");
+    setReusedImage(undefined);
+    setUploaded(undefined);
+    setUploadedFile(undefined);
+    setUploadMessage("");
+  };
   const uploadInputArtifact = async (name: string, file?: File) => {
     if (!file || uploadPending.current) return;
     const revision = inputGeneration.current.revision;
@@ -597,7 +638,6 @@ export function ExecutionPanel({
     setInputArtifact("image", "");
     setReusedImage(undefined);
     setImageSource("upload");
-    setImagePath("");
     setUploaded(undefined);
     setUploadedFile(undefined);
     setUploadMessage("");
@@ -770,6 +810,21 @@ export function ExecutionPanel({
     (o) => o.node_id === selectedNode,
   );
   const activePreviewPort = selectedPreviewPort(selectedOutputs, previewPort);
+  useEffect(() => {
+    setInlineMeshPreview(undefined);
+  }, [selectedNode, run?.run_id, activePreviewPort]);
+  useEffect(() => {
+    setInlineMeshPreview(undefined);
+  }, [selectedNode, activePreviewPort, run?.run_id]);
+  const problemCount = Object.values(run?.dag?.node_states || {}).filter(
+    (state) =>
+      [
+        "waiting_for_input",
+        "failed",
+        "interrupted",
+        "recovery_blocked",
+      ].includes(state.status),
+  ).length;
   return (
     <section className="execution-panel">
       {(comparison.A || comparison.B) &&
@@ -890,119 +945,166 @@ export function ExecutionPanel({
                 }
               />
             ) : (
-              <>
-                <p>
-                  来源运行：{run?.run_id || "未选择运行"}。历史结果保持不变。
-                </p>
-                {run && (
+              <div className="output-preview-workspace">
+                <div className="output-preview-context">
                   <p>
-                    执行状态：{executionStatus(run.status)}
-                    {envelope?.busy ? " · 后台处理中" : ""}
+                    来源运行：{run?.run_id || "未选择运行"}。历史结果保持不变。
                   </p>
-                )}
-                {Object.values(nodeFreshness).some(
-                  (value) =>
-                    value.includes("需要更新") || value.includes("上游需更新"),
-                ) && (
-                  <section aria-label="配置变化影响">
+                  {run && (
                     <p>
-                      受影响节点：
-                      {Object.entries(nodeFreshness)
-                        .filter(
-                          ([, value]) =>
-                            value.includes("需要更新") ||
-                            value.includes("上游需更新"),
-                        )
-                        .map(([id]) => id)
-                        .join("、")}
+                      运行状态：{executionStatus(run.status)}
+                      {envelope?.busy ? " · 后台处理中" : ""}
                     </p>
+                  )}
+                  {selectedNode && run?.dag?.node_states[selectedNode] && (
                     <p>
-                      旧运行和预览保留。下方启动将创建新运行；是否复用其他节点，以执行预检为准。
+                      节点状态：
+                      {executionStatus(
+                        run.dag.node_states[selectedNode].status,
+                      )}
                     </p>
-                  </section>
-                )}
-                <p aria-label="预览配置状态">
-                  {selectedNode && nodeFreshness[selectedNode]
-                    ? nodeFreshness[selectedNode].includes("需要更新") ||
-                      nodeFreshness[selectedNode].includes("上游需更新")
-                      ? "结果过期：配置或上游已变化；保留旧预览供比较。"
-                      : nodeFreshness[selectedNode]
-                    : "待核验：尚未确认此结果是否对应当前配置。"}
-                </p>
-                <label>
-                  输出端口
-                  <select
-                    aria-label="预览输出端口"
-                    value={activePreviewPort}
-                    onChange={(e) => setPreviewPort(e.target.value)}
-                  >
-                    {!selectedOutputs.length && (
-                      <option value="">暂无输出</option>
-                    )}
-                    {envelope?.outputs
-                      ?.filter((o) => o.node_id === selectedNode)
-                      .map((o) => (
-                        <option key={o.port} value={o.port}>
-                          {o.port === "mask" ? "mask · 联合遮罩" : o.port}
-                        </option>
-                      ))}
-                  </select>
-                </label>
-                {run &&
-                  selectedOutputs
-                    .filter((o) => o.port === activePreviewPort)
-                    .map((output) =>
-                      ["rgb_image", "rgba_image", "binary_mask"].includes(
-                        output.kind || "",
-                      ) ? (
-                        <ImageOutput
-                          key={`selected:${run.run_id}:${output.node_id}:${output.port}`}
-                          runId={run.run_id}
-                          nodeId={output.node_id}
-                          port={output.port}
-                          url={output.url}
-                          defaultOpen
-                        />
-                      ) : output.kind === "gltf_asset" ||
-                        output.kind === "triangle_mesh" ? (
-                        <button
-                          key={output.port}
-                          onClick={() =>
-                            setPreview({
-                              runId: run.run_id,
-                              nodeId: output.node_id,
-                              url: output.url,
-                            })
-                          }
-                        >
-                          预览模型 · {output.port}
-                        </button>
-                      ) : (
-                        <a
-                          key={output.port}
-                          href={output.url}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          {output.port}
-                        </a>
-                      ),
-                    )}
-                <div ref={setOutputActionHost} aria-label="选中输出操作" />
-                {!envelope?.outputs?.some(
-                  (o) => o.node_id === selectedNode,
-                ) && (
-                  <p>
-                    {previewEmptyMessage(
-                      selectedNode,
-                      run?.run_id,
-                      selectedNode
-                        ? run?.dag?.node_states[selectedNode]?.status
-                        : undefined,
-                    )}
+                  )}
+                  {Object.values(nodeFreshness).some(
+                    (value) =>
+                      value.includes("需要更新") ||
+                      value.includes("上游需更新"),
+                  ) && (
+                    <details aria-label="配置变化影响">
+                      <summary>查看配置变化影响</summary>
+                      <p>
+                        受影响节点：
+                        {Object.entries(nodeFreshness)
+                          .filter(
+                            ([, value]) =>
+                              value.includes("需要更新") ||
+                              value.includes("上游需更新"),
+                          )
+                          .map(([id]) => id)
+                          .join("、")}
+                      </p>
+                      <p>
+                        旧运行和预览保留。下方启动将创建新运行；是否复用其他节点，以执行预检为准。
+                      </p>
+                    </details>
+                  )}
+                  <p aria-label="预览配置状态">
+                    {selectedNode && nodeFreshness[selectedNode]
+                      ? nodeFreshness[selectedNode].includes("需要更新") ||
+                        nodeFreshness[selectedNode].includes("上游需更新")
+                        ? "结果过期：配置或上游已变化；保留旧预览供比较。"
+                        : nodeFreshness[selectedNode]
+                      : "待核验：尚未确认此结果是否对应当前配置。"}
                   </p>
-                )}
-              </>
+                  <label>
+                    输出端口
+                    <select
+                      aria-label="预览输出端口"
+                      value={activePreviewPort}
+                      onChange={(e) => setPreviewPort(e.target.value)}
+                    >
+                      {!selectedOutputs.length && (
+                        <option value="">暂无输出</option>
+                      )}
+                      {envelope?.outputs
+                        ?.filter((o) => o.node_id === selectedNode)
+                        .map((o) => (
+                          <option key={o.port} value={o.port}>
+                            {o.port === "mask" ? "mask · 联合遮罩" : o.port}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                </div>
+                <div className="output-preview-media">
+                  {run &&
+                    selectedOutputs
+                      .filter((o) => o.port === activePreviewPort)
+                      .map((output) =>
+                        ["rgb_image", "rgba_image", "binary_mask"].includes(
+                          output.kind || "",
+                        ) ? (
+                          <ImageOutput
+                            compact
+                            key={`selected:${run.run_id}:${output.node_id}:${output.port}`}
+                            runId={run.run_id}
+                            nodeId={output.node_id}
+                            port={output.port}
+                            url={output.url}
+                            defaultOpen
+                          />
+                        ) : output.kind === "gltf_asset" ||
+                          output.kind === "triangle_mesh" ? (
+                          <ReactFragment
+                            key={`mesh-preview:${run.run_id}:${output.node_id}:${output.port}`}
+                          >
+                            <button
+                              onClick={() =>
+                                setInlineMeshPreview({
+                                  runId: run.run_id,
+                                  nodeId: output.node_id,
+                                  port: output.port,
+                                  url: output.url,
+                                })
+                              }
+                            >
+                              {inlineMeshPreview?.port === output.port
+                                ? "刷新模型预览"
+                                : "加载模型预览"}{" "}
+                              · {output.port}
+                            </button>
+                            {inlineMeshPreview?.port === output.port &&
+                              inlineMeshPreview.runId === run.run_id && (
+                                <GlbPreview
+                                  runId={run.run_id}
+                                  nodeId={output.node_id}
+                                  url={output.url}
+                                  embedded
+                                  compact
+                                  onClose={() =>
+                                    setInlineMeshPreview(undefined)
+                                  }
+                                />
+                              )}
+                            <button
+                              key={`mesh-modal:${output.port}`}
+                              onClick={() =>
+                                setPreview({
+                                  runId: run.run_id,
+                                  nodeId: output.node_id,
+                                  url: output.url,
+                                })
+                              }
+                            >
+                              在大窗口打开 · {output.port}
+                            </button>
+                          </ReactFragment>
+                        ) : (
+                          <a
+                            key={output.port}
+                            href={output.url}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            {output.port}
+                          </a>
+                        ),
+                      )}
+                  <div ref={setOutputActionHost} aria-label="选中输出操作" />
+                  {!envelope?.outputs?.some(
+                    (o) => o.node_id === selectedNode,
+                  ) && (
+                    <p>
+                      {previewEmptyMessage(
+                        selectedNode,
+                        run?.run_id,
+                        selectedNode
+                          ? run?.dag?.node_states[selectedNode]?.status
+                          : undefined,
+                      )}
+                    </p>
+                  )}
+                </div>
+              </div>
             )}
           </section>,
           previewHost,
@@ -1084,7 +1186,7 @@ export function ExecutionPanel({
           },
           uploadObservations,
           imageSource,
-          setImageSource,
+          onImageSourceChange,
           reusedImage,
           setReusedImage,
           imagePath,
@@ -1113,37 +1215,47 @@ export function ExecutionPanel({
               </option>
             ))}
           </select>
-          {run &&
-            Object.entries(run.dag?.node_states || {})
-              .filter(([, state]) =>
-                [
-                  "waiting_for_input",
-                  "failed",
-                  "interrupted",
-                  "recovery_blocked",
-                ].includes(state.status),
-              )
-              .map(([id, state]) => (
-                <button
-                  key={id}
-                  onClick={() => {
-                    onLocateNode?.(id);
-                    onOpenHistory?.();
-                    requestAnimationFrame(() => {
-                      const element = document.getElementById(
-                        `run-action-${run.run_id}-${id}`,
-                      );
-                      element?.scrollIntoView({ block: "nearest" });
-                      element?.focus({ preventScroll: true });
-                    });
-                  }}
-                >
-                  {state.status === "waiting_for_input"
-                    ? "处理人工待办"
-                    : "查看运行问题"}{" "}
-                  · {id}
-                </button>
-              ))}
+          {run && problemCount > 0 && (
+            <details
+              key={`${run.run_id}:${problemCount}`}
+              open={problemCount === 1}
+              className="run-problem-navigation"
+            >
+              <summary>运行问题与人工待办 · {problemCount}</summary>
+              <div aria-label="运行问题与人工待办列表">
+                {Object.entries(run.dag?.node_states || {})
+                  .filter(([, state]) =>
+                    [
+                      "waiting_for_input",
+                      "failed",
+                      "interrupted",
+                      "recovery_blocked",
+                    ].includes(state.status),
+                  )
+                  .map(([id, state]) => (
+                    <button
+                      key={id}
+                      onClick={() => {
+                        onLocateNode?.(id);
+                        onOpenHistory?.();
+                        requestAnimationFrame(() => {
+                          const element = document.getElementById(
+                            `run-action-${run.run_id}-${id}`,
+                          );
+                          element?.scrollIntoView({ block: "nearest" });
+                          element?.focus({ preventScroll: true });
+                        });
+                      }}
+                    >
+                      {state.status === "waiting_for_input"
+                        ? "处理人工待办"
+                        : "查看运行问题"}{" "}
+                      · {id}
+                    </button>
+                  ))}
+              </div>
+            </details>
+          )}
           {configurationBlockedReason && (
             <div>
               <p role="alert">{configurationBlockedReason}</p>
@@ -1351,7 +1463,7 @@ export function ExecutionPanel({
                   : undefined;
                 onLoadDraft(draft.pipeline, source);
                 setMessage(
-                  "已读取原运行配置，请在页面上确认是否替换画布。不会启动运行或复用人工决定。",
+                  "已读取原运行配置；载入结果见页面底部提示。读取配置不会启动运行或复用人工决定。",
                 );
               });
             }}

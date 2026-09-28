@@ -1,0 +1,132 @@
+/* Keep the current image alongside its source inside the persistent preview dock. */
+.current-input-preview > header {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 5px;
+}
+.current-input-preview details {
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.current-input-preview > header details[open] {
+  flex-basis: 100%;
+}
+.historical-input-preview {
+  display: grid;
+  grid-template-columns: minmax(150px, 2fr) minmax(170px, 3fr);
+  gap: 12px;
+  align-items: start;
+}
+.historical-input-source {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.node-preview-window .historical-input-source p {
+  margin: 2px 0 7px;
+}
+.image-output-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.image-output-compact .image-output-actions {
+  margin-bottom: 4px;
+}
+.image-output-compact .image-output-actions button {
+  padding: 3px 8px;
+  font-size: 11px;
+}
+.node-preview-window .image-output-compact > img {
+  width: 100%;
+  height: clamp(64px, 8vh, 96px);
+  max-height: none;
+  object-fit: contain;
+}
+.current-input-preview > figure {
+  display: flex;
+  align-items: start;
+  gap: 12px;
+  margin: 4px 0;
+}
+.current-input-preview > figure img {
+  height: clamp(64px, 8vh, 96px);
+}
+.current-input-preview > figure figcaption {
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.output-preview-workspace {
+  display: grid;
+  grid-template-columns: minmax(180px, 2fr) minmax(200px, 3fr);
+  gap: 12px;
+  align-items: start;
+}
+.output-preview-context {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.node-preview-window .output-preview-context p {
+  margin: 2px 0 5px;
+}
+.output-preview-context label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 11px;
+  margin: 4px 0;
+}
+.output-preview-context label select {
+  min-width: 0;
+  width: auto;
+  flex: 1;
+  padding: 3px;
+}
+.output-preview-context details {
+  font-size: 11px;
+}
+.output-preview-media {
+  min-width: 0;
+}
+.output-preview-media [aria-label="选中输出操作"] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.output-preview-media [aria-label="选中输出操作"] button {
+  font-size: 11px;
+  padding: 3px 6px;
+}
+.selected-node-preview {
+  container-type: inline-size;
+}
+@container (max-width: 400px) {
+  .historical-input-preview,
+  .output-preview-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .historical-input-preview > .image-output,
+  .output-preview-media {
+    grid-row: 1;
+  }
+}
+.output-preview-media .glb-preview-compact {
+  margin-top: 6px;
+  padding: 6px;
+  min-height: 0;
+}
+.output-preview-media .glb-preview-compact header,
+.output-preview-media .glb-preview-compact > p,
+.output-preview-media .glb-preview-compact > a {
+  font-size: 10px;
+  margin: 2px 0;
+}
+.output-preview-media .glb-preview-compact > button {
+  font-size: 10px;
+  padding: 2px 5px;
+}
+.output-preview-media .glb-preview-compact > div:last-of-type {
+  min-height: 100px !important;
+}

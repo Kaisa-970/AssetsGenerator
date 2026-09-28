@@ -365,6 +365,20 @@ class NodeEditorExecution:
             "unit": identity.identity_metadata.get("unit"),
         }
 
+    def snapshot_input_reference(
+        self, run_id: str, name: str, snapshot: dict[str, Any]
+    ) -> dict[str, Any]:
+        from .node_editor_snapshot import snapshot_input_reference
+
+        return snapshot_input_reference(self, run_id, name, snapshot)
+
+    def snapshot_input_image(
+        self, run_id: str, name: str, snapshot: dict[str, Any]
+    ) -> OutputPayload:
+        from .node_editor_snapshot import snapshot_input_image
+
+        return snapshot_input_image(self, run_id, name, snapshot)
+
     def snapshot_reference(
         self, run_id: str, node_id: str, port: str, snapshot: dict[str, Any]
     ) -> dict[str, Any]:

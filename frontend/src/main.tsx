@@ -63,6 +63,40 @@ import {
 import { HistoryResizeHandle } from "./HistoryResizeHandle";
 import { executionFailureSummary, type NodeState } from "./executionApi";
 type Data = BlueprintNodeData;
+type QuickInputKind = "rgb" | "rgba" | "mask" | "text";
+const quickInputDefinitions: Record<
+  QuickInputKind,
+  { label: string; detail: string; name: string; kinds: string[]; carriers: string[] }
+> = {
+  rgb: {
+    label: "图片输入",
+    detail: "RGB 图片 · 上传或选择已有图片",
+    name: "image",
+    kinds: ["rgb_image"],
+    carriers: ["artifact_ref"],
+  },
+  rgba: {
+    label: "透明图片输入",
+    detail: "RGBA 图片 · 带透明区域",
+    name: "image",
+    kinds: ["rgba_image"],
+    carriers: ["artifact_ref"],
+  },
+  mask: {
+    label: "遮罩输入",
+    detail: "二值遮罩 · 作为处理节点输入",
+    name: "mask",
+    kinds: ["binary_mask"],
+    carriers: ["artifact_ref"],
+  },
+  text: {
+    label: "文字输入",
+    detail: "文本提示 · 连接到文字分割节点",
+    name: "text",
+    kinds: ["text"],
+    carriers: ["structured"],
+  },
+};
 const nodeTypes = { operator: BlueprintNode };
 function InputHost({
   name,
@@ -243,6 +277,29 @@ function App() {
   const input = useRef<HTMLInputElement>(null);
   const runInput = useRef<HTMLInputElement>(null);
   const flow = useReactFlow();
+  const focusNode = useCallback(
+    (id: string) => {
+      // Selection can change the node and panel dimensions. Measure after React
+      // and ResizeObserver have committed those changes, then fit the whole card.
+      // A fixed 0.75 zoom floor clips tall cards while the preview is expanded.
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => {
+          void flow.fitView({
+            nodes: [{ id }],
+            padding: {
+              top: "40px",
+              bottom: "24px",
+              left: "24px",
+              right: "24px",
+            },
+            minZoom: 0.15,
+            maxZoom: 1,
+          });
+        }),
+      );
+    },
+    [flow],
+  );
   const update = useCallback(
     (change: Pipeline | ((previous: Pipeline) => Pipeline)) => {
       const next =
@@ -371,12 +428,7 @@ function App() {
       const focusId = firstInput
         ? inputId(firstInput)
         : Object.keys(p.nodes)[0];
-      void flow.fitView({
-        nodes: focusId ? [{ id: focusId }] : undefined,
-        padding: 0.15,
-        minZoom: 0.85,
-        maxZoom: 1,
-      });
+      if (focusId) focusNode(focusId);
     }, 80);
   };
   const addOperator = (
@@ -464,34 +516,40 @@ function App() {
     // workbench viewport so its model selector and primary parameters are
     // immediately usable instead of leaving the node below the fold.
     window.setTimeout(() => {
-      void flow.fitView({
-        nodes: [{ id }],
-        padding: 0.18,
-        minZoom: 0.75,
-        maxZoom: 1,
-      });
+      focusNode(id);
     }, 0);
   };
-  const addInputNode = (kind: "rgb" | "rgba" | "mask" | "text") => {
-    const sources: Record<string, { name: string; port?: Port }> = {
-      rgb: {
-        name: "image",
-        port: catalog.operators["encode_png@1"]?.inputs.image,
-      },
-      rgba: {
-        name: "image",
-        port: catalog.operators["shape_generation@1"]?.inputs.image,
-      },
-      mask: {
-        name: "mask",
-        port: catalog.operators["apply_binary_mask@1"]?.inputs.mask,
-      },
-      text: {
-        name: "text",
-        port: catalog.operators["text_segmentation@2"]?.inputs.text,
-      },
-    };
-    const choice = sources[kind];
+  const availableQuickInputs = useMemo(() => {
+    const result = new Map<QuickInputKind, { name: string; port: Port }>();
+    for (const operator of Object.values(catalog.operators)) {
+      for (const port of Object.values(operator.inputs)) {
+        const kinds = port.kinds || (port.kind ? [port.kind] : []);
+        if (port.cardinality && port.cardinality !== "one") continue;
+        for (const kind of Object.keys(
+          quickInputDefinitions,
+        ) as QuickInputKind[]) {
+          if (
+            !result.has(kind) &&
+            (!port.carriers ||
+              port.carriers.some((carrier) =>
+                quickInputDefinitions[kind].carriers.includes(carrier),
+              )) &&
+            kinds.some((value) =>
+              quickInputDefinitions[kind].kinds.includes(value),
+            )
+          ) {
+            result.set(kind, {
+              name: quickInputDefinitions[kind].name,
+              port: structuredClone(port),
+            });
+          }
+        }
+      }
+    }
+    return result;
+  }, [catalog.operators]);
+  const addInputNode = (kind: QuickInputKind) => {
+    const choice = availableQuickInputs.get(kind);
     if (!choice?.port) {
       setMessage("当前目录没有这个输入类型的契约。");
       return;
@@ -785,30 +843,14 @@ function App() {
       .toLowerCase()
       .includes(paletteQuery),
   );
-  const paletteInputs = [
-    {
-      kind: "rgb" as const,
-      label: "图片输入",
-      detail: "RGB 图片 · 上传或选择已有图片",
-    },
-    {
-      kind: "rgba" as const,
-      label: "透明图片输入",
-      detail: "RGBA 图片 · 带透明区域",
-    },
-    {
-      kind: "mask" as const,
-      label: "遮罩输入",
-      detail: "二值遮罩 · 作为处理节点输入",
-    },
-    {
-      kind: "text" as const,
-      label: "文字输入",
-      detail: "文本提示 · 连接到文字分割节点",
-    },
-  ].filter(({ kind, label, detail }) =>
-    [kind, label, detail].join(" ").toLowerCase().includes(paletteQuery),
-  );
+  const paletteInputs = [...availableQuickInputs.keys()]
+    .map((kind) => ({
+      kind,
+      ...quickInputDefinitions[kind],
+    }))
+    .filter(({ kind, label, detail }) =>
+      [kind, label, detail].join(" ").toLowerCase().includes(paletteQuery),
+    );
   return (
     <div className="app">
       {pendingLoad && (
@@ -1097,12 +1139,7 @@ function App() {
               const id = event.target.value;
               if (!id) return;
               setSelected(id);
-              void flow.fitView({
-                nodes: [{ id }],
-                padding: 0.2,
-                minZoom: 0.75,
-                maxZoom: 1,
-              });
+              focusNode(id);
             }}
           >
             <option value="">选择节点…</option>
@@ -1121,13 +1158,7 @@ function App() {
         <button
           disabled={!selected}
           onClick={() => {
-            if (selected)
-              void flow.fitView({
-                nodes: [{ id: selected }],
-                padding: 0.2,
-                minZoom: 0.75,
-                maxZoom: 1,
-              });
+            if (selected) focusNode(selected);
           }}
         >
           聚焦所选节点
@@ -1211,25 +1242,9 @@ function App() {
               aria-label="添加输入节点"
               value=""
               onChange={(event) => {
-                const sources: Record<string, { name: string; port?: Port }> = {
-                  rgb: {
-                    name: "image",
-                    port: catalog.operators["encode_png@1"]?.inputs.image,
-                  },
-                  rgba: {
-                    name: "image",
-                    port: catalog.operators["shape_generation@1"]?.inputs.image,
-                  },
-                  mask: {
-                    name: "mask",
-                    port: catalog.operators["apply_binary_mask@1"]?.inputs.mask,
-                  },
-                  text: {
-                    name: "text",
-                    port: catalog.operators["text_segmentation@2"]?.inputs.text,
-                  },
-                };
-                const choice = sources[event.target.value];
+                const choice = availableQuickInputs.get(
+                  event.target.value as QuickInputKind,
+                );
                 if (!choice?.port) return;
                 let name = choice.name,
                   i = 2;
@@ -1259,37 +1274,25 @@ function App() {
                       }),
                 }));
                 window.setTimeout(() => {
-                  void flow.fitView({
-                    nodes: [{ id: inputId(name) }],
-                    padding: 0.18,
-                    minZoom: 0.75,
-                    maxZoom: 1,
-                  });
+                  focusNode(inputId(name));
                 }, 0);
               }}
             >
               <option value="">选择输入类型…</option>
-              <option value="rgb" disabled={!catalog.operators["encode_png@1"]}>
-                图片 · RGB
-              </option>
-              <option
-                value="rgba"
-                disabled={!catalog.operators["shape_generation@1"]}
-              >
-                透明图片 · RGBA
-              </option>
-              <option
-                value="mask"
-                disabled={!catalog.operators["apply_binary_mask@1"]}
-              >
-                遮罩
-              </option>
-              <option
-                value="text"
-                disabled={!catalog.operators["text_segmentation@2"]}
-              >
-                文字
-              </option>
+              {(["rgb", "rgba", "mask", "text"] as QuickInputKind[]).map(
+                (kind) => (
+                  <option
+                    key={kind}
+                    value={kind}
+                    disabled={!availableQuickInputs.has(kind)}
+                  >
+                    {quickInputDefinitions[kind].label.replace("输入", "")}
+                    {!availableQuickInputs.has(kind)
+                      ? "（当前目录无兼容契约）"
+                      : ""}
+                  </option>
+                ),
+              )}
             </select>
           </label>
           <div className="catalog-list" aria-label="可添加节点目录">
@@ -1398,12 +1401,7 @@ function App() {
             zoomOnDoubleClick={false}
             onNodeDoubleClick={(_, node) => {
               setSelected(node.id);
-              void flow.fitView({
-                nodes: [{ id: node.id }],
-                padding: 0.2,
-                minZoom: 0.75,
-                maxZoom: 1,
-              });
+              focusNode(node.id);
             }}
             onPaneClick={() => setSelected(undefined)}
             onPaneContextMenu={(event) => {
@@ -1612,11 +1610,7 @@ function App() {
                         onClick={() => {
                           setSelected(item.node_id);
                           setTab("inspector");
-                          void flow.fitView({
-                            nodes: [{ id: item.node_id! }],
-                            padding: 0.5,
-                            maxZoom: 1,
-                          });
+                          focusNode(item.node_id!);
                         }}
                       >
                         定位节点 · {item.node_id}
@@ -2141,12 +2135,7 @@ function App() {
                 setInspectorOpen(true);
                 setTab("inspector");
                 setSelected(id);
-                void flow.fitView({
-                  nodes: [{ id }],
-                  padding: 0.2,
-                  minZoom: 0.75,
-                  maxZoom: 1,
-                });
+                focusNode(id);
               }}
               selectedNode={selected}
               previewHost={previewHost}
@@ -2154,11 +2143,7 @@ function App() {
               onFreshnessChange={setNodeFreshness}
               inputHosts={inputHosts}
               onLocateInput={(name) => {
-                void flow.fitView({
-                  nodes: [{ id: inputId(name) }],
-                  padding: 0.3,
-                  maxZoom: 1,
-                });
+                focusNode(inputId(name));
                 const inputControls = Array.from(
                   inputHosts[name]?.querySelectorAll<HTMLElement>(
                     "textarea, input, select, button, summary",
@@ -2179,12 +2164,7 @@ function App() {
                 setInspectorOpen(true);
                 setTab("inspector");
                 setSelected(nodeId);
-                void flow.fitView({
-                  nodes: [{ id: nodeId }],
-                  padding: 0.2,
-                  minZoom: 0.75,
-                  maxZoom: 1,
-                });
+                focusNode(nodeId);
               }}
               workspaceRevision={workspaceRevision}
               historicalInputSource={historicalInputSource}

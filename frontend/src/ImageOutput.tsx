@@ -8,12 +8,14 @@ export function ImageOutput({
   port,
   url,
   defaultOpen = false,
+  compact = false,
 }: {
   runId: string;
   nodeId: string;
   port: string;
   url: string;
   defaultOpen?: boolean;
+  compact?: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const [enlarged, setEnlarged] = useState(false);
@@ -57,24 +59,34 @@ export function ImageOutput({
   }, [open, url, readAttempt]);
   return (
     <section
-      className="image-output"
+      className={`image-output${compact ? " image-output-compact" : ""}`}
       aria-label={`图片输出 · ${nodeId} · ${port}`}
     >
-      <button
-        aria-expanded={open}
-        onClick={() => {
-          setOpen(!open);
-          setEnlarged(false);
-          setStatus("loading");
-        }}
-      >
-        {open ? "收起图片" : "预览图片"} · {nodeId} · {port}
-      </button>
+      <div className="image-output-actions">
+        <button
+          aria-expanded={open}
+          onClick={() => {
+            setOpen(!open);
+            setEnlarged(false);
+            setStatus("loading");
+          }}
+        >
+          {open ? "收起图片" : "预览图片"}
+          {!compact && ` · ${nodeId} · ${port}`}
+        </button>
+        {open && source && status === "loaded" && (
+          <button onClick={() => setEnlarged(true)}>
+            放大图片{!compact && ` · ${nodeId} · ${port}`}
+          </button>
+        )}
+      </div>
       {open && (
         <>
-          <p className="run-identity">
-            {runId} / {nodeId} / {port}
-          </p>
+          {!compact && (
+            <p className="run-identity">
+              {runId} / {nodeId} / {port}
+            </p>
+          )}
           {status === "loading" && <p role="status">正在读取图片…</p>}
           {status === "failed" && (
             <>
@@ -83,11 +95,6 @@ export function ImageOutput({
                 重新读取图片 · {nodeId} · {port}
               </button>
             </>
-          )}
-          {source && status === "loaded" && (
-            <button onClick={() => setEnlarged(true)}>
-              放大图片 · {nodeId} · {port}
-            </button>
           )}
           {enlarged &&
             source &&

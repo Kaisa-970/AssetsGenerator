@@ -37,6 +37,7 @@ test("node preview follows selected output and empty-node run status without dis
     ),
   };
   let emptyStatus = "running";
+  let runStatus = "running";
   const writes: string[] = [];
   const reads: string[] = [];
   await page.route("**/api/**", async (route) => {
@@ -61,7 +62,7 @@ test("node preview follows selected output and empty-node run status without dis
       body = {
         run: {
           run_id: "historical",
-          status: "running",
+          status: runStatus,
           dag: {
             revision: 1,
             node_states: {
@@ -125,15 +126,52 @@ test("node preview follows selected output and empty-node run status without dis
     "节点 multi 的 mask 输出",
   );
   await expect(preview.getByRole("img")).toBeVisible();
+  runStatus = "failed";
+  await expect(
+    preview.getByText("运行状态：失败", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    preview.getByText("节点状态：完成", { exact: true }),
+  ).toBeVisible();
+  for (const viewport of [
+    { width: 1440, height: 900 },
+    { width: 1920, height: 1080 },
+  ]) {
+    await page.setViewportSize(viewport);
+    const geometry = await preview.evaluate((element) => {
+      const dock = element.closest(".node-preview-window")!;
+      const image = element.querySelector("img")!;
+      const button = [...element.querySelectorAll("button")].find(
+        (b) => b.textContent === "放大图片",
+      )!;
+      const bounds = (e: Element) => {
+        const r = e.getBoundingClientRect();
+        return { top: r.top, bottom: r.bottom, left: r.left, right: r.right };
+      };
+      return {
+        dock: bounds(dock),
+        image: bounds(image),
+        button: bounds(button),
+        scroll: dock.scrollTop,
+      };
+    });
+    expect(geometry.scroll).toBe(0);
+    for (const item of [geometry.image, geometry.button]) {
+      expect(item.top).toBeGreaterThanOrEqual(geometry.dock.top);
+      expect(item.bottom).toBeLessThanOrEqual(geometry.dock.bottom);
+      expect(item.left).toBeGreaterThanOrEqual(geometry.dock.left);
+      expect(item.right).toBeLessThanOrEqual(geometry.dock.right);
+    }
+  }
+  runStatus = "running";
+
   await port.selectOption("rgba");
   await expect(preview.getByRole("img")).toHaveAttribute(
     "alt",
     "节点 multi 的 rgba 输出",
   );
   await expect(preview.getByRole("img")).toBeVisible();
-  await preview
-    .getByRole("button", { name: "放大图片 · multi · rgba", exact: true })
-    .click();
+  await preview.getByRole("button", { name: "放大图片", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "放大图片", exact: true });
   await expect(dialog).toContainText("historical / multi / rgba");
   await dialog
@@ -155,7 +193,7 @@ test("node preview follows selected output and empty-node run status without dis
     "此节点正在运行，结果尚未发布。查看不会重复执行模型。",
   );
   await expect(
-    page.getByText("执行状态：运行中", { exact: true }),
+    preview.getByText("运行状态：运行中", { exact: true }),
   ).toBeVisible();
   emptyStatus = "interrupted";
   await expect(preview).toContainText(

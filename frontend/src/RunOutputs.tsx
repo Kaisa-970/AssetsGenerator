@@ -1,5 +1,5 @@
 import { createPortal } from "react-dom";
-import type { ReactNode } from "react";
+import type { ReactElement } from "react";
 import type { ComponentProps } from "react";
 import { ContinueExtraction } from "./ContinueExtraction";
 import { ImageOutput } from "./ImageOutput";
@@ -107,6 +107,7 @@ export function RunOutputs({
                     output,
                     selectedActionOutput,
                     <button
+                      key={`compare:${side}:${output.node_id}:${output.port}`}
                       disabled={disabled.comparison}
                       onClick={() => {
                         onCompare(output, side);
@@ -154,6 +155,7 @@ export function RunOutputs({
                   output,
                   selectedActionOutput,
                   <button
+                    key={`reuse:${output.node_id}:${output.port}:${name}`}
                     disabled={disabled.inputBinding}
                     onClick={() => {
                       onUseAsInput(output, name);
@@ -184,11 +186,11 @@ function renderOutputAction(
   host: HTMLElement | null | undefined,
   output: RunOutput,
   selected: { nodeId: string; port: string } | undefined,
-  children: ReactNode,
-): ReactNode {
+  children: ReactElement,
+): ReactElement | ReturnType<typeof createPortal> {
   return host &&
     selected?.nodeId === output.node_id &&
     selected.port === output.port
-    ? createPortal(children, host)
+    ? createPortal(children, host, String(children.key))
     : children;
 }

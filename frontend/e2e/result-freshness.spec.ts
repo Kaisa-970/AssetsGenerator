@@ -92,9 +92,7 @@ test("edited configuration marks kept historical preview stale without dispatch"
   await page.getByLabel("定位画布节点", { exact: true }).selectOption("encode");
   const preview = page.getByRole("region", { name: "选中节点预览" });
   await expect(preview.getByRole("img")).toBeVisible();
-  await preview
-    .getByRole("button", { name: "放大图片 · encode · image", exact: true })
-    .click();
+  await preview.getByRole("button", { name: "放大图片", exact: true }).click();
   const enlarged = page.getByRole("dialog", { name: "放大图片", exact: true });
   await expect(enlarged).toBeVisible();
   await expect(enlarged).toContainText("old / encode / image");
@@ -112,10 +110,11 @@ test("edited configuration marks kept historical preview stale without dispatch"
   );
   await expect(badge).toHaveText("需更新");
   await expect(preview.getByRole("img")).toBeVisible();
-  await expect(
-    page.getByRole("region", { name: "配置变化影响" }),
-  ).toContainText("encode");
-  await expect(page.getByText("执行状态：完成", { exact: true })).toBeVisible();
+  const impact = page.locator('details[aria-label="配置变化影响"]');
+  await expect(impact).toBeVisible();
+  await impact.getByText("查看配置变化影响", { exact: true }).click();
+  await expect(impact).toContainText("受影响节点：encode");
+  await expect(page.getByText("运行状态：完成", { exact: true })).toBeVisible();
   await expect(
     page.getByRole("button", {
       name: "重新执行受影响节点 · 检查执行范围",

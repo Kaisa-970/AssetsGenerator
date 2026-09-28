@@ -4,6 +4,7 @@ import {
 } from "./HistoricalInputPreview";
 import { useEffect, useState } from "react";
 import { LocalInputPreview } from "./LocalInputPreview";
+import "./InputPreview.css";
 
 /** Preview the current draft binding, never a same-named input from a historical run. */
 export function CurrentInputPreview({
@@ -55,9 +56,15 @@ export function CurrentInputPreview({
     return () => controller.abort();
   }, [kind, artifactId]);
   return (
-    <section aria-label="当前输入预览">
-      <strong>当前草稿输入 · {name}</strong>
-      <p>下次执行使用此绑定；切换历史运行不会改变当前输入。</p>
+    <section className="current-input-preview" aria-label="当前输入预览">
+      <header>
+        <strong>当前草稿输入 · {name}</strong>
+        <details>
+          <summary>绑定身份</summary>
+          <p>下次执行使用此绑定；切换历史运行不会改变当前输入。</p>
+          {artifactId && <code>{artifactId}</code>}
+        </details>
+      </header>
       {artifactId ? (
         <>
           {file ? (
@@ -76,10 +83,6 @@ export function CurrentInputPreview({
           ) : (
             <p>已绑定历史或已有数据；此处没有本地缩略图。启动时核验内容。</p>
           )}
-          <details>
-            <summary>绑定身份</summary>
-            <code>{artifactId}</code>
-          </details>
         </>
       ) : path ? (
         <p>待导入服务器路径：{path}。启动准备时读取，尚无可预览绑定。</p>

@@ -17,10 +17,12 @@ export function ParameterForm({
   setErrors,
   visibleFields,
   fieldLabelPrefix = "参数",
+  presentation = "details",
 }: {
   adapter?: Adapter;
   visibleFields?: readonly string[];
   fieldLabelPrefix?: string;
+  presentation?: "details" | "node";
   parameters: Record<string, unknown>;
   onChange: (value: Record<string, unknown>) => void;
   draft: Record<string, string>;
@@ -81,11 +83,17 @@ export function ParameterForm({
       const stale =
         fixed && JSON.stringify(value) !== JSON.stringify(field.enum![0]);
       return (
-        <label key={name}>
-          {name}
-          {required.has(name) ? "（必填）" : ""}
-          {fixed ? "（固定契约）" : ""}
-          <small aria-label={`${fieldLabelPrefix} ${name} 来源`}>
+        <label key={name} className="parameter-field">
+          <span className="parameter-field-name" title={name}>
+            {name}
+            {required.has(name) ? "（必填）" : ""}
+            {fixed ? "（固定契约）" : ""}
+          </span>
+          <small
+            className="parameter-field-origin"
+            aria-label={`${fieldLabelPrefix} ${name} 来源`}
+            title="显式配置会覆盖实现默认值；恢复默认会移除覆盖。"
+          >
             {Object.hasOwn(parameters, name)
               ? "显式配置"
               : Object.hasOwn(adapter?.defaults || {}, name)
@@ -223,8 +231,10 @@ export function ParameterForm({
             />
           )}
           {Object.hasOwn(draft, name) && (
-            <span>
-              {name} 尚未应用；应用或放弃编辑后才能启动新运行。
+            <span className="parameter-field-draft">
+              {presentation === "node"
+                ? "尚未应用"
+                : `${name} 尚未应用；应用或放弃编辑后才能启动新运行。`}
               <button
                 type="button"
                 onClick={() => {
@@ -256,6 +266,9 @@ export function ParameterForm({
               !required.has(name)) && (
               <button
                 type="button"
+                className="parameter-field-reset"
+                aria-label={`${Object.hasOwn(adapter?.defaults || {}, name) ? "恢复默认值" : "清除可选参数"} · ${name}`}
+                title={`${Object.hasOwn(adapter?.defaults || {}, name) ? "恢复默认值" : "清除可选参数"} · ${name}`}
                 onClick={() => {
                   const next = { ...parameters };
                   delete next[name];
@@ -263,19 +276,25 @@ export function ParameterForm({
                   onChange(next);
                 }}
               >
-                {Object.hasOwn(adapter?.defaults || {}, name)
-                  ? "恢复默认值"
-                  : "清除可选参数"}{" "}
-                · {name}
+                {presentation === "node"
+                  ? "↺"
+                  : `${Object.hasOwn(adapter?.defaults || {}, name) ? "恢复默认值" : "清除可选参数"} · ${name}`}
               </button>
             )}
         </label>
       );
     });
   return (
-    <section aria-label="参数表单">
-      <div className="section-label">参数表单</div>
-      <p>未覆盖的字段使用 Adapter 默认值。后端编译仍是最终校验。</p>
+    <section
+      aria-label="参数表单"
+      className={`parameter-form parameter-form-${presentation}`}
+    >
+      {presentation === "details" && (
+        <>
+          <div className="section-label">参数表单</div>
+          <p>未覆盖的字段使用 Adapter 默认值。后端编译仍是最终校验。</p>
+        </>
+      )}
       {missing.length > 0 && (
         <p role="alert">
           缺少必填参数：{missing.join("、")}。填写并应用后才能运行。
@@ -302,10 +321,12 @@ export function ParameterForm({
             {message}
           </p>
         ))}
-      <p>
-        对象和数组按字段显式应用；嵌套内容由后端编译校验。也可在下方编辑完整
-        JSON。
-      </p>
+      {presentation === "details" && (
+        <p>
+          对象和数组按字段显式应用；嵌套内容由后端编译校验。也可在下方编辑完整
+          JSON。
+        </p>
+      )}
     </section>
   );
 }

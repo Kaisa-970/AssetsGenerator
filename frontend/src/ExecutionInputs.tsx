@@ -43,7 +43,7 @@ type Props = {
   setObservationsId: (value: string) => void;
   uploadObservations: (files: File[]) => Promise<void>;
   imageSource: string;
-  setImageSource: (value: string) => void;
+  onImageSourceChange: (value: string) => void;
   reusedImage?: { artifact_id: string };
   setReusedImage: (value: { artifact_id: string } | undefined) => void;
   imagePath: string;
@@ -179,7 +179,7 @@ export function ExecutionInputs({
   setObservationsId,
   uploadObservations,
   imageSource,
-  setImageSource,
+  onImageSourceChange,
   reusedImage,
   setReusedImage,
   imagePath,
@@ -478,7 +478,11 @@ export function ExecutionInputs({
           <p aria-label="当前图片来源">
             当前来源：
             {reusedImage || imageSource === "reference"
-              ? "历史输出"
+              ? reusedImage && inputOrigins.image?.artifactId === reusedImage.artifact_id
+                ? inputOrigins.image.nodeId === `input:${inputOrigins.image.port}`
+                  ? "历史运行的原始输入"
+                  : "历史节点输出"
+                : reusedImage ? "已有图片引用" : "尚未选择历史图片"
               : imageSource === "path"
                 ? "服务器路径（高级设置）"
                 : "浏览器上传"}
@@ -492,13 +496,12 @@ export function ExecutionInputs({
                 value={reusedImage ? "reference" : imageSource}
                 disabled={pending || uploading}
                 onChange={(e) => {
-                  setImageSource(e.target.value);
-                  if (e.target.value !== "reference") setReusedImage(undefined);
+                  onImageSourceChange(e.target.value);
                 }}
               >
                 <option value="path">服务器本地路径</option>
                 <option value="upload">从浏览器上传</option>
-                <option value="reference">使用历史输出</option>
+                <option value="reference">使用历史图片</option>
               </select>
             </label>
             {imageSource === "path" && !reusedImage && (
@@ -526,7 +529,7 @@ export function ExecutionInputs({
           )}
           {reusedImage || imageSource === "reference" ? (
             <div>
-              <p>展开“从历史结果选择”，明确选用一个输出。</p>
+              {!reusedImage && <p>展开“从历史结果选择”，明确选用一个输出。</p>}
               {reusedImage && (
                 <details>
                   <summary>高级：输入引用</summary>

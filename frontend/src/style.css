@@ -759,8 +759,7 @@ footer {
   padding: 8px 20px;
   background: #f7f9fb;
   border-bottom: 1px solid #dce3e9;
-  max-height: 26vh;
-  overflow: auto;
+  flex-shrink: 0;
 }
 .execution-toolbar:empty {
   display: none;
@@ -786,7 +785,7 @@ footer {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 16px;
+  gap: 6px 12px;
   width: 100%;
 }
 .execution-controls > p:first-child {
@@ -798,8 +797,34 @@ footer {
 .execution-controls > select {
   max-width: 290px;
 }
-.execution-controls > section {
+.execution-controls > section[aria-label="执行前预检"] {
   margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+.execution-controls > section[aria-label="执行前预检"]:has(> div),
+.execution-controls > section[aria-label="执行前预检"]:has(> [role="alert"]),
+.execution-controls > section[aria-label="执行前预检"]:has(> button ~ button) {
+  flex-basis: 100%;
+  display: block;
+}
+.preflight-node-reports {
+  max-height: 25vh;
+  overflow: auto;
+  overscroll-behavior: contain;
+  overflow-wrap: anywhere;
+}
+.execution-controls > label {
+  font-size: 11px;
+}
+.execution-controls > select {
+  width: 260px;
+}
+.execution-toolbar [role="alert"],
+.execution-toolbar [role="status"] {
+  overflow-wrap: anywhere;
 }
 .execution-controls > section > p {
   font-size: 10px;
@@ -808,12 +833,13 @@ footer {
   flex-basis: 100%;
 }
 .selected-execution-context {
-  flex-basis: 100%;
+  flex: 1 1 620px;
+  min-width: 0;
   display: grid;
-  grid-template-columns: auto minmax(260px, 1fr) auto;
+  grid-template-columns: auto minmax(120px, 1fr) auto;
   align-items: center;
-  gap: 8px 14px;
-  padding: 8px 10px;
+  gap: 4px 10px;
+  padding: 5px 8px;
   color: #355465;
   background: #edf6f8;
   border: 1px solid #b9d9e0;
@@ -1089,4 +1115,18 @@ footer {
   margin: -6px 0 8px;
   color: #71808b;
   font-size: 11px;
+}
+
+.run-problem-navigation > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 120px;
+  overflow: auto;
+}
+.run-problem-navigation {
+  max-width: 100%;
+}
+.run-problem-navigation[open] {
+  flex-basis: 100%;
 }

@@ -123,3 +123,37 @@ def snapshot_output(
         "media_type", "application/octet-stream"
     )
     return OutputPayload(store.blob_path(ref).read_bytes(), str(media))
+
+
+def snapshot_input_reference(
+    service: NodeEditorExecution, run_id: str, name: str, snapshot: dict[str, Any]
+) -> dict[str, Any]:
+    """Project a named original input from its verified immutable run, without rebinding."""
+    run = snapshot_run(service, run_id, snapshot)
+    assert run.dag is not None
+    ref = run.dag.named_actual_inputs.get(name)
+    if not isinstance(ref, ArtifactRef):
+        raise ContractError("snapshot input requires a named scalar Artifact reference")
+    service.engine.repository.verify_reference_closure(ref)
+    identity = service.engine.store.get_manifest(ref.artifact_id).identity
+    return {
+        "source_run_id": run_id,
+        "input_name": name,
+        "reference": to_primitive(ref),
+        "kind": identity.kind,
+        "source_snapshot": dict(snapshot),
+    }
+
+
+def snapshot_input_image(
+    service: NodeEditorExecution, run_id: str, name: str, snapshot: dict[str, Any]
+) -> OutputPayload:
+    record = snapshot_input_reference(service, run_id, name, snapshot)
+    if record["kind"] not in {"rgb_image", "rgba_image", "binary_mask"}:
+        raise ContractError("snapshot input is not a previewable image")
+    ref = ArtifactRef(**record["reference"])
+    store = service.engine.store
+    media = store.get_manifest(ref.artifact_id).identity.identity_metadata.get("media_type")
+    if media not in {"image/png", "image/jpeg", "image/webp"}:
+        raise ContractError("snapshot input has unsupported image media type")
+    return OutputPayload(store.blob_path(ref).read_bytes(), media)
