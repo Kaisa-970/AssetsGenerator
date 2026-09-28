@@ -34,6 +34,9 @@ def _parser() -> argparse.ArgumentParser:
     )
     editor.add_argument("--directory", type=Path, required=True)
     editor.add_argument("--port", type=int, default=8767)
+    editor.add_argument(
+        "--host", default="127.0.0.1", help="Specific local IPv4 address to listen on"
+    )
     editor.add_argument("--operators", type=Path)
     editor.add_argument("--template", type=Path, action="append", default=[])
     editor.add_argument("--config", type=Path)
@@ -291,6 +294,7 @@ def _execute(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
             remote_config=args.remote_config,
             comfy_config=args.comfy_config,
             proposal_config=args.proposal_config,
+            host=args.host,
         )
         return 0
     if args.command == "dag-image":

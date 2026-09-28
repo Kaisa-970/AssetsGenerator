@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import mimetypes
 import re
@@ -223,7 +224,14 @@ class DraftEditor:
         return {"saved": name, "validation": self.compile(body["pipeline"])}
 
 
-def create_editor_server(editor: DraftEditor, port: int = 8767) -> ThreadingHTTPServer:
+def create_editor_server(
+    editor: DraftEditor, port: int = 8767, *, host: str = "127.0.0.1"
+) -> ThreadingHTTPServer:
+    address = ipaddress.IPv4Address(host)
+    if address.is_unspecified or address.is_multicast:
+        raise ValueError("Use a specific local IPv4 address, not a wildcard or multicast address")
+    bind_host = str(address)
+
     class Handler(BaseHTTPRequestHandler):
         def send(self, status: int, data: bytes, media: str = "application/json") -> None:
             self.send_response(status)
@@ -240,6 +248,7 @@ def create_editor_server(editor: DraftEditor, port: int = 8767) -> ThreadingHTTP
         def allowed(self, mutation: bool = False) -> bool:
             host = self.headers.get("Host")
             allowed = {
+                f"{bind_host}:{cast(ThreadingHTTPServer, self.server).server_port}",
                 f"127.0.0.1:{cast(ThreadingHTTPServer, self.server).server_port}",
                 f"localhost:{cast(ThreadingHTTPServer, self.server).server_port}",
             }
@@ -534,7 +543,7 @@ def create_editor_server(editor: DraftEditor, port: int = 8767) -> ThreadingHTTP
         do_POST = mutate
         do_PUT = mutate
 
-    return ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    return ThreadingHTTPServer((bind_host, port), Handler)
 
 
 def serve_editor(
@@ -550,6 +559,7 @@ def serve_editor(
     remote_config: Path | None = None,
     comfy_config: Path | None = None,
     proposal_config: Path | None = None,
+    host: str = "127.0.0.1",
 ) -> None:
     from contextlib import ExitStack
     from importlib.resources import as_file
@@ -666,9 +676,13 @@ def serve_editor(
                     else profile
                 ),
             )
-        server = create_editor_server(editor, port)
+        server = (
+            create_editor_server(editor, port)
+            if host == "127.0.0.1"
+            else create_editor_server(editor, port, host=host)
+        )
         stack.callback(server.server_close)
-        print(f"http://127.0.0.1:{server.server_port}/ (Ctrl+C 关闭)", flush=True)
+        print(f"http://{host}:{server.server_port}/ (Ctrl+C 关闭)", flush=True)
         try:
             server.serve_forever()
         except KeyboardInterrupt:

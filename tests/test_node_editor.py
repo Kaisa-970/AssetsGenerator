@@ -630,3 +630,33 @@ def test_catalog_reports_template_readiness_without_claiming_runtime_health(tmp_
     assert template["execution_reason"]
     assert template["execution_level"] == "unconfigured"
     assert template["service_status"] is None
+
+
+def test_explicit_listen_address_preserves_host_and_origin_checks(tmp_path):
+    import http.client
+
+    server = create_editor_server(fixture(tmp_path), 0, host="127.0.0.2")
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    host = f"127.0.0.2:{server.server_port}"
+    try:
+        for request_host, origin, expected in [
+            (host, f"http://{host}", 200),
+            (host, "http://evil.test", 403),
+            (f"evil.test:{server.server_port}", None, 403),
+        ]:
+            connection = http.client.HTTPConnection("127.0.0.2", server.server_port)
+            headers = {"Host": request_host, "Content-Type": "application/json"}
+            if origin:
+                headers["Origin"] = origin
+            connection.request("POST", "/api/compile", json.dumps({"pipeline": {}}), headers)
+            response = connection.getresponse()
+            assert response.status == expected
+            response.read()
+            connection.close()
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+    with pytest.raises(ValueError, match="specific"):
+        create_editor_server(fixture(tmp_path), 0, host="0.0.0.0")
