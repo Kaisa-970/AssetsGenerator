@@ -485,13 +485,18 @@ function BlueprintNodeBody({
                   fieldLabelPrefix="节点参数"
                 />
                 {parameterFields.all.length > primaryVisibleFields.length && (
-                  <button
-                    type="button"
-                    aria-expanded={moreParameters}
-                    onClick={() => setMoreParameters((open) => !open)}
-                  >
-                    {moreParameters ? "收起更多参数" : "更多参数"}
-                  </button>
+                  <>
+                    <p className="blueprint-parameter-note">
+                      节点内可编辑完整参数；高级 JSON 与参数契约在右侧属性面板。
+                    </p>
+                    <button
+                      type="button"
+                      aria-expanded={moreParameters}
+                      onClick={() => setMoreParameters((open) => !open)}
+                    >
+                      {moreParameters ? "收起更多参数" : "更多参数"}
+                    </button>
+                  </>
                 )}
               </fieldset>
             )}

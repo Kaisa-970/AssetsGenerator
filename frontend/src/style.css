@@ -1050,3 +1050,37 @@ footer {
   width: 150px;
   padding: 3px 6px;
 }
+
+/* The canvas node is the primary configuration surface; inspector is advanced. */
+.inspector-guidance {
+  margin: -10px 0 16px;
+  padding: 10px 12px;
+  border: 1px solid #d8e7ec;
+  border-radius: 6px;
+  background: #f4fafb;
+  color: #285d6a;
+}
+.inspector-guidance strong,
+.inspector-subsection-label {
+  font-size: 12px;
+  font-weight: 650;
+}
+.inspector-guidance p,
+.inspector-subsection-note {
+  margin: 4px 0 0;
+  color: #6d7e89;
+}
+.inspector-advanced-config {
+  margin-top: 8px;
+  padding: 12px;
+  border-top: 1px solid #e1e9ed;
+  background: #fbfcfd;
+}
+.inspector-subsection-label {
+  color: #4a6570;
+}
+.blueprint-parameter-note {
+  margin: 4px 0 7px;
+  color: #90a6b8 !important;
+  font-size: 10px !important;
+}

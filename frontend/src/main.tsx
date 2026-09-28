@@ -1553,6 +1553,12 @@ function App() {
           <p aria-label="当前配置编译状态" aria-live="polite">
             {compileMessage}
           </p>
+          <section className="inspector-guidance" aria-label="节点配置说明">
+            <strong>节点内配置为主</strong>
+            <p>
+              在画布节点内编辑模型和常用参数；此处用于高级参数与诊断，内容与节点同步。
+            </p>
+          </section>
           {configurationBlockedReason && (
             <section role="alert" aria-label="未应用参数">
               <p>{configurationBlockedReason}</p>
@@ -1659,252 +1665,268 @@ function App() {
                     />
                   </label>
                   {node ? (
-                    <>
-                      <p>{node.operator}</p>
-                      <label>
-                        Adapter
-                        <select
-                          aria-label="Adapter"
-                          disabled={pendingParameterIds.includes(selected)}
-                          value={node.adapter || ""}
-                          onChange={(e) =>
-                            update({
-                              ...pipeline,
-                              nodes: {
-                                ...pipeline.nodes,
-                                [selected]: selectAdapter(
-                                  node,
-                                  e.target.value,
-                                  catalog,
-                                ),
-                              },
-                            })
-                          }
-                        >
-                          <option value="">未指定 · 后端按唯一候选绑定</option>
-                          {adapters.map((a) => (
-                            <option key={`${a.name}@${a.version}`}>
-                              {a.name}@{a.version}
-                            </option>
-                          ))}
-                          {node.adapter &&
-                            !adapters.some(
-                              (a) => `${a.name}@${a.version}` === node.adapter,
-                            ) && <option>{node.adapter}</option>}
-                        </select>
-                      </label>
-                      <label>
-                        模型 / Backend 配置
-                        <select
-                          disabled={pendingParameterIds.includes(selected)}
-                          aria-label="节点 Backend"
-                          value={node.backend || ""}
-                          onChange={(e) =>
-                            update((previous) => {
-                              return {
-                                ...previous,
-                                nodes: {
-                                  ...previous.nodes,
-                                  [selected]: selectBackend(
-                                    previous.nodes[selected],
-                                    e.target.value,
-                                    catalog,
-                                  ),
-                                },
-                              };
-                            })
-                          }
-                        >
-                          <option value="">服务默认实现</option>
-                          {[
-                            ...new Set(
-                              (catalog.backends || [])
-                                .filter((b) =>
-                                  b.operators.includes(node.operator),
-                                )
-                                .map((b) => b.backend),
-                            ),
-                          ].map((backend) => (
-                            <option key={backend} value={backend}>
-                              {backendLabel(catalog, backend)}
-                            </option>
-                          ))}
-                          {node.backend &&
-                            !(catalog.backends || []).some(
-                              (b) =>
-                                b.backend === node.backend &&
-                                b.operators.includes(node.operator),
-                            ) && (
-                              <option value={node.backend}>
-                                {node.backend}（未安装或不兼容）
-                              </option>
-                            )}
-                        </select>
-                      </label>
-                      <fieldset
-                        disabled={selectedDraft.json !== undefined}
-                        style={{ border: 0, padding: 0, margin: 0 }}
-                      >
-                        <ParameterForm
-                          key={`${selected}:${node.adapter || ""}`}
-                          adapter={selectedAdapter}
-                          draft={selectedDraft.fields}
-                          errors={selectedDraft.errors}
-                          setDraft={(value) =>
-                            changeParameterDraft(selected, (draft) => ({
-                              ...draft,
-                              fields:
-                                typeof value === "function"
-                                  ? value(draft.fields)
-                                  : value,
-                            }))
-                          }
-                          setErrors={(value) =>
-                            changeParameterDraft(selected, (draft) => ({
-                              ...draft,
-                              errors:
-                                typeof value === "function"
-                                  ? value(draft.errors)
-                                  : value,
-                            }))
-                          }
-                          parameters={node.parameters || {}}
-                          onChange={(value) =>
-                            update((previous) => ({
-                              ...previous,
-                              nodes: {
-                                ...previous.nodes,
-                                [selected]: {
-                                  ...previous.nodes[selected],
-                                  parameters: value,
-                                },
-                              },
-                            }))
-                          }
-                        />
-                      </fieldset>
-                      <details
-                        key={`advanced-parameters:${selected}`}
-                        open={selectedDraft.json !== undefined}
-                      >
-                        <summary>高级：完整参数 JSON</summary>
-                        <p>
-                          用于批量编辑或表单尚不支持的字段；应用后替换此节点的显式参数。
-                        </p>
+                    <section
+                      className="inspector-advanced-config"
+                      aria-label="高级配置与诊断"
+                    >
+                      <div className="inspector-subsection-label">
+                        高级配置（与节点同步）
+                      </div>
+                      <p className="inspector-subsection-note">
+                        节点内常用配置是主入口；这里保留完整参数
+                        JSON、契约和诊断信息。
+                      </p>
+                      <>
+                        <p>{node.operator}</p>
                         <label>
-                          节点参数 · JSON
-                          <textarea
-                            spellCheck={false}
-                            aria-label="节点参数 JSON"
-                            value={parameters}
-                            disabled={
-                              Object.keys(selectedDraft.fields).length > 0
-                            }
+                          Adapter
+                          <select
+                            aria-label="Adapter"
+                            disabled={pendingParameterIds.includes(selected)}
+                            value={node.adapter || ""}
                             onChange={(e) =>
-                              changeParameterDraft(selected, (draft) => ({
-                                ...draft,
-                                json: e.target.value,
-                              }))
-                            }
-                          />
-                        </label>
-                        <button
-                          disabled={
-                            selectedDraft.json === undefined ||
-                            Object.keys(selectedDraft.fields).length > 0
-                          }
-                          onClick={() => {
-                            try {
-                              const value = parseParameterObject(parameters);
-                              if (
-                                !value ||
-                                typeof value !== "object" ||
-                                Array.isArray(value)
-                              )
-                                throw Error("参数必须是 JSON 对象");
                               update({
                                 ...pipeline,
                                 nodes: {
                                   ...pipeline.nodes,
-                                  [selected]: { ...node, parameters: value },
+                                  [selected]: selectAdapter(
+                                    node,
+                                    e.target.value,
+                                    catalog,
+                                  ),
                                 },
-                              });
-                              changeParameterDraft(selected, () =>
-                                emptyParameterDraft(),
-                              );
-                              setMessage("参数已应用。");
-                            } catch (e) {
-                              setMessage(String(e));
+                              })
                             }
-                          }}
+                          >
+                            <option value="">
+                              未指定 · 后端按唯一候选绑定
+                            </option>
+                            {adapters.map((a) => (
+                              <option key={`${a.name}@${a.version}`}>
+                                {a.name}@{a.version}
+                              </option>
+                            ))}
+                            {node.adapter &&
+                              !adapters.some(
+                                (a) =>
+                                  `${a.name}@${a.version}` === node.adapter,
+                              ) && <option>{node.adapter}</option>}
+                          </select>
+                        </label>
+                        <label>
+                          模型 / Backend 配置
+                          <select
+                            disabled={pendingParameterIds.includes(selected)}
+                            aria-label="节点 Backend"
+                            value={node.backend || ""}
+                            onChange={(e) =>
+                              update((previous) => {
+                                return {
+                                  ...previous,
+                                  nodes: {
+                                    ...previous.nodes,
+                                    [selected]: selectBackend(
+                                      previous.nodes[selected],
+                                      e.target.value,
+                                      catalog,
+                                    ),
+                                  },
+                                };
+                              })
+                            }
+                          >
+                            <option value="">服务默认实现</option>
+                            {[
+                              ...new Set(
+                                (catalog.backends || [])
+                                  .filter((b) =>
+                                    b.operators.includes(node.operator),
+                                  )
+                                  .map((b) => b.backend),
+                              ),
+                            ].map((backend) => (
+                              <option key={backend} value={backend}>
+                                {backendLabel(catalog, backend)}
+                              </option>
+                            ))}
+                            {node.backend &&
+                              !(catalog.backends || []).some(
+                                (b) =>
+                                  b.backend === node.backend &&
+                                  b.operators.includes(node.operator),
+                              ) && (
+                                <option value={node.backend}>
+                                  {node.backend}（未安装或不兼容）
+                                </option>
+                              )}
+                          </select>
+                        </label>
+                        <fieldset
+                          disabled={selectedDraft.json !== undefined}
+                          style={{ border: 0, padding: 0, margin: 0 }}
                         >
-                          应用参数
-                        </button>
-                        <button
-                          disabled={selectedDraft.json === undefined}
-                          onClick={() => {
-                            changeParameterDraft(selected, (draft) => {
-                              const { json: _json, ...remaining } = draft;
-                              return remaining;
-                            });
-                            setMessage(
-                              `已放弃 ${selected} 的 JSON 编辑，保留已应用参数。`,
-                            );
-                          }}
+                          <ParameterForm
+                            key={`${selected}:${node.adapter || ""}`}
+                            adapter={selectedAdapter}
+                            draft={selectedDraft.fields}
+                            errors={selectedDraft.errors}
+                            setDraft={(value) =>
+                              changeParameterDraft(selected, (draft) => ({
+                                ...draft,
+                                fields:
+                                  typeof value === "function"
+                                    ? value(draft.fields)
+                                    : value,
+                              }))
+                            }
+                            setErrors={(value) =>
+                              changeParameterDraft(selected, (draft) => ({
+                                ...draft,
+                                errors:
+                                  typeof value === "function"
+                                    ? value(draft.errors)
+                                    : value,
+                              }))
+                            }
+                            parameters={node.parameters || {}}
+                            onChange={(value) =>
+                              update((previous) => ({
+                                ...previous,
+                                nodes: {
+                                  ...previous.nodes,
+                                  [selected]: {
+                                    ...previous.nodes[selected],
+                                    parameters: value,
+                                  },
+                                },
+                              }))
+                            }
+                          />
+                        </fieldset>
+                        <details
+                          key={`advanced-parameters:${selected}`}
+                          open={selectedDraft.json !== undefined}
                         >
-                          放弃当前节点 JSON 编辑
-                        </button>
-                      </details>
-                      <details>
-                        <summary>参数契约</summary>
-                        <pre>
-                          {JSON.stringify(
-                            selectedAdapter?.parameter_schema || {},
-                            null,
-                            2,
+                          <summary>高级：完整参数 JSON</summary>
+                          <p>
+                            用于批量编辑或表单尚不支持的字段；应用后替换此节点的显式参数。
+                          </p>
+                          <label>
+                            节点参数 · JSON
+                            <textarea
+                              spellCheck={false}
+                              aria-label="节点参数 JSON"
+                              value={parameters}
+                              disabled={
+                                Object.keys(selectedDraft.fields).length > 0
+                              }
+                              onChange={(e) =>
+                                changeParameterDraft(selected, (draft) => ({
+                                  ...draft,
+                                  json: e.target.value,
+                                }))
+                              }
+                            />
+                          </label>
+                          <button
+                            disabled={
+                              selectedDraft.json === undefined ||
+                              Object.keys(selectedDraft.fields).length > 0
+                            }
+                            onClick={() => {
+                              try {
+                                const value = parseParameterObject(parameters);
+                                if (
+                                  !value ||
+                                  typeof value !== "object" ||
+                                  Array.isArray(value)
+                                )
+                                  throw Error("参数必须是 JSON 对象");
+                                update({
+                                  ...pipeline,
+                                  nodes: {
+                                    ...pipeline.nodes,
+                                    [selected]: { ...node, parameters: value },
+                                  },
+                                });
+                                changeParameterDraft(selected, () =>
+                                  emptyParameterDraft(),
+                                );
+                                setMessage("参数已应用。");
+                              } catch (e) {
+                                setMessage(String(e));
+                              }
+                            }}
+                          >
+                            应用参数
+                          </button>
+                          <button
+                            disabled={selectedDraft.json === undefined}
+                            onClick={() => {
+                              changeParameterDraft(selected, (draft) => {
+                                const { json: _json, ...remaining } = draft;
+                                return remaining;
+                              });
+                              setMessage(
+                                `已放弃 ${selected} 的 JSON 编辑，保留已应用参数。`,
+                              );
+                            }}
+                          >
+                            放弃当前节点 JSON 编辑
+                          </button>
+                        </details>
+                        <details>
+                          <summary>参数契约</summary>
+                          <pre>
+                            {JSON.stringify(
+                              selectedAdapter?.parameter_schema || {},
+                              null,
+                              2,
+                            )}
+                          </pre>
+                        </details>
+                        <details>
+                          <summary>输入输出端口契约</summary>
+                          <p>
+                            以下来自当前
+                            OperatorSpec。类型转换需要显式节点；多个输入的来源与空间关系还需后端校验。
+                          </p>
+                          {catalog.operators[node.operator] ? (
+                            <pre>
+                              {JSON.stringify(
+                                {
+                                  inputs:
+                                    catalog.operators[node.operator].inputs,
+                                  outputs:
+                                    catalog.operators[node.operator].outputs,
+                                },
+                                null,
+                                2,
+                              )}
+                            </pre>
+                          ) : (
+                            <p role="alert">
+                              当前目录没有此 Operator 的端口契约。
+                            </p>
                           )}
-                        </pre>
-                      </details>
-                      <details>
-                        <summary>输入输出端口契约</summary>
-                        <p>
-                          以下来自当前
-                          OperatorSpec。类型转换需要显式节点；多个输入的来源与空间关系还需后端校验。
-                        </p>
-                        {catalog.operators[node.operator] ? (
+                        </details>
+                        <details>
+                          <summary>输入绑定与关系</summary>
                           <pre>
                             {JSON.stringify(
                               {
-                                inputs: catalog.operators[node.operator].inputs,
-                                outputs:
-                                  catalog.operators[node.operator].outputs,
+                                inputs: node.inputs,
+                                relations:
+                                  catalog.operators[node.operator]?.relations ||
+                                  [],
                               },
                               null,
                               2,
                             )}
                           </pre>
-                        ) : (
-                          <p role="alert">
-                            当前目录没有此 Operator 的端口契约。
-                          </p>
-                        )}
-                      </details>
-                      <details>
-                        <summary>输入绑定与关系</summary>
-                        <pre>
-                          {JSON.stringify(
-                            {
-                              inputs: node.inputs,
-                              relations:
-                                catalog.operators[node.operator]?.relations ||
-                                [],
-                            },
-                            null,
-                            2,
-                          )}
-                        </pre>
-                      </details>
-                    </>
+                        </details>
+                      </>
+                    </section>
                   ) : (
                     <>
                       {selectedInput && selectedInputName && (
