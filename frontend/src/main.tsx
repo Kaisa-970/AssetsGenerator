@@ -1099,7 +1099,7 @@ function App() {
                 {paletteServices.map(({ service, capability, index }) => (
                   <button
                     key={`${service.backend}:${capability.capability_id || capability.operator || index}`}
-                    disabled={index !== 0 || !(capability.operator || service.operator)}
+                    disabled={!(capability.operator || service.operator)}
                     onClick={() => {
                       const operator = capability.operator || service.operator;
                       if (!operator) return;
@@ -1115,7 +1115,7 @@ function App() {
                       {capability.display_name || service.display_name}
                     </strong>
                     <span>
-                      {index === 0 && (capability.operator || service.operator)
+                      {capability.operator || service.operator
                         ? capability.operator || service.operator
                         : "仅查看 · 当前版本暂不可执行"} ·{" "}
                       {capability.frame_id || service.frame_id || "未声明坐标"}{" "}
