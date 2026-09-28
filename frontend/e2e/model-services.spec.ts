@@ -243,6 +243,44 @@ test("protocol failure is shown and never enables adding", async ({ page }) => {
   ).toHaveCount(0);
 });
 
+test("unknown advertised capability is inspectable but cannot be added", async ({
+  page,
+}) => {
+  await setup(page);
+  const unknownDescriptor = {
+    ...descriptor,
+    capabilities: [
+      {
+        capability_id: "unknown_operator",
+        display_name: "未知能力",
+        operator: "future_operator@1",
+        transport: "remote_jobs@1",
+        frame_id: "native",
+        up_axis: "+Y",
+        unit: "relative_unit",
+        parameter_schema: { type: "object", properties: {} },
+        defaults: {},
+      },
+    ],
+  };
+  await page.route("**/api/model-services/detect", (route) =>
+    route.fulfill({
+      json: {
+        endpoint: service.endpoint,
+        descriptor: unknownDescriptor,
+        descriptor_digest: "sha256:unknown-descriptor",
+      },
+    }),
+  );
+  await page.getByLabel("模型服务地址").fill(service.endpoint);
+  await page.getByRole("button", { name: "检测服务", exact: true }).click();
+  const detected = page.getByRole("region", { name: "检测到的模型" });
+  await expect(detected).toContainText("未知能力");
+  await expect(
+    detected.getByRole("button", { name: "确认添加模型", exact: true }),
+  ).toBeDisabled();
+});
+
 test("dragged service keeps its binding and an add conflict requires re-detection", async ({
   page,
 }) => {
