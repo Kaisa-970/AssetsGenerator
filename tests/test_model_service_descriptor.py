@@ -263,6 +263,7 @@ def test_declared_parameters_reach_payload_and_fixed_identity_cannot_change(tmp_
     )
     assert adapter.prepare_payload(context) == {
         "operation": "shape_generation@1",
+        "capability_id": "shape_generation@1",
         "parameters": {"steps": 24, "quality": "best"},
     }
     assert adapter.spec.operators == ("shape_generation@1",)

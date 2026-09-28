@@ -136,6 +136,29 @@ def test_bad_input_terminal_failure_does_not_block_next_task(tmp_path):
         service.close()
 
 
+def test_wrong_capability_id_is_rejected_before_inference(tmp_path):
+    service = make_service(tmp_path, [])
+    request = prepare(service, tmp_path, "wrong-capability")
+    payload = json.loads(request.payload_json)
+    payload["capability_id"] = "mesh_quality"
+    request = RemoteRequest.create(
+        service.identity,
+        request.submission_key,
+        payload,
+    )
+    service.store.submit(request)
+    service.start_worker()
+    try:
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline and service.store.lookup(request).state != "failed":
+            time.sleep(0.02)
+        job = service.store.lookup(request)
+        assert job.state == "failed"
+        assert json.loads(job.error_json or b"{}")["detail"] == "invalid shape request"
+    finally:
+        service.close()
+
+
 def test_restart_unknown_running_blocks_inference(tmp_path):
     calls = []
     service = make_service(tmp_path, calls)

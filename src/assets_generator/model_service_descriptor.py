@@ -262,6 +262,7 @@ class DiscoveredShapeAdapter(RemoteShapeAdapter):
         parameters = self.spec.normalize_parameters(context.parameters)
         return {
             "operation": "shape_generation@1",
+            "capability_id": self.capability_id,
             "parameters": {
                 key: thaw(value)
                 for key, value in parameters.items()

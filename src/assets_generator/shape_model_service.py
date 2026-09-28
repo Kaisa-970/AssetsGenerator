@@ -114,11 +114,25 @@ class ShapeModelService:
         if request.identity != self.identity or service.identity != self.identity:
             raise ValueError("model deployment identity mismatch")
         payload = json.loads(request.payload_json)
-        if (
-            set(payload)
-            != {"operation", "parameters", "input_blobs", "input_digest", "binding_digest"}
-            or payload["operation"] != "shape_generation@1"
-        ):
+        allowed = {
+            "operation",
+            "parameters",
+            "input_blobs",
+            "input_digest",
+            "binding_digest",
+            "capability_id",
+        }
+        if set(payload) - allowed or set(payload) - {"capability_id"} != {
+            "operation",
+            "parameters",
+            "input_blobs",
+            "input_digest",
+            "binding_digest",
+        }:
+            raise ValueError("invalid shape request")
+        if payload["operation"] != "shape_generation@1":
+            raise ValueError("invalid shape request")
+        if payload.get("capability_id") not in (None, "shape_generation", "shape_generation@1"):
             raise ValueError("invalid shape request")
         parameters = thaw(self.parameters.normalize_parameters(payload["parameters"]))
         with tempfile.TemporaryDirectory(prefix="inference-", dir=self.directory) as temporary:
