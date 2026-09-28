@@ -1136,101 +1136,110 @@ function App() {
         </NodePaletteDialog>
       )}
       <nav className="workspace-panels" aria-label="工作区面板">
-        <button
-          aria-pressed={minimapOpen}
-          onClick={() => setMinimapOpen((open) => !open)}
-        >
-          {minimapOpen ? "隐藏小地图" : "显示小地图"}
-        </button>
-        <button
-          aria-pressed={!!panelRestore}
-          onClick={() => {
-            if (panelRestore) {
-              setCatalogOpen(panelRestore.catalog);
-              setInspectorOpen(panelRestore.inspector);
-              setNodePreviewOpen(panelRestore.preview);
-              setHistoryOpen(panelRestore.history);
-              setPanelRestore(undefined);
-            } else {
-              setPanelRestore({
-                catalog: catalogOpen,
-                inspector: inspectorOpen,
-                preview: nodePreviewOpen,
-                history: historyOpen,
-              });
-              setCatalogOpen(false);
-              setInspectorOpen(false);
-              setNodePreviewOpen(false);
-              setHistoryOpen(false);
-            }
-          }}
-        >
-          {panelRestore ? "恢复面板布局" : "专注画布"}
-        </button>
-        <label className="node-locator">
-          定位节点
-          <select
-            aria-label="定位画布节点"
-            value={selected || ""}
-            onChange={(event) => {
-              const id = event.target.value;
-              if (!id) return;
-              setSelected(id);
-              focusNode(id);
+        <div className="workspace-panel-group" aria-label="画布视图">
+          <span className="workspace-panel-group-label">画布</span>
+          <button
+            aria-pressed={minimapOpen}
+            onClick={() => setMinimapOpen((open) => !open)}
+          >
+            {minimapOpen ? "隐藏小地图" : "显示小地图"}
+          </button>
+          <button
+            aria-pressed={!!panelRestore}
+            onClick={() => {
+              if (panelRestore) {
+                setCatalogOpen(panelRestore.catalog);
+                setInspectorOpen(panelRestore.inspector);
+                setNodePreviewOpen(panelRestore.preview);
+                setHistoryOpen(panelRestore.history);
+                setPanelRestore(undefined);
+              } else {
+                setPanelRestore({
+                  catalog: catalogOpen,
+                  inspector: inspectorOpen,
+                  preview: nodePreviewOpen,
+                  history: historyOpen,
+                });
+                setCatalogOpen(false);
+                setInspectorOpen(false);
+                setNodePreviewOpen(false);
+                setHistoryOpen(false);
+              }
             }}
           >
-            <option value="">选择节点…</option>
-            {Object.keys(pipeline.inputs).map((name) => (
-              <option key={inputId(name)} value={inputId(name)}>
-                输入 · {name}
-              </option>
-            ))}
-            {Object.keys(pipeline.nodes).map((id) => (
-              <option key={id} value={id}>
-                处理 · {id}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button
-          disabled={!selected}
-          onClick={() => {
-            if (selected) focusNode(selected);
-          }}
-        >
-          聚焦所选节点
-        </button>
-        <button
-          onClick={() => {
-            void flow.fitView({ padding: 0.18, maxZoom: 1 });
-          }}
-        >
-          查看全图
-        </button>
-        <button
-          aria-expanded={catalogOpen}
-          aria-controls="workspace-catalog"
-          onClick={() => setCatalogOpen((open) => !open)}
-        >
-          {catalogOpen ? "收起节点目录" : "展开节点目录"}
-        </button>
-        <button
-          aria-expanded={inspectorOpen}
-          aria-controls="workspace-inspector"
-          onClick={() => setInspectorOpen((open) => !open)}
-        >
-          {inspectorOpen ? "收起属性面板" : "展开属性面板"}
-        </button>
-        {catalog.execution_enabled && (
+            {panelRestore ? "恢复面板布局" : "专注画布"}
+          </button>
           <button
             onClick={() => {
-              setInspectorOpen(true);
-              setHistoryOpen(true);
+              void flow.fitView({ padding: 0.18, maxZoom: 1 });
             }}
           >
-            运行记录与诊断
+            查看全图
           </button>
-        )}
+        </div>
+        <div className="workspace-panel-group" aria-label="工作区面板开关">
+          <span className="workspace-panel-group-label">面板</span>
+          <button
+            aria-expanded={catalogOpen}
+            aria-controls="workspace-catalog"
+            onClick={() => setCatalogOpen((open) => !open)}
+          >
+            {catalogOpen ? "收起节点目录" : "展开节点目录"}
+          </button>
+          <button
+            aria-expanded={inspectorOpen}
+            aria-controls="workspace-inspector"
+            onClick={() => setInspectorOpen((open) => !open)}
+          >
+            {inspectorOpen ? "收起属性面板" : "展开属性面板"}
+          </button>
+          {catalog.execution_enabled && (
+            <button
+              onClick={() => {
+                setInspectorOpen(true);
+                setHistoryOpen(true);
+              }}
+            >
+              运行记录与诊断
+            </button>
+          )}
+        </div>
+        <div className="workspace-panel-group workspace-panel-group-locator" aria-label="节点定位">
+          <span className="workspace-panel-group-label">定位</span>
+          <label className="node-locator">
+            <span className="sr-only">定位节点</span>
+            <select
+              aria-label="定位画布节点"
+              value={selected || ""}
+              onChange={(event) => {
+                const id = event.target.value;
+                if (!id) return;
+                setSelected(id);
+                focusNode(id);
+              }}
+            >
+              <option value="">选择节点…</option>
+              {Object.keys(pipeline.inputs).map((name) => (
+                <option key={inputId(name)} value={inputId(name)}>
+                  输入 · {name}
+                </option>
+              ))}
+              {Object.keys(pipeline.nodes).map((id) => (
+                <option key={id} value={id}>
+                  处理 · {id}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            disabled={!selected}
+            onClick={() => {
+              if (selected) focusNode(selected);
+            }}
+          >
+            聚焦所选节点
+          </button>
+        </div>
       </nav>
       <div
         className={`workspace${catalogOpen ? "" : " catalog-collapsed"}${inspectorOpen ? "" : " inspector-collapsed"}`}

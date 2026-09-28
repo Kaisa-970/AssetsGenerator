@@ -943,15 +943,58 @@ footer {
 
 .workspace-panels {
   display: flex;
-  gap: 5px;
+  gap: 8px;
   align-items: center;
-  padding: 4px 12px;
+  padding: 5px 12px;
   border-bottom: 1px solid #dce3e9;
   background: #fff;
+  flex-wrap: wrap;
 }
 .workspace-panels button {
   padding: 4px 8px;
   font-size: 11px;
+}
+.workspace-panel-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 27px;
+  padding-right: 8px;
+  border-right: 1px solid #e3e9ee;
+}
+.workspace-panel-group:last-child {
+  border-right: 0;
+  padding-right: 0;
+}
+.workspace-panel-group-label {
+  color: #8a99a5;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.workspace-panel-group-locator {
+  margin-left: auto;
+}
+.workspace-panel-group-locator .node-locator {
+  margin: 0;
+}
+.workspace-panel-group-locator .node-locator select {
+  min-width: 150px;
+  padding: 4px 7px;
+  font-size: 11px;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 .workspace.catalog-collapsed {
   grid-template-columns: minmax(300px, 1fr) var(--inspector-width, 280px);
@@ -1000,6 +1043,50 @@ footer {
   }
   .workspace.catalog-collapsed.inspector-collapsed {
     grid-template-columns: minmax(240px, 1fr);
+  }
+  .workspace-panel-group-locator {
+    margin-left: 0;
+  }
+}
+
+@media (max-width: 760px) {
+  .app > header {
+    flex-wrap: wrap;
+    gap: 8px 12px;
+    padding: 8px 12px;
+  }
+  .brand {
+    width: auto;
+  }
+  .identity {
+    order: 3;
+    flex: 1 1 100%;
+    max-width: none;
+  }
+  .toolbar {
+    margin-left: auto;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 5px;
+  }
+  .toolbar button {
+    padding: 6px 8px;
+    font-size: 11px;
+  }
+  .workspace-panel-group {
+    border-right: 0;
+    padding-right: 0;
+  }
+  .workspace-panel-group-label {
+    display: none;
+  }
+  .workspace-panel-group-locator {
+    flex: 1 1 100%;
+  }
+  .workspace-panel-group-locator .node-locator,
+  .workspace-panel-group-locator .node-locator select {
+    flex: 1;
+    width: 100%;
   }
 }
 

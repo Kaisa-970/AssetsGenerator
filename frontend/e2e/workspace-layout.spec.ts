@@ -61,3 +61,36 @@ for (const size of [
     await expect(resize).toHaveAttribute("aria-valuenow", "260");
   });
 }
+
+test("workspace controls are grouped and remain usable on a narrow screen", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 720, height: 900 });
+  await page.route("**/api/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    await route.fulfill({
+      json:
+        path === "/api/catalog"
+          ? { operators: {}, adapters: [], templates: [], execution_enabled: true }
+          : path === "/api/compile"
+            ? { ok: true, execution_ready: false }
+            : path === "/api/drafts"
+              ? { drafts: [] }
+              : { runs: [] },
+    });
+  });
+  await page.goto("/");
+  await expect(
+    page.locator(".workspace-panel-group[aria-label='画布视图']"),
+  ).toBeVisible();
+  await expect(
+    page.locator(".workspace-panel-group[aria-label='工作区面板开关']"),
+  ).toBeVisible();
+  await expect(
+    page.locator(".workspace-panel-group[aria-label='节点定位']"),
+  ).toBeVisible();
+  const locator = page.locator(".workspace-panel-group-locator");
+  const box = await locator.boundingBox();
+  expect(box?.width).toBeGreaterThan(200);
+  await expect(page.getByRole("combobox", { name: "定位画布节点" })).toBeVisible();
+});
