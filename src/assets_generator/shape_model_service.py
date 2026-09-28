@@ -49,6 +49,7 @@ class ShapeModelService:
         deployment: Mapping[str, Any],
         frame: BackendNativeFrame,
         infer: Inference,
+        infer_by_capability: Mapping[str, Inference] | None = None,
         directory: Path,
         parameter_schema: Mapping[str, Any] | None = None,
         defaults: Mapping[str, Any] | None = None,
@@ -138,6 +139,10 @@ class ShapeModelService:
             }
         )
         self.frame, self.infer = frame, infer
+        self._infer_by_capability = dict(infer_by_capability or {})
+        unknown_callbacks = set(self._infer_by_capability) - set(self._capability_parameters)
+        if unknown_callbacks:
+            raise ValueError("infer_by_capability contains unknown capability IDs")
         self.directory = directory
         directory.mkdir(parents=True, exist_ok=True)
         self.store = RemoteServiceStore(directory / "jobs.sqlite", self.identity)
@@ -187,7 +192,8 @@ class ShapeModelService:
         with tempfile.TemporaryDirectory(prefix="inference-", dir=self.directory) as temporary:
             store = LocalArtifactStore(Path(temporary) / "store")
             rgba = import_shape_rgba(request, service, store)
-            data = self.infer(store.blob_path(rgba), parameters)
+            infer = self._infer_by_capability.get(capability_id, self.infer)
+            data = infer(store.blob_path(rgba), parameters)
             if not isinstance(data, bytes):
                 raise ValueError("inference must return self-contained GLB bytes")
             metadata = {

@@ -170,6 +170,11 @@ def test_multiple_shape_capabilities_are_selected_and_validated(tmp_path):
             file_type="glb"
         )
 
+    routed = []
+    def infer_quality(path, parameters):
+        routed.append("mesh_quality")
+        return infer(path, parameters)
+
     service = ShapeModelService(
         service_id="multi-shape",
         display_name="多能力示例",
@@ -195,6 +200,7 @@ def test_multiple_shape_capabilities_are_selected_and_validated(tmp_path):
                 "defaults": {"width": 2.0},
             },
         },
+        infer_by_capability={"mesh_quality": infer_quality},
     )
     first = prepare(service, tmp_path, "fast", {"width": 1.0}, "mesh_fast")
     second = prepare(service, tmp_path, "quality", {"width": 3.0}, "mesh_quality")
@@ -210,6 +216,7 @@ def test_multiple_shape_capabilities_are_selected_and_validated(tmp_path):
             "mesh_quality",
         ]
         assert calls == [{"width": 1.0}, {"width": 3.0}]
+        assert routed == ["mesh_quality"]
     finally:
         service.close()
 

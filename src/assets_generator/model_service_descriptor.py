@@ -263,19 +263,25 @@ class DiscoveredShapeAdapter(RemoteShapeAdapter):
             defaults={**selected["defaults"], **fixed},
         )
         self.capability_id = selected["capability_id"]
+        self._legacy_wire = "capabilities" not in checked
         self.capability_digest = capability_digest(checked, self.capability_id)
 
     def prepare_payload(self, context: NodeExecutionContext) -> dict[str, Any]:
         parameters = self.spec.normalize_parameters(context.parameters)
-        return {
+        payload = {
             "operation": "shape_generation@1",
-            "capability_id": self.capability_id,
             "parameters": {
                 key: thaw(value)
                 for key, value in parameters.items()
                 if key not in RESERVED_PARAMETERS
             },
         }
+        # Keep the original flat descriptor wire contract byte-for-byte.  The
+        # capability field is meaningful only for the newer multi-capability
+        # service protocol.
+        if not self._legacy_wire:
+            payload["capability_id"] = self.capability_id
+        return payload
 
 
 def shape_service_descriptor(

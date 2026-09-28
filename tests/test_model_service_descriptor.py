@@ -212,6 +212,20 @@ def test_actual_http_discovery_without_job_and_immutable_descriptor(tmp_path, de
         store.close()
 
 
+def test_discovered_shape_adapter_keeps_flat_descriptor_wire_contract(descriptor, tmp_path):
+    adapter = DiscoveredShapeAdapter(
+        "http://example.test",
+        descriptor,
+    )
+    payload = adapter.prepare_payload(
+        NodeExecutionContext(
+            "run", "shape", {}, {"steps": 12, "quality": "fast"},
+            LocalArtifactStore(tmp_path / "store")
+        )
+    )
+    assert set(payload) == {"operation", "parameters"}
+
+
 def test_server_refuses_mismatched_identity(tmp_path, descriptor):
     store = RemoteServiceStore(
         tmp_path / "service.sqlite", RemoteIdentity("other", "sha256:" + "a" * 64)
@@ -263,7 +277,6 @@ def test_declared_parameters_reach_payload_and_fixed_identity_cannot_change(tmp_
     )
     assert adapter.prepare_payload(context) == {
         "operation": "shape_generation@1",
-        "capability_id": "shape_generation@1",
         "parameters": {"steps": 24, "quality": "best"},
     }
     assert adapter.spec.operators == ("shape_generation@1",)
