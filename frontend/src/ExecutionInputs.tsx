@@ -130,6 +130,15 @@ function TextInput({
       >
         应用文本
       </button>
+      {artifactId && (
+        <button
+          className="blueprint-input-primary"
+          disabled={disabled}
+          onClick={invalidate}
+        >
+          清除文本输入
+        </button>
+      )}
       <section aria-label={`已绑定文本 ${name}`}>
         <strong>实际运行使用的文本</strong>
         {!artifactId ? (
@@ -428,6 +437,37 @@ export function ExecutionInputs({
               清除输入 · image
             </button>
           )}
+          {historicalInputs?.inputs.image &&
+            historicalInputs.inputs.image.artifact_id !==
+              (reusedImage?.artifact_id ||
+                uploaded?.ref?.artifact_id ||
+                "") && (
+              <div className="blueprint-input-origin">
+                <p>
+                  历史来源：运行 {historicalInputs.run_id} · 输入 image
+                  {historicalInputs.inputs.image.identity?.kind
+                    ? ` · ${String(historicalInputs.inputs.image.identity.kind)}`
+                    : ""}
+                </p>
+                <details>
+                  <summary>查看来源摘要</summary>
+                  <p>
+                    快照：
+                    {historicalInputs.snapshot_ref.artifact_id.slice(0, 20)}…
+                  </p>
+                  <p>
+                    Artifact：
+                    {historicalInputs.inputs.image.artifact_id.slice(0, 20)}…
+                  </p>
+                </details>
+                <button
+                  disabled={pending || uploading}
+                  onClick={() => useHistoricalInput?.("image")}
+                >
+                  使用历史输入 · image
+                </button>
+              </div>
+            )}
           {historySelector?.("image")}
           <details className="blueprint-input-more">
             <summary>更多操作</summary>
@@ -478,8 +518,7 @@ export function ExecutionInputs({
             <button
               disabled={pending || uploading}
               onClick={() => {
-                setReusedImage(undefined);
-                setImageSource("upload");
+                clearInput("image");
               }}
             >
               改为上传图片

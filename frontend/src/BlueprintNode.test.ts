@@ -178,7 +178,7 @@ it("keeps required fields visible while collapsing optional fields", () => {
   expect(html).toContain('aria-label="节点参数 fourth"');
   expect(html).not.toContain('aria-label="节点参数 fixed"');
   expect(html).toContain("缺少必填参数：fourth");
-  expect(html).toContain("更多参数");
+  expect(html).toContain("展开全部 5 个参数");
   expect(html).toContain('aria-expanded="false"');
 });
 

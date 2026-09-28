@@ -492,8 +492,18 @@ export function ExecutionPanel({
   const historicalInputSource = historicalInputSourceProp;
   const useHistoricalInput = (name: string) => {
     const source = historicalInputSource?.inputs[name];
-    if (!source) return;
+    if (!source || pending || uploading || !pipeline.inputs[name]) return;
     setInputArtifact(name, source.artifact_id);
+    if (!multiInput && multiView) {
+      setObservationsId(source.artifact_id);
+      setObservationFiles([]);
+    } else if (!multiInput) {
+      setUploaded(undefined);
+      setUploadedFile(undefined);
+      setImagePath("");
+      setReusedImage({ artifact_id: source.artifact_id });
+      setImageSource("reference");
+    }
     setInputOrigins((old) => ({
       ...old,
       [name]: {
@@ -583,6 +593,11 @@ export function ExecutionPanel({
   const upload = async (file?: File) => {
     if (uploadPending.current) return;
     const revision = inputGeneration.current.revision;
+    if (!file) return;
+    setInputArtifact("image", "");
+    setReusedImage(undefined);
+    setImageSource("upload");
+    setImagePath("");
     setUploaded(undefined);
     setUploadedFile(undefined);
     setUploadMessage("");
