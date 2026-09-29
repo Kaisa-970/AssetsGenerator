@@ -166,11 +166,10 @@ def test_multiple_shape_capabilities_are_selected_and_validated(tmp_path):
 
     def infer(path, parameters):
         calls.append(dict(parameters))
-        return trimesh.creation.box(extents=[parameters["width"], 1, 1]).export(
-            file_type="glb"
-        )
+        return trimesh.creation.box(extents=[parameters["width"], 1, 1]).export(file_type="glb")
 
     routed = []
+
     def infer_quality(path, parameters):
         routed.append("mesh_quality")
         return infer(path, parameters)
@@ -227,9 +226,7 @@ def test_multiple_shape_capabilities_cannot_claim_different_output_frames(tmp_pa
             service_id="mixed-frame",
             display_name="混合坐标示例",
             deployment={"model": "fixture-v3"},
-            frame=BackendNativeFrame(
-                "native", "right", "+Y", None, "unknown", "relative_unit"
-            ),
+            frame=BackendNativeFrame("native", "right", "+Y", None, "unknown", "relative_unit"),
             infer=lambda _path, _parameters: b"glb",
             directory=tmp_path / "service",
             capabilities={
@@ -262,3 +259,34 @@ def test_restart_unknown_running_blocks_inference(tmp_path):
         assert calls == []
     finally:
         restored.close()
+
+
+def test_declared_capability_id_takes_priority_over_legacy_alias(tmp_path):
+    calls = []
+    service = ShapeModelService(
+        service_id="exact-capability",
+        display_name="Exact capability",
+        deployment={"model": "fixture"},
+        frame=BackendNativeFrame("native", "right", "+Y", None, "unknown", "relative_unit"),
+        infer=lambda path, parameters: calls.append("fallback"),
+        infer_by_capability={
+            "shape_generation": lambda path, parameters: (
+                calls.append("exact") or trimesh.creation.box().export(file_type="glb")
+            ),
+        },
+        directory=tmp_path / "service",
+        capabilities={
+            "shape_generation": {
+                "parameter_schema": {"type": "object", "properties": {"width": {"type": "number"}}}
+            },
+            "shape_generation@1": {
+                "parameter_schema": {"type": "object", "properties": {"width": {"type": "number"}}}
+            },
+        },
+    )
+    try:
+        request = prepare(service, tmp_path, capability_id="shape_generation")
+        service.handle(request, service.store)
+        assert calls == ["exact"]
+    finally:
+        service.close()

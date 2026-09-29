@@ -180,14 +180,12 @@ class ShapeModelService:
         if payload["operation"] != "shape_generation@1":
             raise ValueError("invalid shape request")
         capability_id = payload.get("capability_id") or "shape_generation@1"
-        if capability_id == "shape_generation":
+        if capability_id == "shape_generation" and capability_id not in self._capability_parameters:
             capability_id = "shape_generation@1"
         if capability_id not in self._capability_parameters:
             raise ValueError("invalid shape request")
         parameters = thaw(
-            self._capability_parameters[capability_id].normalize_parameters(
-                payload["parameters"]
-            )
+            self._capability_parameters[capability_id].normalize_parameters(payload["parameters"])
         )
         with tempfile.TemporaryDirectory(prefix="inference-", dir=self.directory) as temporary:
             store = LocalArtifactStore(Path(temporary) / "store")
