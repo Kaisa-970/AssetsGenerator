@@ -61,6 +61,25 @@ def validate_self_contained_glb(data: bytes) -> None:
     check(raw)
     if raw.get("extensionsRequired"):
         raise ValueError("required GLB extensions are not supported by remote shape import")
+    meshes = raw.get("meshes")
+    accessors = raw.get("accessors", [])
+    if not isinstance(meshes, list) or not meshes:
+        raise ValueError("GLB must contain mesh geometry")
+    if not isinstance(accessors, list):
+        raise ValueError("GLB accessors must be an array")
+    if not any(
+        isinstance(mesh, dict)
+        and isinstance(mesh.get("primitives"), list)
+        and any(
+            isinstance(primitive, dict)
+            and isinstance(primitive.get("attributes"), dict)
+            and primitive["attributes"].get("POSITION") is not None
+            and isinstance(primitive.get("indices"), int)
+            for primitive in mesh["primitives"]
+        )
+        for mesh in meshes
+    ):
+        raise ValueError("GLB must contain indexed POSITION mesh geometry")
 
 
 def import_shape_output(store: LocalArtifactStore, blobs: Mapping[str, bytes]) -> ShapeOutput:

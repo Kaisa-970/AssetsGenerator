@@ -237,11 +237,11 @@ def _validate_capability(value: object, index: int) -> dict[str, Any]:
                 raise ContractError(f"model service capability {field} is invalid")
     normalized = {"capability_id": capability_id, "operator": operator, **dict(value)}
     if has_ports:
-        normalized["operator"] = dynamic_operator_key({"capability_id": capability_id})
         normalized["inputs"] = inputs
         normalized["outputs"] = outputs
         normalized.setdefault("request_protocol", "remote_jobs@1")
         normalized.setdefault("result_protocol", "remote_jobs@1")
+        normalized["operator"] = dynamic_operator_key(normalized)
     return normalized
 
 
@@ -279,7 +279,9 @@ def dynamic_operator_key(capability: dict[str, Any]) -> str:
     capability_id = capability.get("capability_id")
     if not isinstance(capability_id, str) or not capability_id:
         raise ContractError("dynamic capability requires capability_id")
-    suffix = sha256_bytes(canonical_json_bytes(capability)).split(":", 1)[1][:24]
+    identity = dict(capability)
+    identity.pop("operator", None)
+    suffix = sha256_bytes(canonical_json_bytes(identity)).split(":", 1)[1][:24]
     return f"remote_capability_{suffix}"
 
 

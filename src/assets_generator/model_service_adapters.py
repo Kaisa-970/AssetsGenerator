@@ -82,17 +82,16 @@ class GenericRemoteCapabilityAdapter(RemoteNodeAdapter):
         uploads: dict[str, ArtifactRef] = {}
         for name, _port in self._ports["inputs"].items():
             value = context.inputs.get(name)
-            if isinstance(value, ArtifactRef):
-                identity = context.store.get_manifest(value.artifact_id).identity
-                expected_media = self._ports["inputs"][name].get("media_type")
-                if (
-                    expected_media is not None
-                    and identity.identity_metadata.get("media_type") != expected_media
-                ):
-                    raise ContractError(f"generic input {name} media type mismatch")
             values = value if isinstance(value, list) else [value]
             for index, item in enumerate(values):
                 if isinstance(item, ArtifactRef):
+                    identity = context.store.get_manifest(item.artifact_id).identity
+                    expected_media = self._ports["inputs"][name].get("media_type")
+                    if (
+                        expected_media is not None
+                        and identity.identity_metadata.get("media_type") != expected_media
+                    ):
+                        raise ContractError(f"generic input {name} media type mismatch")
                     key = name if not isinstance(value, list) else f"{name}[{index}]"
                     uploads[key] = item
         return uploads
@@ -174,6 +173,9 @@ class GenericRemoteCapabilityAdapter(RemoteNodeAdapter):
                     raise ContractError(
                         f"generic output {name} is not a valid self-contained GLB"
                     ) from error
+            elif carrier == "structured":
+                if descriptor.media_type != "application/json":
+                    raise ContractError(f"generic structured output {name} requires JSON")
             elif kind not in {"text", "rgb_image", "rgba_image", "binary_mask"}:
                 raise ContractError(
                     f"generic output {name} kind {kind} has no registered content validator"

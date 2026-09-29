@@ -186,6 +186,42 @@ def test_dynamic_capability_rejects_multi_kind_or_carrier_ports(descriptor):
         validate_descriptor(base)
 
 
+def test_dynamic_capability_allows_known_structured_json_output(descriptor):
+    base = {
+        key: descriptor[key]
+        for key in ("schema_version", "display_name", "service_id", "backend_digest")
+    }
+    base["capabilities"] = [
+        {
+            "capability_id": "semantic",
+            "transport": "remote_jobs@1",
+            "parameter_schema": {"type": "object", "properties": {}},
+            "defaults": {},
+            "inputs": {
+                "prompt": {
+                    "kind": "text",
+                    "carrier": "artifact_ref",
+                    "schema_name": "plain_text",
+                    "schema_version": "1.0",
+                    "media_type": "text/plain",
+                }
+            },
+            "outputs": {
+                "info": {
+                    "kind": "semantic_info",
+                    "carrier": "structured",
+                    "schema_name": "SemanticInfo",
+                    "schema_version": "1.0",
+                    "media_type": "application/json",
+                }
+            },
+        }
+    ]
+    assert validate_descriptor(base)["capabilities"][0]["outputs"]["info"]["kinds"] == [
+        "semantic_info"
+    ]
+
+
 def test_capabilities_form_normalizes_known_first_capability(descriptor):
     multi = {
         key: descriptor[key]
