@@ -845,7 +845,9 @@ footer {
   font-size: 10px;
 }
 .execution-controls > [role="alert"] {
-  flex-basis: 100%;
+  flex: 1 1 260px;
+  min-width: 180px;
+  margin: 0;
 }
 .selected-execution-context {
   flex: 1 1 620px;
