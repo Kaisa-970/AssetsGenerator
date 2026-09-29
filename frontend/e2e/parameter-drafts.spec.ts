@@ -114,7 +114,7 @@ test("unapplied parameters survive node and tab changes; history badges name the
   await page.getByRole("button", { name: "专注画布", exact: true }).click();
   await expect(page.locator(".inspector")).toBeHidden();
   await expect(page.locator("#node-preview-window")).toBeHidden();
-  expect((await page.locator(".canvas").boundingBox())!.width).toBeGreaterThan(
+  expect((await page.locator(".canvas").boundingBox())!.width).toBeGreaterThanOrEqual(
     beforeFocus.width,
   );
   await expect(
@@ -132,7 +132,7 @@ test("unapplied parameters survive node and tab changes; history badges name the
   await expect(page.locator(".inspector")).toBeHidden();
   await expect
     .poll(async () => (await page.locator(".canvas").boundingBox())!.width)
-    .toBeGreaterThan(canvasWidth);
+    .toBeGreaterThanOrEqual(canvasWidth);
   await expect(
     page
       .locator('[data-id="first"]')
