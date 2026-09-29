@@ -1354,6 +1354,7 @@ test("multi-view creation preserves observation reference across reload retry", 
   await page.goto("/");
   await page.getByRole("button", { name: "multiview", exact: true }).click();
   await page.getByRole("button", { name: "继续替换", exact: true }).click();
+  await page.getByRole("button", { name: "展开节点预览", exact: true }).click();
   await page
     .getByLabel("定位画布节点", { exact: true })
     .selectOption("input:observations");
@@ -1736,6 +1737,7 @@ test("RGBA canvas upload uses the explicit endpoint and preserves returned refer
   page.on("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "远程 RGBA", exact: true }).click();
   await page.getByRole("button", { name: "继续替换", exact: true }).click();
+  await page.getByRole("button", { name: "收起节点目录", exact: true }).click();
   await page.getByRole("button", { name: "运行记录与诊断", exact: true }).click();
   await expect(page.getByText(/此流程不自动抠图/)).toBeVisible();
   if (!(await page.getByLabel("图片来源", { exact: true }).isVisible()))
@@ -2576,6 +2578,7 @@ test("input contract editing rejects malformed kinds without corrupting the canv
     }),
   );
   await page.goto("/");
+  await page.getByRole("button", { name: "展开节点预览", exact: true }).click();
   await page.getByRole("button", { name: "展开属性面板", exact: true }).click();
   await page.getByRole("button", { name: "收起节点目录", exact: true }).click();
   await page.locator('.react-flow__node[data-id="input:image"]').click();
@@ -3153,6 +3156,7 @@ test("backend-only node exposes the unique adapter parameter form", async ({
   await page.goto("/");
   await page.getByRole("button", { name: "mask_only", exact: true }).click();
   await page.getByRole("button", { name: "继续替换", exact: true }).click();
+  await page.getByRole("button", { name: "展开节点预览", exact: true }).click();
   await page
     .locator(".react-flow__node")
     .filter({ hasText: "text_segmentation@1" })
@@ -3262,6 +3266,7 @@ test("run to selection omits downstream and node preview stays visible in config
   await page.goto("/");
   await page.getByRole("button", { name: "partial", exact: true }).click();
   await page.getByRole("button", { name: "继续替换", exact: true }).click();
+  await page.getByRole("button", { name: "展开节点预览", exact: true }).click();
   await page
     .getByLabel("定位画布节点", { exact: true })
     .selectOption("input:image");
@@ -3336,6 +3341,7 @@ test("reuse fixes the selected immutable snapshot in the creation request", asyn
     await route.fulfill({ json: body });
   });
   await page.goto("/");
+  await page.getByRole("button", { name: "展开属性面板", exact: true }).click();
   await page.getByRole("button", { name: "运行记录与诊断", exact: true }).click();
   await page.getByLabel("选择运行").selectOption("source");
   await page
@@ -3419,9 +3425,16 @@ test("execution completion remains distinct from QA warnings and relative scale"
     await route.fulfill({ json: body });
   });
   await page.goto("/");
+  await page.getByRole("button", { name: "展开节点预览", exact: true }).click();
+  await page.getByRole("button", { name: "展开属性面板", exact: true }).click();
   await page.getByRole("button", { name: "运行记录与诊断", exact: true }).click();
+  await expect(
+    page.getByRole("region", { name: "运行记录与诊断面板", exact: true }),
+  ).toBeVisible();
   await page.getByLabel("选择运行").selectOption("quality_run");
-  await expect(page.getByText("运行状态：完成", { exact: true })).toBeVisible();
+  await expect(
+    page.locator("p:visible").filter({ hasText: "运行状态：完成" }),
+  ).toBeVisible();
   await expect(
     page.getByText("QA 报告汇总：warn · 警告", { exact: true }),
   ).toBeVisible();
