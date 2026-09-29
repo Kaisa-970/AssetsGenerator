@@ -50,10 +50,14 @@ def validate_editor_inputs(plan: CompiledPlan) -> str:
         kind = kinds[0]
     elif set(plan.inputs) == {"observations"}:
         name, kind = "observations", "observation_bundle"
+    elif len(plan.inputs) == 1:
+        name = next(iter(plan.inputs))
+        kind = tuple(plan.inputs[name].contract["kinds"])
+        if len(kind) != 1:
+            raise ContractError("canvas generic input must declare exactly one kind")
+        kind = kind[0]
     else:
-        raise ContractError(
-            "canvas execution requires exactly one input named image or observations"
-        )
+        raise ContractError("canvas execution requires one input for the current execution entry")
     contract = plan.inputs[name].contract
     if tuple(contract["kinds"]) != (kind,):
         raise ContractError(f"canvas {name} input must have {kind} kind")

@@ -115,19 +115,22 @@ class ModelServices:
             ]
 
     @staticmethod
-    def register(registry: AdapterRegistry, entry: dict[str, Any]) -> None:
+    def register(registry: AdapterRegistry, entry: dict[str, Any]) -> list[Any]:
         from .dag_asset_assembly import ShapeAssetAssemblyAdapter
         from .dag_asset_export import AssetExportAdapter
         from .dag_canonicalize import CanonicalizeAdapter
         from .dag_geometry_validation import GeometryValidationAdapter
         from .model_service_adapters import discovered_service_adapter
+        from .model_service_descriptor import dynamic_operator_spec, select_capability
 
-        registry.register_backend(
-            entry["backend"],
-            discovered_service_adapter(
-                entry["endpoint"], entry["descriptor"], entry.get("capability_id")
-            ),
+        adapter = discovered_service_adapter(
+            entry["endpoint"], entry["descriptor"], entry.get("capability_id")
         )
+        registry.register_backend(entry["backend"], adapter)
+        selected = select_capability(entry["descriptor"], entry.get("capability_id"))
+        specs = []
+        if "inputs" in selected and "outputs" in selected:
+            specs.append(dynamic_operator_spec(selected))
         existing = {item["name"] + "@" + item["version"] for item in registry.catalog()}
         for adapter in (
             CanonicalizeAdapter(),
@@ -137,6 +140,7 @@ class ModelServices:
         ):
             if adapter.spec.key not in existing:
                 registry.register(adapter)
+        return specs
 
     def restore(self, registry: AdapterRegistry) -> None:
         for entry in self.entries:
@@ -180,7 +184,9 @@ class ModelServices:
                 return entry
 
             def update(registry: AdapterRegistry) -> None:
-                self.register(registry, entry)
+                dynamic_specs = self.register(registry, entry)
+                for spec in dynamic_specs:
+                    execution.specs[f"{spec.name}@{spec.version}"] = spec
                 try:
                     self.io.write(
                         self.path,

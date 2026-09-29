@@ -74,6 +74,13 @@ class DraftEditor:
         self.model_services = ModelServices(self.directory)
         if self.execution:
             self.execution.install_model_registry(self.model_services.restore)
+            from .model_service_descriptor import dynamic_operator_spec, select_capability
+
+            for entry in self.model_services.entries:
+                selected = select_capability(entry["descriptor"], entry.get("capability_id"))
+                if "inputs" in selected and "outputs" in selected:
+                    spec = dynamic_operator_spec(selected)
+                    self.specs[f"{spec.name}@{spec.version}"] = spec
             self.adapters = self.execution.engine.registry
 
     def catalog(self) -> dict[str, Any]:
