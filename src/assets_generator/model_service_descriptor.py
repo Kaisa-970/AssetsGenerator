@@ -180,9 +180,7 @@ def _validate_capability(value: object, index: int) -> dict[str, Any]:
     if not isinstance(capability_id, str) or not capability_id.strip() or len(capability_id) > 128:
         raise ContractError("model service capability_id is invalid")
     if operator is None:
-        operator = f"remote_{capability_id}"
-        if any(not part or not part.replace("_", "").isalnum() for part in operator.split("@")):
-            raise ContractError("dynamic capability_id cannot form an operator name")
+        operator = dynamic_operator_key({"capability_id": capability_id})
     if "display_name" in value and (
         not isinstance(value["display_name"], str)
         or not value["display_name"].strip()
