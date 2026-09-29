@@ -125,6 +125,8 @@ def _validate_port_contracts(value: object, label: str) -> dict[str, dict[str, A
         if not isinstance(schema_version, str) or not schema_version.strip():
             raise ContractError(f"model service {label}.{name} requires schema_version")
         media_type = raw.get("media_type")
+        if "artifact_ref" in carriers and media_type is None:
+            raise ContractError(f"model service {label}.{name} requires media_type")
         if media_type is not None and (
             not isinstance(media_type, str)
             or not media_type.strip()
