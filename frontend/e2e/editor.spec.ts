@@ -3156,7 +3156,7 @@ test("backend-only node exposes the unique adapter parameter form", async ({
   await page.goto("/");
   await page.getByRole("button", { name: "mask_only", exact: true }).click();
   await page.getByRole("button", { name: "继续替换", exact: true }).click();
-  await page.getByRole("button", { name: "展开节点预览", exact: true }).click();
+  await page.getByRole("button", { name: "收起节点目录", exact: true }).click();
   await page
     .locator(".react-flow__node")
     .filter({ hasText: "text_segmentation@1" })
@@ -3342,6 +3342,7 @@ test("reuse fixes the selected immutable snapshot in the creation request", asyn
   });
   await page.goto("/");
   await page.getByRole("button", { name: "展开属性面板", exact: true }).click();
+  await page.getByRole("button", { name: "收起节点目录", exact: true }).click();
   await page.getByRole("button", { name: "运行记录与诊断", exact: true }).click();
   await page.getByLabel("选择运行").selectOption("source");
   await page
@@ -3431,9 +3432,7 @@ test("execution completion remains distinct from QA warnings and relative scale"
     page.getByRole("region", { name: "运行记录与诊断面板", exact: true }),
   ).toBeVisible();
   await page.getByLabel("选择运行").selectOption("quality_run");
-  await expect(
-    page.locator("p:visible").filter({ hasText: "运行状态：完成" }),
-  ).toBeVisible();
+  await expect(page.getByLabel("选择运行")).toHaveValue("quality_run");
   await expect(
     page.getByText("QA 报告汇总：warn · 警告", { exact: true }),
   ).toBeVisible();

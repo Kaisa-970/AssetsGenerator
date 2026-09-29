@@ -114,6 +114,7 @@ test("single historical input reaches prepared and created inputs; upload replac
     .getByRole("button", { name: "将配置载入画布", exact: true })
     .click();
   await page.getByRole("button", { name: "继续替换", exact: true }).click();
+  await page.getByRole("button", { name: "收起节点目录", exact: true }).click();
   const node = page.locator('.react-flow__node[data-id="input:image"]');
   await expect(node).toContainText("历史来源：运行 history");
   await node

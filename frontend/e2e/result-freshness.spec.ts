@@ -88,8 +88,10 @@ test("edited configuration marks kept historical preview stale without dispatch"
   await page.goto("/");
   await page.getByRole("button", { name: "freshness", exact: true }).click();
   await page.getByRole("button", { name: "继续替换", exact: true }).click();
+  await page.getByRole("button", { name: "收起节点目录", exact: true }).click();
   await page.getByLabel("选择运行").selectOption("old");
   await page.getByLabel("定位画布节点", { exact: true }).selectOption("encode");
+  await page.getByRole("button", { name: "展开节点预览", exact: true }).click();
   const preview = page.getByRole("region", { name: "选中节点预览" });
   await expect(preview.getByRole("img")).toBeVisible();
   await preview.getByRole("button", { name: "放大图片", exact: true }).click();
