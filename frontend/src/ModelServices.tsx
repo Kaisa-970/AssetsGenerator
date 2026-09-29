@@ -168,8 +168,7 @@ export function ModelServices({
         <div className="model-service-form">
           <p>填写支持服务发现的模型地址。检测不会启动推理。</p>
           <p>
-            SAM3 旧服务需先升级发现接口；其他未支持能力只可查看。
-            普通模型网页或 Gradio 地址不能直接添加。
+            服务需要提供可校验的 Artifact 输入输出契约和远程任务协议。普通模型网页或 Gradio 地址不能直接添加。
           </p>
           <label>
             服务地址
@@ -198,6 +197,8 @@ export function ModelServices({
                 const operator = capability.operator
                   ? catalog.operators[capability.operator]
                   : undefined;
+                const inputs = operator?.inputs || capability.inputs || {};
+                const outputs = operator?.outputs || capability.outputs || {};
                 const availability = detection.capability_availability?.[
                   capability.capability_id || capability.operator || ""
                 ];
@@ -233,11 +234,11 @@ export function ModelServices({
                       · 单位{" "}
                       {capability.unit || detection.descriptor.unit || "未声明"}
                     </p>
-                    {operator ? (
+                    {Object.keys(inputs).length || Object.keys(outputs).length ? (
                       <>
                         <p>
                           输入：
-                          {Object.entries(operator.inputs)
+                          {Object.entries(inputs)
                             .map(
                               ([name, port]) =>
                                 `${name} (${portKinds(port).join(" / ")})`,
@@ -246,7 +247,7 @@ export function ModelServices({
                         </p>
                         <p>
                           输出：
-                          {Object.entries(operator.outputs)
+                          {Object.entries(outputs)
                             .map(
                               ([name, port]) =>
                                 `${name} (${portKinds(port).join(" / ")})`,
@@ -255,9 +256,7 @@ export function ModelServices({
                         </p>
                       </>
                     ) : (
-                      <p role="alert">
-                        当前目录没有对应输入输出契约，无法添加此能力。
-                      </p>
+                      <p role="alert">服务未声明可校验的输入输出契约，无法添加此能力。</p>
                     )}
                     <div>
                       可配置参数：
@@ -278,7 +277,6 @@ export function ModelServices({
                     )}
                     <button
                       disabled={
-                        !operator ||
                         !availability?.installable ||
                         !!busy ||
                         addedCapabilityIds.has(
@@ -320,7 +318,7 @@ export function ModelServices({
             <button
               className="catalog-item"
               key={key}
-              draggable={Boolean(operator)}
+              draggable={Boolean(operator || serviceCapabilities(service).some((item) => item.inputs && item.outputs))}
               onDragStart={(e) => {
                 e.dataTransfer.setData(
                   "application/model-service",
@@ -340,7 +338,7 @@ export function ModelServices({
               <span>
                 {operator
                   ? "模型服务 · 点击或拖入画布"
-                  : "仅查看 · 当前版本暂不可执行"}
+                  : "仅查看 · 服务未声明可校验的 Artifact 契约"}
               </span>
               <span>{operator || "未知能力"}</span>
               <span>
