@@ -66,6 +66,7 @@ test("preview can collapse to select every node at 1280x720 without remounting",
   });
   page.on("dialog", (dialog) => dialog.accept());
   await page.goto("/");
+  await page.getByRole("button", { name: "展开节点目录", exact: true }).click();
   await page.getByRole("button", { name: "收起预览测试", exact: true }).click();
   await page.getByRole("button", { name: "继续替换", exact: true }).click();
   await page.getByLabel("选择运行").selectOption("history");

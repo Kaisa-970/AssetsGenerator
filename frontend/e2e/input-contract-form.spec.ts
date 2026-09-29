@@ -35,6 +35,7 @@ test("missing schema explains rejected wire and RGB preset connects without JSON
     await route.fulfill({ json: body });
   });
   await page.goto("/");
+  await page.getByRole("button", { name: "展开节点目录", exact: true }).click();
   await page
     .locator(".catalog-item")
     .filter({ has: page.getByText("encode_png", { exact: true }) })
@@ -95,7 +96,6 @@ test("structured carrier uses the backend enum and compiles", async ({
     await route.fulfill({ json: body });
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "收起节点目录", exact: true }).click();
   await page.locator('.react-flow__node[data-id="input:image"]').click();
   await page.getByRole("button", { name: "展开属性面板", exact: true }).click();
   await page.getByLabel("输入载体").selectOption("structured");

@@ -66,6 +66,13 @@ test("node palette adds an input and an operator without opening the inspector",
     .getByRole("button", { name: /文字分割 text_segmentation/ })
     .click();
   await expect(page.locator('[data-id="text_segmentation"]')).toBeVisible();
+  await expect(page.locator("#workspace-catalog")).toBeHidden();
+  await page.getByRole("button", { name: "＋ 添加节点" }).click();
+  await palette.getByRole("button", { name: "打开模型服务配置" }).click();
+  await expect(palette).toBeHidden();
+  await expect(
+    page.getByRole("button", { name: "＋ 添加模型服务" }),
+  ).toBeFocused();
 });
 
 test("right click on the canvas opens the node palette", async ({ page }) => {

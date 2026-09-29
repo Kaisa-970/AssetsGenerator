@@ -81,7 +81,9 @@ async function fixture(page: import("@playwright/test").Page) {
     });
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "运行记录与诊断", exact: true }).click();
+  await page
+    .getByRole("button", { name: "运行记录与诊断", exact: true })
+    .click();
   await page.getByLabel("选择运行").selectOption("dag_actions");
   return {
     posts,

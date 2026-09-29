@@ -107,6 +107,7 @@ test("node preview follows selected output and empty-node run status without dis
   });
   page.on("dialog", (dialog) => dialog.accept());
   await page.goto("/");
+  await page.getByRole("button", { name: "展开节点目录", exact: true }).click();
   await page.getByRole("button", { name: "预览测试模板", exact: true }).click();
   await page.getByRole("button", { name: "继续替换", exact: true }).click();
   await page.getByLabel("选择运行").selectOption("historical");

@@ -27,7 +27,10 @@ for (const size of [
       });
     });
     await page.goto("/");
-    await page.getByRole("button", { name: "展开属性面板", exact: true }).click();
+    await expect(page.locator("#workspace-catalog")).toBeHidden();
+    await page
+      .getByRole("button", { name: "展开属性面板", exact: true })
+      .click();
     const resize = page.getByRole("separator", { name: "调整属性面板宽度" });
     await resize.focus();
     await resize.press("End");
@@ -37,7 +40,9 @@ for (const size of [
     expect(canvas.width).toBeGreaterThanOrEqual(300);
     // Side panels are overlays; opening Details must not shrink the canvas.
     expect(canvas.width).toBeGreaterThanOrEqual(size.width - 2);
-    expect(inspector.x + inspector.width).toBeGreaterThanOrEqual(size.width - 1);
+    expect(inspector.x + inspector.width).toBeGreaterThanOrEqual(
+      size.width - 1,
+    );
     expect(inspector.x + inspector.width).toBeLessThanOrEqual(size.width);
     await expect(
       page.getByRole("button", { name: "运行记录与诊断", exact: true }),
@@ -77,7 +82,12 @@ test("workspace controls are grouped and remain usable on a narrow screen", asyn
     await route.fulfill({
       json:
         path === "/api/catalog"
-          ? { operators: {}, adapters: [], templates: [], execution_enabled: true }
+          ? {
+              operators: {},
+              adapters: [],
+              templates: [],
+              execution_enabled: true,
+            }
           : path === "/api/compile"
             ? { ok: true, execution_ready: false }
             : path === "/api/drafts"
@@ -86,9 +96,14 @@ test("workspace controls are grouped and remain usable on a narrow screen", asyn
     });
   });
   await page.goto("/");
-  await expect(page.getByText("注册表示配置可绑定，不代表模型已验收。", { exact: true })).toBeHidden();
+  await expect(
+    page.getByText("注册表示配置可绑定，不代表模型已验收。", { exact: true }),
+  ).toBeHidden();
+  await page.getByRole("button", { name: "展开节点目录", exact: true }).click();
   await page.getByText("目录说明", { exact: true }).click();
-  await expect(page.getByText("注册表示配置可绑定，不代表模型已验收。", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("注册表示配置可绑定，不代表模型已验收。", { exact: true }),
+  ).toBeVisible();
   await expect(
     page.locator(".workspace-panel-group[aria-label='画布视图']"),
   ).toBeVisible();
@@ -101,7 +116,9 @@ test("workspace controls are grouped and remain usable on a narrow screen", asyn
   const locator = page.locator(".workspace-panel-group-locator");
   const box = await locator.boundingBox();
   expect(box?.width).toBeGreaterThan(200);
-  await expect(page.getByRole("combobox", { name: "定位画布节点" })).toBeVisible();
+  await expect(
+    page.getByRole("combobox", { name: "定位画布节点" }),
+  ).toBeVisible();
 });
 
 test("selecting a node keeps the advanced panel closed until explicitly opened", async ({
@@ -144,6 +161,7 @@ test("selecting a node keeps the advanced panel closed until explicitly opened",
     });
   });
   await page.goto("/");
+  await page.getByRole("button", { name: "展开节点目录", exact: true }).click();
   await page.getByRole("button", { name: "single", exact: true }).click();
   await page.getByRole("button", { name: "继续替换", exact: true }).click();
   await page.getByRole("button", { name: "收起属性面板", exact: true }).click();

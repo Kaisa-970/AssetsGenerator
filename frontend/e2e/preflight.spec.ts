@@ -73,7 +73,9 @@ async function setup(page: import("@playwright/test").Page) {
     await route.fulfill({ json: body });
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "运行记录与诊断", exact: true }).click();
+  await page
+    .getByRole("button", { name: "运行记录与诊断", exact: true })
+    .click();
   await page.getByLabel("上传运行图片").setInputFiles({
     name: "input.png",
     mimeType: "image/png",
@@ -124,7 +126,9 @@ test("a definite changed-preflight rejection does not leave an unknown creation 
     .getByRole("button", { name: "启动新运行 · 检查执行范围", exact: true })
     .click();
   await expect.poll(() => state.starts.length).toBe(1);
-  await expect(page.locator(".execution-toolbar")).toContainText("条件已变化，请重新检查");
+  await expect(page.locator(".execution-toolbar")).toContainText(
+    "条件已变化，请重新检查",
+  );
   await expect
     .poll(() =>
       page.evaluate(() =>

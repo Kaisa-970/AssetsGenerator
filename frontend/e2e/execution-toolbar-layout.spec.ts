@@ -108,19 +108,40 @@ test("normal execution toolbar stays compact and preflight diagnostics remain re
   await expect(error).toBeInViewport();
 });
 
-
 test("many historical problems do not consume the canvas", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
     let body: unknown = {};
-    if (path === "/api/catalog") body = { operators: {}, adapters: [], templates: [], execution_enabled: true };
+    if (path === "/api/catalog")
+      body = {
+        operators: {},
+        adapters: [],
+        templates: [],
+        execution_enabled: true,
+      };
     else if (path === "/api/drafts") body = { drafts: [] };
-    else if (path === "/api/compile") body = { ok: true, execution_ready: true };
-    else if (path === "/api/runs") body = { runs: [{ run_id: "many", status: "failed" }] };
-    else if (path === "/api/runs/many") body = {
-      run: { run_id: "many", status: "failed", dag: { revision: 1, node_states: Object.fromEntries(Array.from({ length: 60 }, (_, i) => [`node_${i}`, { status: "failed" }])) } }, outputs: [],
-    };
+    else if (path === "/api/compile")
+      body = { ok: true, execution_ready: true };
+    else if (path === "/api/runs")
+      body = { runs: [{ run_id: "many", status: "failed" }] };
+    else if (path === "/api/runs/many")
+      body = {
+        run: {
+          run_id: "many",
+          status: "failed",
+          dag: {
+            revision: 1,
+            node_states: Object.fromEntries(
+              Array.from({ length: 60 }, (_, i) => [
+                `node_${i}`,
+                { status: "failed" },
+              ]),
+            ),
+          },
+        },
+        outputs: [],
+      };
     await route.fulfill({ json: body });
   });
   await page.goto("/");
@@ -132,8 +153,14 @@ test("many historical problems do not consume the canvas", async ({ page }) => {
   await summary.click();
   const list = page.getByLabel("运行问题与人工待办列表", { exact: true });
   expect((await list.boundingBox())!.height).toBeLessThanOrEqual(120);
-  expect(await list.evaluate(el => el.scrollHeight > el.clientHeight)).toBe(true);
-  await list.evaluate(el => { el.scrollTop = el.scrollHeight; });
-  await expect(page.getByRole("button", { name: "查看运行问题 · node_59", exact: true })).toBeInViewport();
+  expect(await list.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(
+    true,
+  );
+  await list.evaluate((el) => {
+    el.scrollTop = el.scrollHeight;
+  });
+  await expect(
+    page.getByRole("button", { name: "查看运行问题 · node_59", exact: true }),
+  ).toBeInViewport();
   expect((await toolbar.boundingBox())!.height).toBeLessThan(340);
 });

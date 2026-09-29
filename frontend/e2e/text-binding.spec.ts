@@ -55,11 +55,14 @@ test("text preview follows bound reference and hides stale responses", async ({
   });
   page.on("dialog", (dialog) => dialog.accept());
   await page.goto("/");
+  await page.getByRole("button", { name: "展开节点目录", exact: true }).click();
   await page
     .getByRole("button", { name: "text-template", exact: true })
     .click();
   await page.getByRole("button", { name: "继续替换", exact: true }).click();
-  await page.getByLabel("定位画布节点", { exact: true }).selectOption("input:text");
+  await page
+    .getByLabel("定位画布节点", { exact: true })
+    .selectOption("input:text");
   const editor = page.getByLabel("文本输入 text", { exact: true });
   const reference = page.getByLabel("输入 text Artifact ID", { exact: true });
   const bound = page.getByRole("region", { name: "已绑定文本 text" });

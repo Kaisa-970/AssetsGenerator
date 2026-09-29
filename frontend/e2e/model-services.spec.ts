@@ -103,6 +103,7 @@ async function setup(page: Page, fail = false) {
     await route.fulfill({ json: body });
   });
   await page.goto("/");
+  await page.getByRole("button", { name: "展开节点目录", exact: true }).click();
   await expect(
     page.getByText("地址添加目前仅支持图生 Mesh。", { exact: true }),
   ).toBeVisible();
@@ -188,6 +189,7 @@ test("detect, add and create an explicitly bound model node without losing the g
   await expect(card).toContainText("+Z");
   await expect(card).toContainText("relative_unit");
   await page.reload();
+  await page.getByRole("button", { name: "展开节点目录", exact: true }).click();
   await expect(card).toContainText("triposr_glb_native");
   await expect(card).toContainText("+Z");
   await expect(card).toContainText("relative_unit");
@@ -326,8 +328,14 @@ test("RGBA preset is sourced from shape contract and connects a fresh image inpu
 }) => {
   const { compiles } = await setup(page);
   await page.getByLabel("添加输入节点").selectOption("rgba");
-  if (await page.getByRole("button", { name: "展开属性面板", exact: true }).count())
-    await page.getByRole("button", { name: "展开属性面板", exact: true }).click();
+  if (
+    await page
+      .getByRole("button", { name: "展开属性面板", exact: true })
+      .count()
+  )
+    await page
+      .getByRole("button", { name: "展开属性面板", exact: true })
+      .click();
   // Adding an input already selects it; do not click overlapping canvas nodes.
   await page
     .getByLabel("输入格式快捷设置")
@@ -409,6 +417,7 @@ test("operator catalog explains add action and empty search recovery", async ({
     });
   });
   await page.goto("/");
+  await page.getByRole("button", { name: "展开节点目录", exact: true }).click();
   await expect(page.getByText("1 个算子", { exact: true })).toBeVisible();
   await expect(
     page.getByText("点击添加到画布 · 也可拖动", { exact: true }),
@@ -446,6 +455,7 @@ test("single search result can be added with Enter and becomes selected", async 
     });
   });
   await page.goto("/");
+  await page.getByRole("button", { name: "展开节点目录", exact: true }).click();
   const search = page.getByLabel("搜索算子", { exact: true });
   await search.fill("encode_png");
   await expect(page.getByText("按 Enter 添加", { exact: true })).toBeVisible();
@@ -486,6 +496,7 @@ test("fixed deployment fields stay behind details while editable parameters rema
     }),
   );
   await page.reload();
+  await page.getByRole("button", { name: "展开节点目录", exact: true }).click();
   await page.getByRole("button", { name: /My mesh model.*模型服务/ }).click();
   const details = page.locator(".inspector");
   await expect(details.getByLabel("参数 steps", { exact: true })).toBeVisible();

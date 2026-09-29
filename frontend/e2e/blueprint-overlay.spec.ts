@@ -64,6 +64,7 @@ test("docked mesh preview opens over the configuration tab", async ({
   );
   page.on("dialog", (d) => d.accept());
   await page.goto("/");
+  await page.getByRole("button", { name: "展开节点目录", exact: true }).click();
   await page.getByRole("button", { name: "模型预览测试", exact: true }).click();
   await page.getByRole("button", { name: "继续替换", exact: true }).click();
   await page.getByLabel("选择运行", { exact: true }).selectOption("historical");

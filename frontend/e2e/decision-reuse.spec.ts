@@ -51,7 +51,9 @@ test("human reuse checks first and sends exact explicit confirmation", async ({
     await route.fulfill({ json: body });
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "运行记录与诊断", exact: true }).click();
+  await page
+    .getByRole("button", { name: "运行记录与诊断", exact: true })
+    .click();
   await page.getByLabel("选择运行").selectOption("target");
   await page.getByLabel("决定来源运行 · choose").selectOption("source");
   await page
@@ -80,7 +82,9 @@ test("human reuse checks first and sends exact explicit confirmation", async ({
   await expect.poll(() => commands.length).toBe(3);
   expect(commands[2]).toEqual(commands[1]);
   await page.reload();
-  await page.getByRole("button", { name: "运行记录与诊断", exact: true }).click();
+  await page
+    .getByRole("button", { name: "运行记录与诊断", exact: true })
+    .click();
   await page.getByLabel("选择运行").selectOption("target");
   await page
     .getByRole("button", { name: "重试原确认请求", exact: true })

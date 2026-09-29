@@ -76,8 +76,17 @@ test("blank workspace connects uploads and starts from the canvas without openin
   if (await page.getByRole("button", { name: "继续替换", exact: true }).count())
     await page.getByRole("button", { name: "继续替换", exact: true }).click();
   await expect(page.locator(".react-flow__node")).toHaveCount(0);
-  await page.getByLabel("添加输入节点").selectOption("rgb");
-  await page.locator(".catalog-item").filter({ hasText: "encode_png" }).click();
+  await expect(page.locator("#workspace-catalog")).toBeHidden();
+  await page.getByRole("button", { name: "＋ 添加节点" }).click();
+  await page
+    .getByRole("dialog", { name: "添加节点" })
+    .getByRole("button", { name: /图片输入 RGB/ })
+    .click();
+  await page.getByRole("button", { name: "＋ 添加节点" }).click();
+  await page
+    .getByRole("dialog", { name: "添加节点" })
+    .getByRole("button", { name: /编码图片 encode_png/ })
+    .click();
   await expect(page.locator(".react-flow__node")).toHaveCount(2);
   await expect(page.locator('[data-id="encode_png"] header')).toContainText(
     "编码图片",
@@ -141,9 +150,7 @@ test("blank workspace connects uploads and starts from the canvas without openin
     image: { artifact_id: "uploaded-image" },
   });
   expect(starts[0].preflight_digest).toBe("checked");
-  await expect(
-    page.getByRole("button", { name: "配置", exact: true }),
-  ).toHaveClass("active");
+  await expect(page.locator("#workspace-catalog")).toBeHidden();
   await page
     .getByRole("button", { name: "清除输入 · image", exact: true })
     .click();
@@ -218,6 +225,7 @@ test("loading a multi-input template keeps the first input readable and offers a
   });
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/");
+  await page.getByRole("button", { name: "展开节点目录", exact: true }).click();
   await page.getByRole("button", { name: "长链模板", exact: true }).click();
   await page.getByRole("button", { name: "继续替换", exact: true }).click();
   await expect(page.locator('[data-id="input:image"]')).toBeInViewport();

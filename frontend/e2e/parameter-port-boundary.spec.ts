@@ -63,6 +63,7 @@ test("dragging data onto a parameter cannot bind it; declared ports still connec
   page.on("dialog", (dialog) => dialog.accept());
   await page.setViewportSize({ width: 1920, height: 1080 });
   await page.goto("/");
+  await page.getByRole("button", { name: "展开节点目录", exact: true }).click();
   await page.getByRole("button", { name: "参数与端口", exact: true }).click();
   await page.getByRole("button", { name: "继续替换", exact: true }).click();
   await page.getByRole("button", { name: "查看全图", exact: true }).click();

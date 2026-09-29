@@ -75,6 +75,9 @@ for (const size of [
       });
     });
     await page.goto("/");
+    await page
+      .getByRole("button", { name: "展开节点目录", exact: true })
+      .click();
     await page.getByRole("button", { name: "高节点定位", exact: true }).click();
     await page.getByRole("button", { name: "继续替换", exact: true }).click();
     // The canvas is the default focus; preview remains available on demand.

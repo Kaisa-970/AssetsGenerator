@@ -109,6 +109,9 @@ for (const viewport of [
     });
     page.on("dialog", (dialog) => dialog.accept());
     await page.goto("/");
+    await page
+      .getByRole("button", { name: "展开节点目录", exact: true })
+      .click();
     await page.getByRole("button", { name: "input-test", exact: true }).click();
     await page.getByRole("button", { name: "继续替换", exact: true }).click();
     const imageNode = page.locator('.react-flow__node[data-id="input:image"]');
@@ -155,7 +158,9 @@ for (const viewport of [
       textNode.getByLabel("输入 text Artifact ID", { exact: true }),
     ).toHaveValue("text-bound");
     await textNode.locator(".blueprint-node-header").click();
-    await page.getByRole("button", { name: "展开节点预览", exact: true }).click();
+    await page
+      .getByRole("button", { name: "展开节点预览", exact: true })
+      .click();
     await expect(
       page.getByRole("region", { name: "当前输入预览" }),
     ).toContainText("chair");
@@ -294,6 +299,9 @@ for (const replacementKind of ["rgb_image", "rgba_image"]) {
     page.on("dialog", (dialog) => dialog.accept());
     await page.goto("/");
     await page
+      .getByRole("button", { name: "展开节点目录", exact: true })
+      .click();
+    await page
       .getByRole("button", { name: "rgb-template", exact: true })
       .click();
     await page.getByRole("button", { name: "继续替换", exact: true }).click();
@@ -360,8 +368,14 @@ test("adding a mask preserves the uploaded image and removing it uses the update
   await expect(page.locator('[data-id="input:image"]')).toContainText(
     "original-image",
   );
-  if (await page.getByRole("button", { name: "收起属性面板", exact: true }).count())
-    await page.getByRole("button", { name: "收起属性面板", exact: true }).click();
+  if (
+    await page
+      .getByRole("button", { name: "收起属性面板", exact: true })
+      .count()
+  )
+    await page
+      .getByRole("button", { name: "收起属性面板", exact: true })
+      .click();
   await expect(page.locator('[data-id="input:image"]')).toContainText(
     "original-image",
   );
@@ -372,8 +386,11 @@ test("adding a mask preserves the uploaded image and removing it uses the update
     }),
   ).toBeVisible();
   await page.getByRole("button", { name: "展开属性面板", exact: true }).click();
+  await page.getByRole("button", { name: "展开节点目录", exact: true }).click();
   await page.getByLabel("添加输入节点").selectOption("mask");
-  await page.getByLabel("定位画布节点", { exact: true }).selectOption("input:image");
+  await page
+    .getByLabel("定位画布节点", { exact: true })
+    .selectOption("input:image");
   const imageRef = page.getByLabel("输入 image Artifact ID", { exact: true });
   await expect(imageRef).toHaveValue("original-image");
   await page
@@ -381,7 +398,9 @@ test("adding a mask preserves the uploaded image and removing it uses the update
     .getByText("高级：输入引用", { exact: true })
     .click();
   await imageRef.fill("replacement-image");
-  await page.getByLabel("定位画布节点", { exact: true }).selectOption("input:mask");
+  await page
+    .getByLabel("定位画布节点", { exact: true })
+    .selectOption("input:mask");
   await page.locator('[data-id="input:mask"] .blueprint-node-header').click();
   await page.keyboard.press("Delete");
   await expect(page.locator('[data-id="input:mask"]')).toHaveCount(0);

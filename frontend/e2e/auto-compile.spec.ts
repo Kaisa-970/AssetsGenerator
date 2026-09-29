@@ -75,6 +75,7 @@ test("template opens execution, parameter changes compile automatically and old 
   });
   page.on("dialog", (dialog) => dialog.accept());
   await page.goto("/");
+  await page.getByRole("button", { name: "展开节点目录", exact: true }).click();
   await page.getByRole("button", { name: "CPU 自动检查", exact: true }).click();
   if (await page.getByRole("button", { name: "继续替换", exact: true }).count())
     await page.getByRole("button", { name: "继续替换", exact: true }).click();

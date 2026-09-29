@@ -108,13 +108,14 @@ test("single historical input reaches prepared and created inputs; upload replac
     if (isHeldReference) lateResponseDelivered = true;
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "运行记录与诊断", exact: true }).click();
+  await page
+    .getByRole("button", { name: "运行记录与诊断", exact: true })
+    .click();
   await page.getByLabel("选择运行", { exact: true }).selectOption("history");
   await page
     .getByRole("button", { name: "将配置载入画布", exact: true })
     .click();
   await page.getByRole("button", { name: "继续替换", exact: true }).click();
-  await page.getByRole("button", { name: "收起节点目录", exact: true }).click();
   const node = page.locator('.react-flow__node[data-id="input:image"]');
   await expect(node).toContainText("历史来源：运行 history");
   await node

@@ -56,6 +56,7 @@ test("view reordering and removal import new ordered bundles before execution", 
   page.on("dialog", (d) => d.accept());
   await page.setViewportSize({ width: 1920, height: 1080 });
   await page.goto("/");
+  await page.getByRole("button", { name: "展开节点目录", exact: true }).click();
   await page.getByRole("button", { name: "views", exact: true }).click();
   await page.getByRole("button", { name: "继续替换", exact: true }).click();
   await page.getByLabel("上传多视图照片").setInputFiles(

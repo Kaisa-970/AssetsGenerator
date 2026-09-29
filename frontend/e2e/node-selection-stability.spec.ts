@@ -52,6 +52,7 @@ test("small nodes in a six-node graph remain hittable throughout double click", 
   });
   page.on("dialog", (d) => d.accept());
   await page.goto("/");
+  await page.getByRole("button", { name: "展开节点目录", exact: true }).click();
   await page.getByRole("button", { name: "six", exact: true }).click();
   await page.getByRole("button", { name: "继续替换", exact: true }).click();
   await page

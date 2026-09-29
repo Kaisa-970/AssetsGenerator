@@ -57,6 +57,7 @@ test("unapplied parameters survive node and tab changes; history badges name the
   await page.setViewportSize({ width: 1600, height: 1100 });
   page.on("dialog", (dialog) => dialog.accept());
   await page.goto("/");
+  await page.getByRole("button", { name: "展开节点目录", exact: true }).click();
   await page.getByRole("button", { name: "参数草稿测试", exact: true }).click();
   await page.getByRole("button", { name: "继续替换", exact: true }).click();
   if (!(await page.getByLabel("图片来源", { exact: true }).isVisible()))
@@ -114,9 +115,9 @@ test("unapplied parameters survive node and tab changes; history badges name the
   await page.getByRole("button", { name: "专注画布", exact: true }).click();
   await expect(page.locator(".inspector")).toBeHidden();
   await expect(page.locator("#node-preview-window")).toBeHidden();
-  expect((await page.locator(".canvas").boundingBox())!.width).toBeGreaterThanOrEqual(
-    beforeFocus.width,
-  );
+  expect(
+    (await page.locator(".canvas").boundingBox())!.width,
+  ).toBeGreaterThanOrEqual(beforeFocus.width);
   await expect(
     page
       .locator('[data-id="first"]')
@@ -226,7 +227,9 @@ test("unapplied parameters survive node and tab changes; history badges name the
   await expect(
     page.getByRole("button", { name: "保存草稿", exact: true }),
   ).toBeDisabled();
-  await page.getByRole("button", { name: "运行记录与诊断", exact: true }).click();
+  await page
+    .getByRole("button", { name: "运行记录与诊断", exact: true })
+    .click();
   await expect(page.getByLabel("未应用参数", { exact: true })).toBeVisible();
   await page
     .getByRole("button", { name: "编辑待应用参数 · first", exact: true })
@@ -278,7 +281,9 @@ test("unapplied parameters survive node and tab changes; history badges name the
   await expect(
     page.locator('.react-flow__node[data-id="first"]'),
   ).toContainText("历史 · 完成");
-  await page.getByRole("button", { name: "运行记录与诊断", exact: true }).click();
+  await page
+    .getByRole("button", { name: "运行记录与诊断", exact: true })
+    .click();
   await expect(page.getByLabel("画布历史状态来源")).toBeVisible();
   expect(starts).toBe(0);
 });
@@ -335,6 +340,7 @@ test("节点内显示参数配置进度和缺少的必填参数", async ({ page 
     await route.fulfill({ json: body });
   });
   await page.goto("/");
+  await page.getByRole("button", { name: "展开节点目录", exact: true }).click();
   await page.getByRole("button", { name: "必填参数测试", exact: true }).click();
   await page.getByRole("button", { name: "继续替换", exact: true }).click();
   const node = page.locator('[data-id="model"]');
@@ -425,6 +431,7 @@ test("late preflight cannot start applied values after a node acquires an invali
   });
   page.on("dialog", (dialog) => dialog.accept());
   await page.goto("/");
+  await page.getByRole("button", { name: "展开节点目录", exact: true }).click();
   await page.getByRole("button", { name: "预检草稿竞态", exact: true }).click();
   await page.getByRole("button", { name: "继续替换", exact: true }).click();
   if (!(await page.getByLabel("图片来源", { exact: true }).isVisible()))
@@ -511,6 +518,7 @@ test("a parameter draft edited during save is not reported as saved", async ({
   });
   page.on("dialog", (d) => d.accept());
   await page.goto("/");
+  await page.getByRole("button", { name: "展开节点目录", exact: true }).click();
   await page.getByRole("button", { name: "保存竞态", exact: true }).click();
   await page.getByRole("button", { name: "继续替换", exact: true }).click();
   await page.getByRole("button", { name: "保存草稿", exact: true }).click();
@@ -580,6 +588,7 @@ test("node controls and Details share the same applied parameter state", async (
   });
   page.on("dialog", (d) => d.accept());
   await page.goto("/");
+  await page.getByRole("button", { name: "展开节点目录", exact: true }).click();
   await page.getByRole("button", { name: "同步", exact: true }).click();
   await page.getByRole("button", { name: "继续替换", exact: true }).click();
   await page.locator('[data-id="resize"] header').click();

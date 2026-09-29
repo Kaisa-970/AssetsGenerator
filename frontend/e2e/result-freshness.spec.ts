@@ -86,6 +86,7 @@ test("edited configuration marks kept historical preview stale without dispatch"
   );
   page.on("dialog", (d) => d.accept());
   await page.goto("/");
+  await page.getByRole("button", { name: "展开节点目录", exact: true }).click();
   await page.getByRole("button", { name: "freshness", exact: true }).click();
   await page.getByRole("button", { name: "继续替换", exact: true }).click();
   await page.getByRole("button", { name: "收起节点目录", exact: true }).click();

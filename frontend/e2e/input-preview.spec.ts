@@ -118,6 +118,7 @@ test("multi-input image and mask thumbnails disappear when bindings change", asy
   });
   page.on("dialog", (dialog) => dialog.accept());
   await page.goto("/");
+  await page.getByRole("button", { name: "展开节点目录", exact: true }).click();
   await page.getByRole("button", { name: "inputs", exact: true }).click();
   await page.getByRole("button", { name: "继续替换", exact: true }).click();
   for (const name of ["image", "mask"]) {
@@ -228,7 +229,9 @@ test("historical multi-input sources require explicit per-input reuse without cr
     await route.fulfill({ json: body });
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "运行记录与诊断", exact: true }).click();
+  await page
+    .getByRole("button", { name: "运行记录与诊断", exact: true })
+    .click();
   await page
     .getByLabel("选择运行", { exact: true })
     .selectOption("dag_history");
@@ -248,7 +251,9 @@ test("historical multi-input sources require explicit per-input reuse without cr
   await page
     .getByRole("button", { name: "使用历史输入 · image", exact: true })
     .click();
-  await page.getByLabel("定位画布节点", { exact: true }).selectOption("input:text");
+  await page
+    .getByLabel("定位画布节点", { exact: true })
+    .selectOption("input:text");
   await page
     .getByRole("button", { name: "使用历史输入 · text", exact: true })
     .click();

@@ -71,6 +71,7 @@ test("history selector filters schema mismatch and discards late foreign-run rea
   });
   page.on("dialog", (d) => d.accept());
   await page.goto("/");
+  await page.getByRole("button", { name: "展开节点目录", exact: true }).click();
   await page.getByRole("button", { name: "inputs", exact: true }).click();
   await page.getByRole("button", { name: "继续替换", exact: true }).click();
   await page.getByLabel("选择运行", { exact: true }).selectOption("old");

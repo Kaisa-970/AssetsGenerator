@@ -187,7 +187,9 @@ function App() {
   }>({ sequence: 0 });
   const [filter, setFilter] = useState("");
   const [registeredOnly, setRegisteredOnly] = useState(false);
-  const [catalogOpen, setCatalogOpen] = useState(true);
+  // The canvas is the default workspace. The catalog remains available from
+  // the panel toggle and the focused “添加节点” palette.
+  const [catalogOpen, setCatalogOpen] = useState(false);
   const [nodePaletteOpen, setNodePaletteOpen] = useState(false);
   const [nodePaletteFilter, setNodePaletteFilter] = useState("");
   const [nodePalettePosition, setNodePalettePosition] = useState<
@@ -1128,13 +1130,27 @@ function App() {
                     <span>
                       {capability.operator || service.operator
                         ? capability.operator || service.operator
-                        : "仅查看 · 当前版本暂不可执行"} ·{" "}
+                        : "仅查看 · 当前版本暂不可执行"}{" "}
+                      ·{" "}
                       {capability.frame_id || service.frame_id || "未声明坐标"}{" "}
                       · {capability.unit || service.unit || "未声明单位"}
                     </span>
                   </button>
                 ))}
                 {!paletteServices.length && <p>暂未配置独立模型服务。</p>}
+                <button
+                  onClick={() => {
+                    setNodePaletteOpen(false);
+                    setCatalogOpen(true);
+                    requestAnimationFrame(() => {
+                      document
+                        .querySelector<HTMLElement>(".model-services button")
+                        ?.focus();
+                    });
+                  }}
+                >
+                  打开模型服务配置
+                </button>
               </div>
             </div>
             <footer>
@@ -1191,6 +1207,7 @@ function App() {
           <button
             aria-expanded={catalogOpen}
             aria-controls="workspace-catalog"
+            title="节点目录、示例管线与模型服务配置"
             onClick={() => setCatalogOpen((open) => !open)}
           >
             {catalogOpen ? "收起节点目录" : "展开节点目录"}
@@ -1213,7 +1230,10 @@ function App() {
             </button>
           )}
         </div>
-        <div className="workspace-panel-group workspace-panel-group-locator" aria-label="节点定位">
+        <div
+          className="workspace-panel-group workspace-panel-group-locator"
+          aria-label="节点定位"
+        >
           <span className="workspace-panel-group-label">定位</span>
           <label className="node-locator">
             <span className="sr-only">定位节点</span>

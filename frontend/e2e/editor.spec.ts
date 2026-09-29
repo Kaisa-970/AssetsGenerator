@@ -206,6 +206,7 @@ test("edits a template, saves layout, compiles and reloads a draft", async ({
   });
   await page.goto("/");
   page.on("dialog", (d) => d.accept());
+  await page.getByRole("button", { name: "展开节点目录", exact: true }).click();
   await page.getByRole("button", { name: "单图测试", exact: true }).click();
   await page.getByRole("button", { name: "继续替换", exact: true }).click();
   await page.getByRole("button", { name: "配置", exact: true }).click();
@@ -292,6 +293,7 @@ test("combined deletion persists and dragging keeps canvas stable", async ({
   });
   page.on("dialog", (d) => d.accept());
   await page.goto("/");
+  await page.getByRole("button", { name: "展开节点目录", exact: true }).click();
   await page.getByRole("button", { name: "删除测试", exact: true }).click();
   await page.getByRole("button", { name: "继续替换", exact: true }).click();
   await page.getByRole("button", { name: "查看全图", exact: true }).click();
@@ -653,6 +655,7 @@ test("parameter form sends typed values and preserves other instances", async ({
   });
   await page.goto("/");
   page.on("dialog", (d) => d.accept());
+  await page.getByRole("button", { name: "展开节点目录", exact: true }).click();
   await page.getByRole("button", { name: "forms", exact: true }).click();
   await page.getByRole("button", { name: "继续替换", exact: true }).click();
   await page.locator('.react-flow__node[data-id="first"]').click();
@@ -944,6 +947,7 @@ test("fixed run graph displays persisted plan instead of edited draft", async ({
     });
   });
   await page.goto("/");
+  await page.getByRole("button", { name: "展开节点目录", exact: true }).click();
   await page.locator(".catalog-item").click();
   const draftCanvas = page.locator("main.canvas");
   const draftNode = draftCanvas.locator('.react-flow__node[data-id="copy"]');
@@ -961,7 +965,9 @@ test("fixed run graph displays persisted plan instead of edited draft", async ({
     .locator(".react-flow__viewport")
     .getAttribute("style");
   await page.getByLabel("管线名称").fill("changed_draft");
-  await page.getByRole("button", { name: "运行记录与诊断", exact: true }).click();
+  await page
+    .getByRole("button", { name: "运行记录与诊断", exact: true })
+    .click();
   await page.getByLabel("选择运行").selectOption("dag_saved");
   await page.getByRole("button", { name: "查看固定运行图" }).click();
   const dialog = page.getByRole("dialog", { name: "固定运行图" });
@@ -1084,6 +1090,9 @@ for (const implementation of ["local", "remote"]) {
     });
     await page.goto("/");
     page.on("dialog", (d) => d.accept());
+    await page
+      .getByRole("button", { name: "展开节点目录", exact: true })
+      .click();
     await page.getByRole("button", { name: "pair", exact: true }).click();
     await page.getByRole("button", { name: "继续替换", exact: true }).click();
     await page.getByRole("button", { name: "配置", exact: true }).click();
@@ -1352,6 +1361,7 @@ test("multi-view creation preserves observation reference across reload retry", 
     });
   });
   await page.goto("/");
+  await page.getByRole("button", { name: "展开节点目录", exact: true }).click();
   await page.getByRole("button", { name: "multiview", exact: true }).click();
   await page.getByRole("button", { name: "继续替换", exact: true }).click();
   await page.getByRole("button", { name: "展开节点预览", exact: true }).click();
@@ -1529,7 +1539,9 @@ test("published GLB preview loads geometry and closes without mutation", async (
     });
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "运行记录与诊断", exact: true }).click();
+  await page
+    .getByRole("button", { name: "运行记录与诊断", exact: true })
+    .click();
   await page.getByLabel("选择运行").selectOption("dag_preview");
   await page
     .getByRole("button", { name: "预览模型 · generate · glb", exact: true })
@@ -1735,10 +1747,13 @@ test("RGBA canvas upload uses the explicit endpoint and preserves returned refer
   });
   await page.goto("/");
   page.on("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "展开节点目录", exact: true }).click();
   await page.getByRole("button", { name: "远程 RGBA", exact: true }).click();
   await page.getByRole("button", { name: "继续替换", exact: true }).click();
   await page.getByRole("button", { name: "收起节点目录", exact: true }).click();
-  await page.getByRole("button", { name: "运行记录与诊断", exact: true }).click();
+  await page
+    .getByRole("button", { name: "运行记录与诊断", exact: true })
+    .click();
   await expect(page.getByText(/此流程不自动抠图/)).toBeVisible();
   if (!(await page.getByLabel("图片来源", { exact: true }).isVisible()))
     await page.getByText("高级：图片来源", { exact: true }).click();
@@ -1796,7 +1811,9 @@ test("RGBA canvas upload uses the explicit endpoint and preserves returned refer
   await page.getByRole("button", { name: "展开节点目录", exact: true }).click();
   await page.getByRole("button", { name: "普通 RGB", exact: true }).click();
   await page.getByRole("button", { name: "继续替换", exact: true }).click();
-  await page.getByRole("button", { name: "运行记录与诊断", exact: true }).click();
+  await page
+    .getByRole("button", { name: "运行记录与诊断", exact: true })
+    .click();
   await expect(
     page.getByRole("button", {
       name: "启动新运行 · 检查执行范围",
@@ -1854,7 +1871,9 @@ for (const editDuringLoad of [false, true]) {
       await route.fulfill({ json: body });
     });
     await page.goto("/");
-    await page.getByRole("button", { name: "运行记录与诊断", exact: true }).click();
+    await page
+      .getByRole("button", { name: "运行记录与诊断", exact: true })
+      .click();
     await page
       .getByLabel("选择运行", { exact: true })
       .selectOption("dag_original");
@@ -1947,7 +1966,9 @@ test("image outputs preview on demand and report errors without dispatch", async
     });
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "运行记录与诊断", exact: true }).click();
+  await page
+    .getByRole("button", { name: "运行记录与诊断", exact: true })
+    .click();
   await page.getByLabel("选择运行").selectOption("dag_images");
   const open = page.getByRole("button", {
     name: "预览图片 · transform · image",
@@ -1961,7 +1982,10 @@ test("image outputs preview on demand and report errors without dispatch", async
   expect(
     await image.evaluate((element: HTMLImageElement) => element.naturalWidth),
   ).toBe(1);
-  await page.getByRole("button", { name: /收起图片/ }).first().click();
+  await page
+    .getByRole("button", { name: /收起图片/ })
+    .first()
+    .click();
   await expect(image).toHaveCount(0);
   fail = true;
   await open.click();
@@ -2031,6 +2055,7 @@ test("compile diagnostics locate known nodes without changing the graph", async 
   });
   await page.goto("/");
   page.on("dialog", (d) => d.accept());
+  await page.getByRole("button", { name: "展开节点目录", exact: true }).click();
   await page.getByRole("button", { name: "diagnostic", exact: true }).click();
   await page.getByRole("button", { name: "继续替换", exact: true }).click();
   await page.getByRole("button", { name: "编译校验", exact: true }).click();
@@ -2101,7 +2126,9 @@ test("current failure is visible while old successful-retry errors remain in his
     });
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "运行记录与诊断", exact: true }).click();
+  await page
+    .getByRole("button", { name: "运行记录与诊断", exact: true })
+    .click();
   await page.getByLabel("选择运行").selectOption("dag_failure");
   const alert = page.getByRole("alert", { name: "执行错误 · broken" });
   await expect(alert).toContainText("BACKEND_TIMEOUT");
@@ -2157,7 +2184,9 @@ test("top action opens and focuses the selected run's human task", async ({
     });
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "运行记录与诊断", exact: true }).click();
+  await page
+    .getByRole("button", { name: "运行记录与诊断", exact: true })
+    .click();
   await page.getByLabel("选择运行").selectOption("dag_waiting");
   const action = page.getByRole("button", {
     name: "处理人工待办 · choose",
@@ -2217,6 +2246,7 @@ test("operator catalog distinguishes registered implementations from contracts",
     });
   });
   await page.goto("/");
+  await page.getByRole("button", { name: "展开节点目录", exact: true }).click();
   const items = page.locator(".catalog-item");
   await expect(items).toHaveCount(3);
   await expect(items.filter({ hasText: "contract" })).toContainText("仅契约");
@@ -2283,6 +2313,7 @@ test("new nodes do not choose between ambiguous adapters by catalog order", asyn
     });
   });
   await page.goto("/");
+  await page.getByRole("button", { name: "展开节点目录", exact: true }).click();
   await page.locator(".catalog-item").filter({ hasText: "generate" }).click();
   await expect(page.getByLabel("Adapter", { exact: true })).toHaveValue("");
   await page.getByRole("button", { name: "编译校验", exact: true }).click();
@@ -2345,7 +2376,9 @@ test("pending dispatch blockers are visible without inventing attempts or pollin
     });
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "运行记录与诊断", exact: true }).click();
+  await page
+    .getByRole("button", { name: "运行记录与诊断", exact: true })
+    .click();
   await page.getByLabel("选择运行").selectOption("dag_gated");
   const status = page.getByRole("status", { name: "派发受阻 · generate" });
   await expect(status).toContainText("old worker process still alive");
@@ -2550,6 +2583,7 @@ test("node inspector exposes authoritative input and output port contracts", asy
   );
   page.on("dialog", (dialog) => dialog.accept());
   await page.goto("/");
+  await page.getByRole("button", { name: "展开节点目录", exact: true }).click();
   await page.getByRole("button", { name: "contracts", exact: true }).click();
   await page.getByRole("button", { name: "继续替换", exact: true }).click();
   await page.getByRole("button", { name: "配置", exact: true }).click();
@@ -2580,7 +2614,6 @@ test("input contract editing rejects malformed kinds without corrupting the canv
   );
   await page.goto("/");
   await page.getByRole("button", { name: "展开属性面板", exact: true }).click();
-  await page.getByRole("button", { name: "收起节点目录", exact: true }).click();
   await page.locator('.react-flow__node[data-id="input:image"]').click();
   const input = page.getByLabel("输入契约 · JSON");
   await input.fill('{"kinds":"rgb_image"}');
@@ -2626,9 +2659,11 @@ test("repeated catalog additions keep distinct instances clear of existing nodes
     });
   });
   await page.goto("/");
+  await page.getByRole("button", { name: "展开节点目录", exact: true }).click();
   const add = page
     .locator(".catalog-item")
     .filter({ has: page.getByText("copy", { exact: true }) });
+  await expect(add).toBeVisible();
   await add.click();
   await expect(page.locator('.react-flow__node[data-id="copy"]')).toBeVisible();
   await add.click();
@@ -2706,7 +2741,9 @@ test("recovery evidence diagnostics expose exact references without dispatch", a
     });
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "运行记录与诊断", exact: true }).click();
+  await page
+    .getByRole("button", { name: "运行记录与诊断", exact: true })
+    .click();
   await page
     .getByLabel("选择运行", { exact: true })
     .selectOption("dag_blocked");
@@ -2848,9 +2885,12 @@ test("multi-input editor uploads RGB and mask and submits complete bindings", as
   });
   await page.goto("/");
   page.on("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "展开节点目录", exact: true }).click();
   await page.getByRole("button", { name: "RGB + mask", exact: true }).click();
   await page.getByRole("button", { name: "继续替换", exact: true }).click();
-  await page.getByRole("button", { name: "运行记录与诊断", exact: true }).click();
+  await page
+    .getByRole("button", { name: "运行记录与诊断", exact: true })
+    .click();
   await page.getByLabel("上传输入 image").setInputFiles({
     name: "image.png",
     mimeType: "image/png",
@@ -3052,9 +3092,14 @@ for (const mismatch of [false, true]) {
     });
     await page.goto("/");
     page.on("dialog", (d) => d.accept());
+    await page
+      .getByRole("button", { name: "展开节点目录", exact: true })
+      .click();
     await page.getByRole("button", { name: "RGB + mask", exact: true }).click();
     await page.getByRole("button", { name: "继续替换", exact: true }).click();
-    await page.getByRole("button", { name: "运行记录与诊断", exact: true }).click();
+    await page
+      .getByRole("button", { name: "运行记录与诊断", exact: true })
+      .click();
     await page.getByLabel("选择运行").selectOption("run_a");
     await page
       .getByRole("button", {
@@ -3073,7 +3118,9 @@ for (const mismatch of [false, true]) {
     await page
       .locator('[data-id="input:image"] .blueprint-node-header')
       .click();
-    await page.getByRole("button", { name: "展开节点预览", exact: true }).click();
+    await page
+      .getByRole("button", { name: "展开节点预览", exact: true })
+      .click();
     const current = page.getByRole("region", { name: "当前输入预览" });
     if (mismatch) {
       await expect(current.getByRole("alert")).toContainText(
@@ -3154,6 +3201,7 @@ test("backend-only node exposes the unique adapter parameter form", async ({
     await route.fulfill({ json: body });
   });
   await page.goto("/");
+  await page.getByRole("button", { name: "展开节点目录", exact: true }).click();
   await page.getByRole("button", { name: "mask_only", exact: true }).click();
   await page.getByRole("button", { name: "继续替换", exact: true }).click();
   await page.getByRole("button", { name: "收起节点目录", exact: true }).click();
@@ -3264,6 +3312,7 @@ test("run to selection omits downstream and node preview stays visible in config
     await route.fulfill({ json: body });
   });
   await page.goto("/");
+  await page.getByRole("button", { name: "展开节点目录", exact: true }).click();
   await page.getByRole("button", { name: "partial", exact: true }).click();
   await page.getByRole("button", { name: "继续替换", exact: true }).click();
   await page.getByRole("button", { name: "展开节点预览", exact: true }).click();
@@ -3342,8 +3391,9 @@ test("reuse fixes the selected immutable snapshot in the creation request", asyn
   });
   await page.goto("/");
   await page.getByRole("button", { name: "展开属性面板", exact: true }).click();
-  await page.getByRole("button", { name: "收起节点目录", exact: true }).click();
-  await page.getByRole("button", { name: "运行记录与诊断", exact: true }).click();
+  await page
+    .getByRole("button", { name: "运行记录与诊断", exact: true })
+    .click();
   await page.getByLabel("选择运行").selectOption("source");
   await page
     .getByRole("button", { name: "使用所选运行的原图", exact: true })
@@ -3427,7 +3477,9 @@ test("execution completion remains distinct from QA warnings and relative scale"
   });
   await page.goto("/");
   await page.getByRole("button", { name: "展开属性面板", exact: true }).click();
-  await page.getByRole("button", { name: "运行记录与诊断", exact: true }).click();
+  await page
+    .getByRole("button", { name: "运行记录与诊断", exact: true })
+    .click();
   await expect(
     page.getByRole("region", { name: "运行记录与诊断面板", exact: true }),
   ).toBeVisible();
@@ -3499,7 +3551,9 @@ test("human decision summary refreshes when its node finishes later", async ({
     await route.fulfill({ json: body });
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "运行记录与诊断", exact: true }).click();
+  await page
+    .getByRole("button", { name: "运行记录与诊断", exact: true })
+    .click();
   await page.getByLabel("选择运行").selectOption("human");
   await expect(
     page.getByText("节点完成时间：未记录", { exact: true }),
