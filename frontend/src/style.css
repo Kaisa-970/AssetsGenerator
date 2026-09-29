@@ -861,6 +861,16 @@ footer {
   border-radius: 6px;
 }
 .selected-execution-context p {
+  display: none;
+}
+.selected-execution-context {
+  padding-block: 3px;
+}
+.selected-execution-context button {
+  padding-block: 4px;
+  font-size: 11px;
+}
+.selected-execution-context p {
   margin: 0;
   color: #66818d;
   font-size: 11px;
