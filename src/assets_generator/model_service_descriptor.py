@@ -11,7 +11,18 @@ from typing import Any
 from .compiled_plan import thaw
 from .contracts import ContractError
 from .dag_adapters import AdapterSpec, NodeExecutionContext
-from .dag_remote_shape import RemoteShapeAdapter
+
+try:
+    from .dag_remote_shape import RemoteShapeAdapter
+except ModuleNotFoundError as exc:
+    if exc.name not in {"trimesh", "pygltflib"}:
+        raise
+
+    class RemoteShapeAdapter:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            raise ContractError("shape service adapter requires mesh runtime dependencies")
+
+
 from .models import BackendNativeFrame
 from .remote_http import RemoteJobClient
 from .remote_protocol import RemoteIdentity, decode_remote_json

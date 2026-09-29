@@ -35,6 +35,10 @@ def deployment_identity(profile: dict[str, Any]) -> RemoteIdentity:
             "remote_service_worker.py",
             "remote_service_process.py",
             "remote_service_store.py",
+            "sam3_text_cli.py",
+            "model_service_descriptor.py",
+            "dag_text_segmentation.py",
+            "remote_service_http.py",
         )
     }
     environment = json.loads(
