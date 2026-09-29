@@ -2403,6 +2403,7 @@ test("graph edits invalidate successful and in-flight compilation feedback", asy
   await page.getByLabel("管线版本").fill("2");
   release!();
   await expect(status).toContainText("编译通过");
+  await page.getByRole("button", { name: "展开属性面板", exact: true }).click();
   await page.getByRole("button", { name: "编译结果", exact: true }).click();
   await expect(page.locator(".inspector pre")).toContainText("changed_graph:2");
   await expect(page.locator(".inspector pre")).not.toContainText(
@@ -2452,6 +2453,7 @@ test("slow draft load preserves newer edits and save reports its snapshot", asyn
   });
   page.on("dialog", (dialog) => dialog.accept());
   await page.goto("/");
+  await page.getByRole("button", { name: "保存 / 加载", exact: true }).click();
   await page.getByLabel("加载草稿").selectOption("stored");
   await expect.poll(() => !!finishLoad).toBe(true);
   await page.getByLabel("管线名称").fill("newer_local");
@@ -2574,6 +2576,8 @@ test("input contract editing rejects malformed kinds without corrupting the canv
     }),
   );
   await page.goto("/");
+  await page.getByRole("button", { name: "展开属性面板", exact: true }).click();
+  await page.getByRole("button", { name: "收起节点目录", exact: true }).click();
   await page.locator('.react-flow__node[data-id="input:image"]').click();
   const input = page.getByLabel("输入契约 · JSON");
   await input.fill('{"kinds":"rgb_image"}');
@@ -3066,6 +3070,7 @@ for (const mismatch of [false, true]) {
     await page
       .locator('[data-id="input:image"] .blueprint-node-header')
       .click();
+    await page.getByRole("button", { name: "展开节点预览", exact: true }).click();
     const current = page.getByRole("region", { name: "当前输入预览" });
     if (mismatch) {
       await expect(current.getByRole("alert")).toContainText(
