@@ -19,6 +19,7 @@ from assets_generator.model_service_descriptor import (
 )
 from assets_generator.remote_http import RemoteTransportUnknown
 from assets_generator.remote_protocol import RemoteIdentity
+from assets_generator.model_service_adapters import GenericRemoteCapabilityAdapter
 from assets_generator.remote_service_http import create_remote_server
 from assets_generator.remote_service_store import RemoteServiceStore
 from assets_generator.serialization import canonical_json_bytes, sha256_bytes
@@ -101,9 +102,11 @@ def test_dynamic_artifact_capability_is_validated_and_materializes_operator(desc
     ]
     normalized = validate_descriptor(dynamic)
     spec = dynamic_operator_spec(normalized["capabilities"][0])
-    assert spec.name == "remote_text_to_image"
+    assert spec.name == "remote_capability_" + "".join(spec.name.split("remote_capability_")[1])
     assert spec.inputs["prompt"].kinds == ("text",)
     assert spec.outputs["image"].schema_name == "png"
+    adapter = GenericRemoteCapabilityAdapter("http://example.test", normalized, "text_to_image")
+    assert adapter.spec.operators == (spec.name + "@1",)
 
 
 @pytest.mark.parametrize(

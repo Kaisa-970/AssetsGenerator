@@ -245,15 +245,22 @@ def dynamic_operator_spec(capability: dict[str, Any]) -> OperatorSpec:
 
     # Operator identity is capability scoped. Backend identity remains in the
     # node binding, so the same capability can be provided by multiple services.
-    operator = f"remote_{capability['capability_id']}"
-    if any(not part or not part.replace("_", "").isalnum() for part in operator.split("@")):
-        raise ContractError("capability_id cannot form a dynamic operator name")
+    operator = dynamic_operator_key(capability)
     return OperatorSpec(
         name=operator,
         version="1",
         inputs={name: port(raw) for name, raw in capability["inputs"].items()},
         outputs={name: port(raw) for name, raw in capability["outputs"].items()},
     )
+
+
+def dynamic_operator_key(capability: dict[str, Any]) -> str:
+    """Return a stable, filesystem/UI-safe operator name for one capability."""
+    capability_id = capability.get("capability_id")
+    if not isinstance(capability_id, str) or not capability_id:
+        raise ContractError("dynamic capability requires capability_id")
+    suffix = sha256_bytes(canonical_json_bytes({"capability_id": capability_id})).split(":", 1)[1][:24]
+    return f"remote_capability_{suffix}"
 
 
 def validate_descriptor(raw: object) -> dict[str, Any]:

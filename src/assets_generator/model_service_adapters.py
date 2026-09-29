@@ -1,20 +1,161 @@
-"""Trusted executors for discovered capabilities; services cannot define port semantics."""
+"""Executors for discovered model-service capabilities.
 
+The generic adapter deliberately knows nothing about a model's operator name.  A
+validated descriptor supplies the port contracts and the remote-jobs transport
+does the execution; specialised adapters below remain for legacy wire profiles.
+"""
+
+import json
+from collections.abc import Mapping
 from dataclasses import replace
 from typing import Any
 
 from .compiled_plan import thaw
 from .contracts import ContractError
+from .dag_adapters import AdapterSpec, NodeExecutionContext, NodeExecutionResult
 from .dag_remote_adapter import RemoteNodeAdapter
 from .dag_text_segmentation import RemoteTextInputSegmentationAdapter
 from .model_service_descriptor import (
     RESERVED_PARAMETERS,
     DiscoveredShapeAdapter,
     capability_digest,
+    dynamic_operator_spec,
     select_capability,
     validate_descriptor,
 )
+from .models import ArtifactRef, StructuredValue
+from .remote_http import RemoteJobClient
+from .remote_protocol import RemoteJob, RemoteOutput
+from .serialization import canonical_json_bytes, sha256_bytes, to_primitive
 from .remote_protocol import RemoteIdentity
+
+
+class GenericRemoteCapabilityAdapter(RemoteNodeAdapter):
+    """Run any descriptor capability with a validated Artifact contract.
+
+    No local Operator or model-specific protocol is required.  The descriptor's
+    dynamic ports are converted into a constrained ``OperatorSpec`` and output
+    bytes are imported only after the transport digest, media type and declared
+    kind/schema have all been checked.
+    """
+
+    def __init__(self, endpoint: str, descriptor: object, capability_id: str | None = None):
+        checked = validate_descriptor(descriptor)
+        selected = select_capability(checked, capability_id)
+        if selected.get("transport") != "remote_jobs@1":
+            raise ContractError("generic capability requires remote_jobs@1 transport")
+        if "inputs" not in selected or "outputs" not in selected:
+            raise ContractError("generic capability must declare inputs and outputs")
+        self.endpoint = RemoteJobClient(endpoint).endpoint
+        self.descriptor = checked
+        self.capability = selected
+        self.capability_id = selected["capability_id"]
+        self.capability_digest = capability_digest(checked, self.capability_id)
+        self._ports = {"inputs": selected["inputs"], "outputs": selected["outputs"]}
+        operator = dynamic_operator_spec(selected).name
+        self._spec = AdapterSpec(
+            "generic_remote_capability",
+            "1",
+            (f"{operator}@1",),
+            execution_kind="remote",
+            parameter_schema={
+                **selected["parameter_schema"],
+                "properties": {
+                    **selected["parameter_schema"].get("properties", {}),
+                    "remote_endpoint": {"type": "string", "enum": [self.endpoint]},
+                    "service_id": {"type": "string", "enum": [checked["service_id"]]},
+                    "backend_digest": {"type": "string", "enum": [checked["backend_digest"]]},
+                },
+            },
+            defaults={
+                **selected["defaults"],
+                "remote_endpoint": self.endpoint,
+                "service_id": checked["service_id"],
+                "backend_digest": checked["backend_digest"],
+            },
+        )
+
+    @property
+    def spec(self) -> AdapterSpec:
+        return self._spec
+
+    def input_blobs(self, context: NodeExecutionContext) -> Mapping[str, ArtifactRef]:
+        uploads: dict[str, ArtifactRef] = {}
+        for name, port in self._ports["inputs"].items():
+            value = context.inputs.get(name)
+            values = value if isinstance(value, list) else [value]
+            for index, item in enumerate(values):
+                if isinstance(item, ArtifactRef):
+                    key = name if not isinstance(value, list) else f"{name}[{index}]"
+                    uploads[key] = item
+        return uploads
+
+    def prepare_payload(self, context: NodeExecutionContext) -> dict[str, Any]:
+        parameters = self.spec.normalize_parameters(context.parameters)
+        inputs: dict[str, Any] = {}
+        for name, value in context.inputs.items():
+            if isinstance(value, list):
+                inputs[name] = [
+                    {"artifact_id": item.artifact_id} if isinstance(item, ArtifactRef) else to_primitive(item)
+                    for item in value
+                ]
+            elif isinstance(value, ArtifactRef):
+                inputs[name] = {"artifact_id": value.artifact_id}
+            else:
+                inputs[name] = to_primitive(value)
+        return {
+            "capability_id": self.capability_id,
+            "operation": self.capability.get("operator", f"remote_{self.capability_id}"),
+            "inputs": inputs,
+            "parameters": {
+                key: value
+                for key, value in parameters.items()
+                if key not in RESERVED_PARAMETERS
+            },
+        }
+
+    def import_result(
+        self, context: NodeExecutionContext, job: RemoteJob, blobs: Mapping[str, bytes]
+    ) -> NodeExecutionResult:
+        declared = self._ports["outputs"]
+        expected_names = set(declared)
+        if set(blobs) != expected_names:
+            raise ContractError("generic remote result outputs differ from descriptor")
+        outputs: dict[str, Any] = {}
+        for name, contract in declared.items():
+            descriptor = RemoteOutput.from_job(job, name)
+            data = blobs[name]
+            if descriptor.byte_length != len(data) or descriptor.blob_digest != sha256_bytes(data):
+                raise ContractError(f"generic output {name} transport digest mismatch")
+            media_type = contract.get("media_type")
+            if media_type is not None and descriptor.media_type != media_type:
+                raise ContractError(f"generic output {name} media type mismatch")
+            kind = contract["kinds"][0]
+            schema_name = contract["schema_name"]
+            schema_version = contract["schema_version"]
+            carrier = contract["carriers"][0]
+            metadata = {
+                key: contract[key]
+                for key in ("frame_id", "up_axis", "unit", "media_type")
+                if key in contract
+            }
+            if carrier == "structured":
+                try:
+                    value = json.loads(data)
+                except (TypeError, ValueError) as error:
+                    raise ContractError(f"generic output {name} is not JSON") from error
+                if not isinstance(value, dict):
+                    raise ContractError(f"generic structured output {name} must be an object")
+                outputs[name] = StructuredValue(kind, schema_name, schema_version, value)
+            else:
+                outputs[name] = context.store.persist_bytes(
+                    data,
+                    kind=kind,
+                    schema_name=schema_name,
+                    schema_version=schema_version,
+                    identity_metadata=metadata,
+                )
+        return NodeExecutionResult(outputs)
 
 
 class DiscoveredTextSegmentationAdapter(RemoteTextInputSegmentationAdapter):
@@ -66,6 +207,8 @@ def discovered_service_adapter(
     """Choose only an explicitly supported Operator/wire pair."""
     checked: dict[str, Any] = validate_descriptor(descriptor)
     selected = select_capability(checked, capability_id)
+    if "inputs" in selected and "outputs" in selected:
+        return GenericRemoteCapabilityAdapter(endpoint, checked, capability_id)
     if selected["operator"] == "shape_generation@1":
         return DiscoveredShapeAdapter(endpoint, checked, capability_id)
     if selected["operator"] == "text_segmentation@2":
