@@ -86,6 +86,23 @@ export function backendLabel(catalog: Catalog, backend: string): string {
   )?.display_name;
   return name && name !== backend ? `${name} · ${backend}` : backend;
 }
+/** Resolve only an installed Backend's registered contract; display names are not identities. */
+export function serviceOperatorKey(
+  catalog: Catalog,
+  backend: string,
+  declared: string | undefined,
+): string | undefined {
+  if (!declared) return undefined;
+  const keys = (catalog.backends || [])
+    .filter((item) => item.backend === backend)
+    .flatMap((item) => item.operators)
+    .filter((key) => Boolean(catalog.operators[key]));
+  if (keys.includes(declared)) return declared;
+  const matches = [...new Set(keys)].filter(
+    (key) => catalog.operators[key].name === declared,
+  );
+  return matches.length === 1 ? matches[0] : undefined;
+}
 export const inputId = (name: string) => `input:${name}`;
 export function parseReference(
   ref: string,

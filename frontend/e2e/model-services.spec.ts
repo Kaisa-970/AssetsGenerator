@@ -106,13 +106,16 @@ async function setup(page: Page, fail = false) {
   await page.goto("/");
   await page.getByRole("button", { name: "展开节点目录", exact: true }).click();
   await expect(
-    page.getByText("支持图生 Mesh 和已升级发现接口的 SAM3 文字分割。", { exact: true }),
+    page.getByText(
+      "支持声明 Artifact 输入输出契约的通用模型服务，也兼容图生 Mesh 和 SAM3 文字分割。",
+      { exact: true },
+    ),
   ).toBeVisible();
   await page
     .getByRole("button", { name: "＋ 添加模型服务", exact: true })
     .click();
   await expect(
-    page.getByText(/SAM3 旧服务需先升级发现接口/),
+    page.getByText(/服务需要提供可校验的 Artifact 输入输出契约/),
   ).toBeVisible();
   return { compiles, requests };
 }
@@ -222,7 +225,7 @@ test("editing the URL invalidates confirmation and a late old detection cannot r
         json: {
           endpoint: service.endpoint,
           capability_availability: { shape_generation: { installable: true } },
-        descriptor,
+          descriptor,
           descriptor_digest: service.descriptor_digest,
         },
       })
@@ -368,7 +371,9 @@ test("a detected service can install each known capability without re-detection"
   });
   await page.goto("/");
   await page.getByRole("button", { name: "展开节点目录", exact: true }).click();
-  await page.getByRole("button", { name: "＋ 添加模型服务", exact: true }).click();
+  await page
+    .getByRole("button", { name: "＋ 添加模型服务", exact: true })
+    .click();
   await page.getByLabel("模型服务地址").fill(service.endpoint);
   await page.getByRole("button", { name: "检测服务", exact: true }).click();
   const detected = page.getByRole("region", { name: "检测到的模型" });
@@ -615,21 +620,32 @@ test("fixed deployment fields stay behind details while editable parameters rema
   );
 });
 
-test("known port contract does not override backend installation refusal", async ({ page }) => {
+test("known port contract does not override backend installation refusal", async ({
+  page,
+}) => {
   const { requests } = await setup(page);
-  await page.route("**/api/model-services/detect", route => route.fulfill({ json: {
-    endpoint: service.endpoint,
-    descriptor,
-    descriptor_digest: service.descriptor_digest,
-    capability_availability: { shape_generation: {
-      installable: false, reason: "服务传输协议尚无执行适配器",
-    } },
-  } }));
+  await page.route("**/api/model-services/detect", (route) =>
+    route.fulfill({
+      json: {
+        endpoint: service.endpoint,
+        descriptor,
+        descriptor_digest: service.descriptor_digest,
+        capability_availability: {
+          shape_generation: {
+            installable: false,
+            reason: "服务传输协议尚无执行适配器",
+          },
+        },
+      },
+    }),
+  );
   await page.getByLabel("模型服务地址").fill(service.endpoint);
   await page.getByRole("button", { name: "检测服务", exact: true }).click();
   const detected = page.getByRole("region", { name: "检测到的模型" });
   await expect(detected).toContainText("服务传输协议尚无执行适配器");
   await expect(detected).toContainText("输入：");
-  await expect(detected.getByRole("button", { name: "确认添加模型", exact: true })).toBeDisabled();
+  await expect(
+    detected.getByRole("button", { name: "确认添加模型", exact: true }),
+  ).toBeDisabled();
   expect(requests).toEqual([]);
 });

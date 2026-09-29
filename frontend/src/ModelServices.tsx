@@ -1,8 +1,16 @@
 import { useEffect, useRef, useState } from "react";
-import { portKinds, type Catalog, type ServiceCapability } from "./graph";
+import {
+  portKinds,
+  serviceOperatorKey,
+  type Catalog,
+  type ServiceCapability,
+} from "./graph";
 
 type Detection = {
-  capability_availability?: Record<string, { installable: boolean; reason?: string | null }>;
+  capability_availability?: Record<
+    string,
+    { installable: boolean; reason?: string | null }
+  >;
   endpoint: string;
   descriptor_digest: string;
   descriptor: {
@@ -163,12 +171,16 @@ export function ModelServices({
       <button onClick={() => setOpen(!open)} aria-expanded={open}>
         ＋ 添加模型服务
       </button>
-      <p className="muted">支持图生 Mesh 和已升级发现接口的 SAM3 文字分割。</p>
+      <p className="muted">
+        支持声明 Artifact 输入输出契约的通用模型服务，也兼容图生 Mesh 和 SAM3
+        文字分割。
+      </p>
       {open && (
         <div className="model-service-form">
           <p>填写支持服务发现的模型地址。检测不会启动推理。</p>
           <p>
-            服务需要提供可校验的 Artifact 输入输出契约和远程任务协议。普通模型网页或 Gradio 地址不能直接添加。
+            服务需要提供可校验的 Artifact
+            输入输出契约和远程任务协议。普通模型网页或 Gradio 地址不能直接添加。
           </p>
           <label>
             服务地址
@@ -199,9 +211,10 @@ export function ModelServices({
                   : undefined;
                 const inputs = operator?.inputs || capability.inputs || {};
                 const outputs = operator?.outputs || capability.outputs || {};
-                const availability = detection.capability_availability?.[
-                  capability.capability_id || capability.operator || ""
-                ];
+                const availability =
+                  detection.capability_availability?.[
+                    capability.capability_id || capability.operator || ""
+                  ];
                 const schema = capability.parameter_schema as
                   | {
                       properties?: Record<string, { type?: string }>;
@@ -234,7 +247,8 @@ export function ModelServices({
                       · 单位{" "}
                       {capability.unit || detection.descriptor.unit || "未声明"}
                     </p>
-                    {Object.keys(inputs).length || Object.keys(outputs).length ? (
+                    {Object.keys(inputs).length ||
+                    Object.keys(outputs).length ? (
                       <>
                         <p>
                           输入：
@@ -256,7 +270,9 @@ export function ModelServices({
                         </p>
                       </>
                     ) : (
-                      <p role="alert">服务未声明可校验的输入输出契约，无法添加此能力。</p>
+                      <p role="alert">
+                        服务未声明可校验的输入输出契约，无法添加此能力。
+                      </p>
                     )}
                     <div>
                       可配置参数：
@@ -273,7 +289,11 @@ export function ModelServices({
                       )}
                     </div>
                     {!availability?.installable && (
-                      <p role="alert">仅查看，暂不可执行：{availability?.reason || "尚未取得后端安装资格，请重新检测。"}</p>
+                      <p role="alert">
+                        仅查看，暂不可执行：
+                        {availability?.reason ||
+                          "尚未取得后端安装资格，请重新检测。"}
+                      </p>
                     )}
                     <button
                       disabled={
@@ -295,10 +315,10 @@ export function ModelServices({
                       )
                         ? "已添加"
                         : busy === "add"
-                        ? "正在添加…"
-                        : capabilities.length === 1
-                          ? "确认添加模型"
-                          : "添加此能力"}
+                          ? "正在添加…"
+                          : capabilities.length === 1
+                            ? "确认添加模型"
+                            : "添加此能力"}
                     </button>
                   </article>
                 );
@@ -312,13 +332,18 @@ export function ModelServices({
       {notice && <p role="status">{notice}</p>}
       {(catalog.model_services || []).flatMap((service) =>
         serviceCapabilities(service).map((capability, index) => {
-          const operator = capability.operator || service.operator;
+          const operator = serviceOperatorKey(
+            catalog,
+            service.backend,
+            capability.operator || service.operator,
+          );
           const key = `${service.backend}:${capability.capability_id || operator || index}`;
           return (
             <button
               className="catalog-item"
               key={key}
-              draggable={Boolean(operator || serviceCapabilities(service).some((item) => item.inputs && item.outputs))}
+              draggable={Boolean(operator)}
+              disabled={!operator}
               onDragStart={(e) => {
                 e.dataTransfer.setData(
                   "application/model-service",
@@ -330,9 +355,7 @@ export function ModelServices({
                 );
                 e.dataTransfer.effectAllowed = "move";
               }}
-              onClick={() =>
-                operator && onAddNode(operator, service.backend)
-              }
+              onClick={() => operator && onAddNode(operator, service.backend)}
             >
               <strong>{capability.display_name || service.display_name}</strong>
               <span>

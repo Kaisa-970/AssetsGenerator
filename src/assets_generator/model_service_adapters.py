@@ -96,7 +96,9 @@ class GenericRemoteCapabilityAdapter(RemoteNodeAdapter):
         for name, value in context.inputs.items():
             if isinstance(value, list):
                 inputs[name] = [
-                    {"artifact_id": item.artifact_id} if isinstance(item, ArtifactRef) else to_primitive(item)
+                    {"artifact_id": item.artifact_id}
+                    if isinstance(item, ArtifactRef)
+                    else to_primitive(item)
                     for item in value
                 ]
             elif isinstance(value, ArtifactRef):
@@ -108,9 +110,7 @@ class GenericRemoteCapabilityAdapter(RemoteNodeAdapter):
             "operation": self.capability.get("operator", f"remote_{self.capability_id}"),
             "inputs": inputs,
             "parameters": {
-                key: value
-                for key, value in parameters.items()
-                if key not in RESERVED_PARAMETERS
+                key: value for key, value in parameters.items() if key not in RESERVED_PARAMETERS
             },
         }
 
@@ -139,6 +139,19 @@ class GenericRemoteCapabilityAdapter(RemoteNodeAdapter):
                 for key in ("frame_id", "up_axis", "unit", "media_type")
                 if key in contract
             }
+            if kind in {"rgb_image", "rgba_image", "binary_mask"}:
+                from .generic_artifact_content import image_metadata
+
+                metadata.update(
+                    image_metadata(data, kind, schema_name, schema_version, descriptor.media_type)
+                )
+            elif kind == "text" and schema_name == "plain_text":
+                if schema_version != "1.0" or descriptor.media_type != "text/plain":
+                    raise ContractError("generic text requires plain_text@1.0 and text/plain")
+                try:
+                    data.decode("utf-8", errors="strict")
+                except UnicodeDecodeError as error:
+                    raise ContractError("generic plain text requires UTF-8") from error
             if carrier == "structured":
                 try:
                     value = json.loads(data)

@@ -82,14 +82,20 @@ class ModelServices:
                 raise ContractError("installed Backend identity mismatch")
 
     def summaries(self) -> list[dict[str, Any]]:
-        from .model_service_descriptor import select_capability
+        from .model_service_descriptor import dynamic_operator_spec, select_capability
+
+        def presentation(selected):
+            if "inputs" not in selected:
+                return selected
+            spec = dynamic_operator_spec(selected)
+            return {**selected, "operator": f"{spec.name}@{spec.version}"}
 
         with self.lock:
             return [
                 {
                     "backend": e["backend"],
                     "display_name": e["descriptor"]["display_name"],
-                    "operator": selected["operator"],
+                    "operator": presentation(selected)["operator"],
                     "endpoint": e["endpoint"],
                     "descriptor_digest": e["descriptor_digest"],
                     "capability_id": e.get("capability_id", e["descriptor"].get("operator")),
@@ -99,10 +105,12 @@ class ModelServices:
                     **(
                         {
                             "capabilities": [
-                                next(
-                                    item
-                                    for item in e["descriptor"]["capabilities"]
-                                    if item["capability_id"] == e.get("capability_id")
+                                presentation(
+                                    next(
+                                        item
+                                        for item in e["descriptor"]["capabilities"]
+                                        if item["capability_id"] == e.get("capability_id")
+                                    )
                                 )
                             ]
                         }
@@ -186,7 +194,9 @@ class ModelServices:
             def update(registry: AdapterRegistry) -> None:
                 dynamic_specs = self.register(registry, entry)
                 for spec in dynamic_specs:
-                    execution.specs[f"{spec.name}@{spec.version}"] = spec
+                    previous = execution.specs.get(f"{spec.name}@{spec.version}")
+                    if previous is not None and previous != spec:
+                        raise ContractError("dynamic Operator contract collision")
                 try:
                     self.io.write(
                         self.path,
@@ -200,6 +210,8 @@ class ModelServices:
                 except BaseException:
                     self.poisoned = True
                     raise
+                for spec in dynamic_specs:
+                    execution.specs[f"{spec.name}@{spec.version}"] = spec
                 self.entries.append(entry)
 
             execution.install_model_registry(update)

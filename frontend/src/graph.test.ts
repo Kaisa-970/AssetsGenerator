@@ -400,3 +400,38 @@ it("run to target includes shared ancestors once and excludes downstream", () =>
   expect(Object.keys(sliced.inputs)).toEqual(["image"]);
   expect(Object.keys(graph.nodes)).toHaveLength(5);
 });
+
+it("resolves a service operator only through its registered Backend contract", async () => {
+  const { serviceOperatorKey } = await import("./graph");
+  const op = { name: "remote_cpu", version: "1", inputs: {}, outputs: {} };
+  const c: Catalog = {
+    operators: { "remote_cpu@1": op, "remote_cpu@2": { ...op, version: "2" } },
+    adapters: [],
+    templates: [],
+    backends: [
+      {
+        backend: "cpu",
+        adapter: "generic@1",
+        name: "generic",
+        version: "1",
+        operators: ["remote_cpu@1"],
+      },
+    ],
+  };
+  expect(serviceOperatorKey(c, "cpu", "remote_cpu")).toBe("remote_cpu@1");
+  expect(serviceOperatorKey(c, "cpu", "remote_cpu@1")).toBe("remote_cpu@1");
+  expect(serviceOperatorKey(c, "cpu", "remote_cpu@2")).toBeUndefined();
+  expect(serviceOperatorKey(c, "missing", "remote_cpu@1")).toBeUndefined();
+  expect(
+    serviceOperatorKey(
+      {
+        ...c,
+        backends: [
+          { ...c.backends![0], operators: ["remote_cpu@1", "remote_cpu@2"] },
+        ],
+      },
+      "cpu",
+      "remote_cpu",
+    ),
+  ).toBeUndefined();
+});

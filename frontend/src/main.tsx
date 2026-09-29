@@ -33,6 +33,7 @@ import { load, dump } from "js-yaml";
 import {
   type Catalog,
   backendLabel,
+  serviceOperatorKey,
   type Pipeline,
   type Layout,
   type Port,
@@ -1129,9 +1130,19 @@ function App() {
                 {paletteServices.map(({ service, capability, index }) => (
                   <button
                     key={`${service.backend}:${capability.capability_id || capability.operator || index}`}
-                    disabled={!(capability.operator || service.operator)}
+                    disabled={
+                      !serviceOperatorKey(
+                        catalog,
+                        service.backend,
+                        capability.operator || service.operator,
+                      )
+                    }
                     onClick={() => {
-                      const operator = capability.operator || service.operator;
+                      const operator = serviceOperatorKey(
+                        catalog,
+                        service.backend,
+                        capability.operator || service.operator,
+                      );
                       if (!operator) return;
                       addOperator(
                         operator,
@@ -1576,7 +1587,11 @@ function App() {
                 const capability = service.capabilities?.find(
                   (item) => item.capability_id === capabilityId,
                 );
-                const operator = capability?.operator || service.operator;
+                const operator = serviceOperatorKey(
+                  catalog,
+                  service.backend,
+                  capability?.operator || service.operator,
+                );
                 if (!operator) return;
                 addOperator(
                   operator,
