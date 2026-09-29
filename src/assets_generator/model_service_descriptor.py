@@ -271,9 +271,7 @@ def dynamic_operator_key(capability: dict[str, Any]) -> str:
     capability_id = capability.get("capability_id")
     if not isinstance(capability_id, str) or not capability_id:
         raise ContractError("dynamic capability requires capability_id")
-    suffix = sha256_bytes(canonical_json_bytes({"capability_id": capability_id})).split(":", 1)[1][
-        :24
-    ]
+    suffix = sha256_bytes(canonical_json_bytes(capability)).split(":", 1)[1][:24]
     return f"remote_capability_{suffix}"
 
 
