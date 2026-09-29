@@ -1793,6 +1793,7 @@ test("RGBA canvas upload uses the explicit endpoint and preserves returned refer
     artifact_id: "historical_rgba_exact",
   });
   expect(uploads).toEqual(["/api/inputs/rgba"]);
+  await page.getByRole("button", { name: "展开节点目录", exact: true }).click();
   await page.getByRole("button", { name: "普通 RGB", exact: true }).click();
   await page.getByRole("button", { name: "继续替换", exact: true }).click();
   await page.getByRole("button", { name: "运行记录与诊断", exact: true }).click();
@@ -2578,7 +2579,6 @@ test("input contract editing rejects malformed kinds without corrupting the canv
     }),
   );
   await page.goto("/");
-  await page.getByRole("button", { name: "展开节点预览", exact: true }).click();
   await page.getByRole("button", { name: "展开属性面板", exact: true }).click();
   await page.getByRole("button", { name: "收起节点目录", exact: true }).click();
   await page.locator('.react-flow__node[data-id="input:image"]').click();
@@ -3425,7 +3425,6 @@ test("execution completion remains distinct from QA warnings and relative scale"
     await route.fulfill({ json: body });
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "展开节点预览", exact: true }).click();
   await page.getByRole("button", { name: "展开属性面板", exact: true }).click();
   await page.getByRole("button", { name: "运行记录与诊断", exact: true }).click();
   await expect(
