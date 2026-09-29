@@ -106,13 +106,13 @@ async function setup(page: Page, fail = false) {
   await page.goto("/");
   await page.getByRole("button", { name: "展开节点目录", exact: true }).click();
   await expect(
-    page.getByText("地址添加目前仅支持图生 Mesh。", { exact: true }),
+    page.getByText("支持图生 Mesh 和已升级发现接口的 SAM3 文字分割。", { exact: true }),
   ).toBeVisible();
   await page
     .getByRole("button", { name: "＋ 添加模型服务", exact: true })
     .click();
   await expect(
-    page.getByText(/SAM3 文字分割等其他服务目前需要管理员配置/),
+    page.getByText(/SAM3 旧服务需先升级发现接口/),
   ).toBeVisible();
   return { compiles, requests };
 }

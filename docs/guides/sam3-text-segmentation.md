@@ -2,7 +2,9 @@
 
 ## 当前工作区的推荐操作
 
-前提：管理员已经配置 SAM3 Backend，服务与 worker 正常运行；“添加模型服务”目前只支持图生 Mesh，不能用于自行登记 SAM3。
+前提：SAM3 服务与 worker 正常运行。新版监听入口提供服务发现，可以在“展开节点目录 → 添加模型服务”填写回环地址或 SSH 隧道地址，检测并添加 `text_segmentation@2`。旧服务若检测返回 404，需管理员升级本仓库的服务包装层并重启监听；已有 remote-config 配置仍可使用。
+
+此能力声明专用传输 `sam3_text_jobs@1`，复用原 SAM3 作业请求和证据格式，不在请求中添加 capability ID；它只表示该服务现有文字分割实现，不支持靠多个 ID 路由不同模型。置信度参数契约固定，提示词来自文字 Artifact。新增发现接口不修改权重或模型代码；本地 CPU 发现验证不表示远端已部署或真实 GPU 已验收。
 
 1. 加载 `sam3_text_auto_extract_v1`，画布包含 image、text、segment、extract。
 2. 在 image 节点上传 RGB 图片，在 text 节点填写 `chair` 等目标词并点击“应用文本”。

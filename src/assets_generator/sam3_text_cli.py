@@ -30,6 +30,43 @@ def execute_verified_job(
     return execute_next_service_job(owner, verified_handler)
 
 
+def service_descriptor(identity: RemoteIdentity) -> dict[str, Any]:
+    """Advertise the existing SAM3 wire without changing inference or job identity."""
+    from .compiled_plan import thaw
+    from .dag_text_segmentation import RemoteTextInputSegmentationAdapter
+    from .model_service_descriptor import RESERVED_PARAMETERS, validate_descriptor
+
+    spec = RemoteTextInputSegmentationAdapter("http://127.0.0.1", identity).spec
+    return validate_descriptor(
+        {
+            "schema_version": "model_service@1",
+            "display_name": "SAM3 文字分割",
+            "service_id": identity.service_id,
+            "backend_digest": identity.backend_digest,
+            "capabilities": [
+                {
+                    "capability_id": "text_segmentation@2",
+                    "operator": "text_segmentation@2",
+                    "transport": "sam3_text_jobs@1",
+                    "parameter_schema": {
+                        "type": "object",
+                        "properties": {
+                            key: thaw(value)
+                            for key, value in spec.parameter_schema["properties"].items()
+                            if key not in RESERVED_PARAMETERS
+                        },
+                    },
+                    "defaults": {
+                        key: thaw(value)
+                        for key, value in spec.defaults.items()
+                        if key not in RESERVED_PARAMETERS
+                    },
+                }
+            ],
+        }
+    )
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("action", choices=("init", "serve", "work"))
@@ -54,7 +91,9 @@ def main() -> None:
         if a.action == "init":
             print(canonical_json_bytes(identity).decode())
         elif a.action == "serve":
-            server = create_remote_server(owner, port=a.port)
+            server = create_remote_server(
+                owner, port=a.port, descriptor=service_descriptor(identity)
+            )
             try:
                 print(f"http://127.0.0.1:{server.server_port}", flush=True)
                 server.serve_forever()
