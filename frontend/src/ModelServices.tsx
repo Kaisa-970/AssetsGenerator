@@ -76,6 +76,9 @@ export function ModelServices({
   const [endpoint, setEndpoint] = useState("");
   const [detection, setDetection] = useState<Detection>();
   const [selectedCapabilityId, setSelectedCapabilityId] = useState<string>();
+  const [addedCapabilityIds, setAddedCapabilityIds] = useState<Set<string>>(
+    new Set(),
+  );
   const [busy, setBusy] = useState<"detect" | "add">();
   const [addingCapability, setAddingCapability] = useState<string>();
   const [error, setError] = useState("");
@@ -95,6 +98,7 @@ export function ModelServices({
     request.current.controller?.abort();
     setDetection(undefined);
     setSelectedCapabilityId(undefined);
+    setAddedCapabilityIds(new Set());
     setBusy(undefined);
     setError("");
     setNotice("");
@@ -131,10 +135,17 @@ export function ModelServices({
         capability_id: capabilityId,
       });
       onCatalog(value.catalog);
-      setOpen(false);
-      setNotice(`已添加 ${value.display_name}，点击或拖动下方模型加入画布。`);
-      setDetection(undefined);
-      setSelectedCapabilityId(undefined);
+      setAddedCapabilityIds((previous) => new Set(previous).add(capabilityId));
+      setNotice(
+        capabilities.length > 1
+          ? `已添加 ${value.display_name} · ${capabilityId}。可以继续添加同一服务的其他能力。`
+          : `已添加 ${value.display_name}，点击或拖动下方模型加入画布。`,
+      );
+      if (capabilities.length === 1) {
+        setOpen(false);
+        setDetection(undefined);
+        setSelectedCapabilityId(undefined);
+      }
     } catch (e) {
       setError(String(e));
       // A changed deployment must be detected again before confirming.
@@ -266,7 +277,14 @@ export function ModelServices({
                       <p role="alert">仅查看，暂不可执行：{availability?.reason || "尚未取得后端安装资格，请重新检测。"}</p>
                     )}
                     <button
-                      disabled={!operator || !availability?.installable || !!busy}
+                      disabled={
+                        !operator ||
+                        !availability?.installable ||
+                        !!busy ||
+                        addedCapabilityIds.has(
+                          capability.capability_id || capability.operator || "",
+                        )
+                      }
                       onClick={() => {
                         const capabilityId =
                           capability.capability_id || capability.operator;
@@ -274,7 +292,11 @@ export function ModelServices({
                         void add(capabilityId);
                       }}
                     >
-                      {busy === "add"
+                      {addedCapabilityIds.has(
+                        capability.capability_id || capability.operator || "",
+                      )
+                        ? "已添加"
+                        : busy === "add"
                         ? "正在添加…"
                         : capabilities.length === 1
                           ? "确认添加模型"

@@ -285,6 +285,102 @@ test("unknown advertised capability is inspectable but cannot be added", async (
   ).toBeDisabled();
 });
 
+test("a detected service can install each known capability without re-detection", async ({
+  page,
+}) => {
+  const multiDescriptor = {
+    ...descriptor,
+    capabilities: [
+      {
+        capability_id: "mesh_fast",
+        display_name: "快速网格",
+        operator: "shape_generation@1",
+        transport: "remote_jobs@1",
+        frame_id: "triposr_glb_native",
+        up_axis: "+Z",
+        unit: "relative_unit",
+        parameter_schema: descriptor.parameter_schema,
+        defaults: { steps: 8 },
+      },
+      {
+        capability_id: "mesh_quality",
+        display_name: "高质量网格",
+        operator: "shape_generation@1",
+        transport: "remote_jobs@1",
+        frame_id: "triposr_glb_native",
+        up_axis: "+Z",
+        unit: "relative_unit",
+        parameter_schema: descriptor.parameter_schema,
+        defaults: { steps: 32 },
+      },
+    ],
+  };
+  let detections = 0;
+  const added: string[] = [];
+  await page.route("**/api/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === "/api/catalog") {
+      await route.fulfill({ json: catalog });
+      return;
+    }
+    if (path === "/api/drafts") {
+      await route.fulfill({ json: { drafts: [] } });
+      return;
+    }
+    if (path === "/api/model-services/detect") {
+      detections += 1;
+      await route.fulfill({
+        json: {
+          endpoint: service.endpoint,
+          descriptor: multiDescriptor,
+          descriptor_digest: "sha256:multi",
+          capability_availability: {
+            mesh_fast: { installable: true },
+            mesh_quality: { installable: true },
+          },
+        },
+      });
+      return;
+    }
+    if (path === "/api/model-services") {
+      const body = route.request().postDataJSON();
+      added.push(body.capability_id);
+      await route.fulfill({
+        json: {
+          display_name: descriptor.display_name,
+          catalog: {
+            ...catalog,
+            model_services: added.map((capability_id) => ({
+              ...service,
+              backend: `model_${capability_id}`,
+              capabilities: [
+                multiDescriptor.capabilities.find(
+                  (item) => item.capability_id === capability_id,
+                ),
+              ],
+            })),
+          },
+        },
+      });
+      return;
+    }
+    await route.fulfill({ json: {} });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "展开节点目录", exact: true }).click();
+  await page.getByRole("button", { name: "＋ 添加模型服务", exact: true }).click();
+  await page.getByLabel("模型服务地址").fill(service.endpoint);
+  await page.getByRole("button", { name: "检测服务", exact: true }).click();
+  const detected = page.getByRole("region", { name: "检测到的模型" });
+  await expect(detected).toContainText("2 项模型能力");
+  await detected.getByRole("button", { name: "添加此能力" }).nth(0).click();
+  await expect(detected.getByRole("button", { name: "已添加" })).toHaveCount(1);
+  await detected.getByRole("button", { name: "添加此能力" }).click();
+  await expect(detected.getByRole("button", { name: "已添加" })).toHaveCount(2);
+  expect(added).toEqual(["mesh_fast", "mesh_quality"]);
+  expect(detections).toBe(1);
+});
+
 test("dragged service keeps its binding and an add conflict requires re-detection", async ({
   page,
 }) => {
