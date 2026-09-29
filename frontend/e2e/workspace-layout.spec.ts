@@ -192,3 +192,20 @@ for (const width of [720, 960]) {
     expect(after!.x).toBeCloseTo(before!.x, 0);
   });
 }
+
+for (const width of [720, 960, 1440]) {
+  test(`compact navigation leaves the pipeline viewport dominant at ${width}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.route("**/api/**", route => route.fulfill({ json:
+      new URL(route.request().url()).pathname === "/api/catalog"
+        ? { operators: {}, adapters: [], templates: [], execution_enabled: false }
+        : { drafts: [] },
+    }));
+    await page.goto("/");
+    const canvas = page.locator(".canvas");
+    const box = await canvas.boundingBox();
+    expect(box?.height).toBeGreaterThan(650);
+    await expect(page.getByRole("button", { name: "＋ 添加节点", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "展开节点目录", exact: true })).toBeVisible();
+  });
+}

@@ -1255,3 +1255,57 @@ footer {
 .run-problem-navigation[open] {
   flex-basis: 100%;
 }
+
+/* Keep navigation controls lightweight so the pipeline remains the visual center. */
+.app > header {
+  gap: 12px;
+  padding-block: 7px;
+}
+.toolbar {
+  gap: 5px;
+}
+.toolbar button {
+  padding: 6px 9px;
+  font-size: 12px;
+}
+.workspace-panels {
+  gap: 5px;
+  padding: 3px 8px;
+}
+.workspace-panel-group {
+  gap: 4px;
+  min-height: 24px;
+  padding-right: 6px;
+}
+.workspace-panels button {
+  padding: 3px 7px;
+  font-size: 10px;
+}
+.workspace-panel-group-locator .node-locator select {
+  padding-block: 3px;
+}
+@media (max-width: 760px) {
+  .app > header {
+    gap: 5px 8px;
+    padding-block: 5px;
+  }
+  .toolbar {
+    gap: 3px;
+  }
+  .toolbar button {
+    padding: 5px 6px;
+    font-size: 10px;
+  }
+  .workspace-panels {
+    gap: 3px;
+    padding: 2px 6px;
+  }
+  .workspace-panel-group {
+    gap: 3px;
+    min-height: 22px;
+  }
+  .workspace-panels button {
+    padding: 3px 5px;
+    font-size: 10px;
+  }
+}
