@@ -110,6 +110,7 @@ test("node preview follows selected output and empty-node run status without dis
   await page.getByRole("button", { name: "预览测试模板", exact: true }).click();
   await page.getByRole("button", { name: "继续替换", exact: true }).click();
   await page.getByLabel("选择运行").selectOption("historical");
+  await page.getByRole("button", { name: "收起节点目录", exact: true }).click();
   const selectNode = async (id: string) => {
     await page.getByRole("button", { name: "Fit View", exact: true }).click();
     await page

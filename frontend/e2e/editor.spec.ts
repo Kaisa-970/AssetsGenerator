@@ -948,6 +948,7 @@ test("fixed run graph displays persisted plan instead of edited draft", async ({
   const draftCanvas = page.locator("main.canvas");
   const draftNode = draftCanvas.locator('.react-flow__node[data-id="copy"]');
   await expect(draftNode).toBeVisible();
+  await page.getByRole("button", { name: "收起节点目录", exact: true }).click();
   // Set an explicit camera baseline: fitted zoom varies with viewport width.
   await draftCanvas
     .getByRole("button", { name: "Zoom In", exact: true })
