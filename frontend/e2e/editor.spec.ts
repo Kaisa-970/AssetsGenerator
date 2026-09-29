@@ -2670,6 +2670,8 @@ test("repeated catalog additions keep distinct instances clear of existing nodes
   await expect(
     page.locator('.react-flow__node[data-id="copy_2"]'),
   ).toBeVisible();
+  await page.getByRole("button", { name: "收起节点目录", exact: true }).click();
+  await page.getByRole("button", { name: "展开属性面板", exact: true }).click();
   await page.getByRole("button", { name: "保存草稿", exact: true }).click();
   await expect.poll(() => saved?.pipeline.nodes.copy_2).toBeTruthy();
   expect(Object.keys(saved.pipeline.nodes)).toEqual(["copy", "copy_2"]);

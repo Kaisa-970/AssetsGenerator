@@ -200,6 +200,14 @@ function App() {
   // until the user asks for it from the workspace controls or a toolbar action.
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [inspectorWidth, setInspectorWidth] = useState(280);
+  const showCatalog = useCallback(() => {
+    setCatalogOpen(true);
+    setInspectorOpen(false);
+  }, []);
+  const showInspector = useCallback(() => {
+    setInspectorOpen(true);
+    setCatalogOpen(false);
+  }, []);
   // Keep the canvas as the primary workspace; previews open on demand from
   // the toolbar or a node's output action.
   const [nodePreviewOpen, setNodePreviewOpen] = useState(false);
@@ -437,7 +445,7 @@ function App() {
     setSelected(firstInput ? inputId(firstInput) : undefined);
     // A loaded template has an explicit selection; expose its configuration
     // immediately while keeping a truly blank workspace uncluttered.
-    setInspectorOpen(true);
+    showInspector();
     setRun(undefined);
     setTimeout(() => {
       // Open at the first editable step. Fitting every input/downstream node
@@ -529,7 +537,7 @@ function App() {
     layoutRef.current = nextLayout;
     setLayout(nextLayout);
     setSelected(id);
-    setInspectorOpen(true);
+
     // Adding a node is an editing action. Bring the new node into the
     // workbench viewport so its model selector and primary parameters are
     // immediately usable instead of leaving the node below the fold.
@@ -583,7 +591,7 @@ function App() {
       },
     }));
     setSelected(inputId(name));
-    setInspectorOpen(true);
+
     setNodePaletteOpen(false);
     const selectedNode = selected
       ? flow.getNodes().find((item) => item.id === selected)
@@ -622,7 +630,7 @@ function App() {
       setMessage(error);
       setConnectionIssue(error);
       if (c.source.startsWith("input:")) {
-        setInspectorOpen(true);
+        showInspector();
         setSelected(c.source);
         setTab("inspector");
       }
@@ -980,7 +988,7 @@ function App() {
           </button>
           <button
             onClick={() => {
-              setInspectorOpen(true);
+              showInspector();
               setTab("inspector");
               requestAnimationFrame(() =>
                 requestAnimationFrame(() => {
@@ -1018,7 +1026,7 @@ function App() {
             className="primary"
             disabled={busy}
             onClick={() => {
-              setInspectorOpen(true);
+              showInspector();
               setTab("plan");
               void compileCurrent(pipeline);
             }}
@@ -1147,7 +1155,7 @@ function App() {
                 <button
                   onClick={() => {
                     setNodePaletteOpen(false);
-                    setCatalogOpen(true);
+                    showCatalog();
                     requestAnimationFrame(() => {
                       document
                         .querySelector<HTMLElement>(".model-services button")
@@ -1228,7 +1236,7 @@ function App() {
           {catalog.execution_enabled && (
             <button
               onClick={() => {
-                setInspectorOpen(true);
+                showInspector();
                 setNodePreviewOpen(false);
                 setHistoryOpen(true);
               }}
@@ -1489,7 +1497,7 @@ function App() {
             zoomOnDoubleClick={false}
             onNodeDoubleClick={(_, node) => {
               setSelected(node.id);
-              setInspectorOpen(true);
+              showInspector();
               focusNode(node.id);
             }}
             onPaneClick={() => setSelected(undefined)}
@@ -2235,7 +2243,7 @@ function App() {
               onEditBlockedConfiguration={() => {
                 const id = pendingParameterIds[0];
                 if (!id) return;
-                setInspectorOpen(true);
+                showInspector();
                 setTab("inspector");
                 setSelected(id);
                 focusNode(id);
@@ -2264,7 +2272,7 @@ function App() {
               }}
               onLocateNode={(nodeId) => {
                 if (!pipelineRef.current.nodes[nodeId]) return;
-                setInspectorOpen(true);
+                showInspector();
                 setTab("inspector");
                 setSelected(nodeId);
                 focusNode(nodeId);
