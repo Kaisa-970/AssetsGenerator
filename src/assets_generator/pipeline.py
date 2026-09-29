@@ -42,6 +42,7 @@ def _port_spec(raw: dict[str, Any]) -> PortSpec:
         raw.get("requires_frame", False),
         raw.get("requires_unit", False),
         raw.get("persist", False),
+        raw.get("media_type"),
     )
 
 

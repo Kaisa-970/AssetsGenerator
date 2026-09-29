@@ -151,6 +151,41 @@ def test_dynamic_capability_rejects_invalid_port_contract(descriptor, change):
         validate_descriptor(base)
 
 
+def test_dynamic_capability_rejects_multi_kind_or_carrier_ports(descriptor):
+    base = {
+        key: descriptor[key]
+        for key in ("schema_version", "display_name", "service_id", "backend_digest")
+    }
+    base["capabilities"] = [
+        {
+            "capability_id": "dynamic",
+            "transport": "remote_jobs@1",
+            "parameter_schema": {"type": "object", "properties": {}},
+            "defaults": {},
+            "inputs": {
+                "prompt": {
+                    "kinds": ["text", "rgb_image"],
+                    "carrier": "artifact_ref",
+                    "schema_name": "plain_text",
+                    "schema_version": "1.0",
+                    "media_type": "text/plain",
+                }
+            },
+            "outputs": {
+                "image": {
+                    "kind": "rgb_image",
+                    "carriers": ["artifact_ref", "structured"],
+                    "schema_name": "png",
+                    "schema_version": "1.0",
+                    "media_type": "image/png",
+                }
+            },
+        }
+    ]
+    with pytest.raises(ContractError, match="one kind and carrier"):
+        validate_descriptor(base)
+
+
 def test_capabilities_form_normalizes_known_first_capability(descriptor):
     multi = {
         key: descriptor[key]

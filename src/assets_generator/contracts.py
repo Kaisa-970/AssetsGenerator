@@ -27,6 +27,7 @@ class PortSpec:
     requires_frame: bool = False
     requires_unit: bool = False
     persist: bool = False
+    media_type: str | None = None
 
     def __post_init__(self) -> None:
         if self.cardinality not in _CARDINALITIES:
@@ -36,6 +37,10 @@ class PortSpec:
             raise ContractError(f"unknown port carriers: {sorted(unknown_carriers)}")
         if not self.carriers:
             raise ContractError("port requires at least one carrier")
+        if self.media_type is not None and (
+            not isinstance(self.media_type, str) or "/" not in self.media_type
+        ):
+            raise ContractError("port media_type must be a MIME type")
         known = ARTIFACT_KINDS | STRUCTURED_KINDS
         unknown = set(self.kinds) - known
         if unknown:
@@ -192,6 +197,7 @@ def effective_output_spec(spec: PortSpec) -> PortSpec:
         spec.requires_frame,
         spec.requires_unit,
         True,
+        spec.media_type,
     )
 
 

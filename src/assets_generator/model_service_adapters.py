@@ -82,6 +82,14 @@ class GenericRemoteCapabilityAdapter(RemoteNodeAdapter):
         uploads: dict[str, ArtifactRef] = {}
         for name, _port in self._ports["inputs"].items():
             value = context.inputs.get(name)
+            if isinstance(value, ArtifactRef):
+                identity = context.store.get_manifest(value.artifact_id).identity
+                expected_media = self._ports["inputs"][name].get("media_type")
+                if (
+                    expected_media is not None
+                    and identity.identity_metadata.get("media_type") != expected_media
+                ):
+                    raise ContractError(f"generic input {name} media type mismatch")
             values = value if isinstance(value, list) else [value]
             for index, item in enumerate(values):
                 if isinstance(item, ArtifactRef):
@@ -151,6 +159,25 @@ class GenericRemoteCapabilityAdapter(RemoteNodeAdapter):
                     data.decode("utf-8", errors="strict")
                 except UnicodeDecodeError as error:
                     raise ContractError("generic plain text requires UTF-8") from error
+            elif kind in {"triangle_mesh", "collision_mesh"}:
+                if (schema_name, schema_version, descriptor.media_type) != (
+                    "glTF",
+                    "2.0",
+                    "model/gltf-binary",
+                ):
+                    raise ContractError("generic mesh requires glTF@2.0 and model/gltf-binary")
+                from .remote_shape_output import validate_self_contained_glb
+
+                try:
+                    validate_self_contained_glb(data)
+                except (ValueError, TypeError) as error:
+                    raise ContractError(
+                        f"generic output {name} is not a valid self-contained GLB"
+                    ) from error
+            elif kind not in {"text", "rgb_image", "rgba_image", "binary_mask"}:
+                raise ContractError(
+                    f"generic output {name} kind {kind} has no registered content validator"
+                )
             if carrier == "structured":
                 try:
                     value = json.loads(data)

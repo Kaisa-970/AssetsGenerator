@@ -224,6 +224,12 @@ def _validate_capability(value: object, index: int) -> dict[str, Any]:
             raise ContractError("unsupported dynamic capability request protocol")
         if value.get("result_protocol", "remote_jobs@1") != "remote_jobs@1":
             raise ContractError("unsupported dynamic capability result protocol")
+        for label, ports in (("inputs", inputs), ("outputs", outputs)):
+            for name, port in ports.items():
+                if len(port["kinds"]) != 1 or len(port["carriers"]) != 1:
+                    raise ContractError(
+                        f"dynamic capability {label}.{name} must declare one kind and carrier"
+                    )
     for field in ("frame_id", "up_axis", "unit"):
         if field in value:
             metadata = value[field]
@@ -253,6 +259,8 @@ def dynamic_operator_spec(capability: dict[str, Any]) -> OperatorSpec:
             raw["schema_version"],
             raw["requires_frame"],
             raw["requires_unit"],
+            False,
+            raw.get("media_type"),
         )
 
     # Operator identity is capability scoped. Backend identity remains in the
