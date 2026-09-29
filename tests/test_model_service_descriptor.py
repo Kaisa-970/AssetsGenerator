@@ -13,6 +13,7 @@ from assets_generator.dag_adapters import NodeExecutionContext
 from assets_generator.model_service_descriptor import (
     DiscoveredShapeAdapter,
     detect_service,
+    dynamic_operator_spec,
     shape_service_descriptor,
     validate_descriptor,
 )
@@ -64,6 +65,71 @@ def test_round_trip_and_copy(descriptor):
     assert normalized == descriptor
     descriptor["defaults"]["steps"] = 99
     assert normalized["defaults"]["steps"] == 12
+
+
+def test_dynamic_artifact_capability_is_validated_and_materializes_operator(descriptor):
+    dynamic = {
+        key: descriptor[key]
+        for key in ("schema_version", "display_name", "service_id", "backend_digest")
+    }
+    dynamic["capabilities"] = [
+        {
+            "capability_id": "text_to_image",
+            "display_name": "Text to image",
+            "transport": "remote_jobs@1",
+            "parameter_schema": {"type": "object", "properties": {}},
+            "defaults": {},
+            "inputs": {
+                "prompt": {
+                    "kind": "text",
+                    "carrier": "artifact_ref",
+                    "schema_name": "plain_text",
+                    "schema_version": "1.0",
+                    "media_type": "text/plain",
+                }
+            },
+            "outputs": {
+                "image": {
+                    "kind": "rgb_image",
+                    "carrier": "artifact_ref",
+                    "schema_name": "png",
+                    "schema_version": "1.0",
+                    "media_type": "image/png",
+                }
+            },
+        }
+    ]
+    normalized = validate_descriptor(dynamic)
+    spec = dynamic_operator_spec(normalized["capabilities"][0])
+    assert spec.name == "remote_text_to_image"
+    assert spec.inputs["prompt"].kinds == ("text",)
+    assert spec.outputs["image"].schema_name == "png"
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"inputs": {"prompt": {"kind": "not_a_kind", "schema_name": "x", "schema_version": "1"}}, "outputs": {"image": {"kind": "rgb_image", "schema_name": "x", "schema_version": "1"}}},
+        {"inputs": {"prompt": {"kind": "text", "carrier": "not_a_carrier", "schema_name": "x", "schema_version": "1"}}, "outputs": {"image": {"kind": "rgb_image", "schema_name": "x", "schema_version": "1"}}},
+        {"inputs": {"prompt": {"kind": "text", "schema_name": "x"}}, "outputs": {"image": {"kind": "rgb_image", "schema_name": "x", "schema_version": "1"}}},
+    ],
+)
+def test_dynamic_capability_rejects_invalid_port_contract(descriptor, change):
+    base = {
+        key: descriptor[key]
+        for key in ("schema_version", "display_name", "service_id", "backend_digest")
+    }
+    base["capabilities"] = [
+        {
+            "capability_id": "dynamic",
+            "transport": "remote_jobs@1",
+            "parameter_schema": {"type": "object", "properties": {}},
+            "defaults": {},
+            **change,
+        }
+    ]
+    with pytest.raises(ContractError):
+        validate_descriptor(base)
 
 
 def test_capabilities_form_normalizes_known_first_capability(descriptor):

@@ -9,7 +9,8 @@ from __future__ import annotations
 from typing import Any
 
 from .compiled_plan import thaw
-from .contracts import ContractError
+from .contracts import ContractError, OperatorSpec, PortSpec
+from .models import ARTIFACT_KINDS, STRUCTURED_KINDS
 from .dag_adapters import AdapterSpec, NodeExecutionContext
 
 try:
@@ -51,7 +52,105 @@ _CAPABILITY_FIELDS = {
     "frame_id",
     "up_axis",
     "unit",
+    "inputs",
+    "outputs",
+    "request_protocol",
+    "result_protocol",
 }
+
+_PORT_FIELDS = {
+    "kind",
+    "kinds",
+    "carrier",
+    "carriers",
+    "schema_name",
+    "schema_version",
+    "cardinality",
+    "requires_frame",
+    "requires_unit",
+    "frame_id",
+    "up_axis",
+    "unit",
+    "media_type",
+}
+_CARDINALITIES = {"one", "zero_or_one", "one_or_more", "zero_or_more", "many"}
+_CARRIERS = {"artifact_ref", "structured"}
+_SPATIAL_KINDS = {
+    "triangle_mesh",
+    "collision_mesh",
+    "point_cloud",
+    "gaussian_splat",
+    "depth_map",
+    "camera_collection",
+}
+
+
+def _validate_port_contracts(value: object, label: str) -> dict[str, dict[str, Any]]:
+    if not isinstance(value, dict) or not value:
+        raise ContractError(f"model service capability {label} must be a nonempty object")
+    result: dict[str, dict[str, Any]] = {}
+    for name, raw in value.items():
+        if not isinstance(name, str) or not name or len(name) > 128:
+            raise ContractError(f"model service {label} port name is invalid")
+        if not isinstance(raw, dict) or set(raw) - _PORT_FIELDS:
+            raise ContractError(f"model service {label}.{name} has unknown fields")
+        kinds = raw.get("kinds")
+        if kinds is None:
+            kinds = [raw.get("kind")]
+        if not isinstance(kinds, list) or not kinds or any(
+            not isinstance(kind, str) or kind not in (ARTIFACT_KINDS | STRUCTURED_KINDS)
+            for kind in kinds
+        ):
+            raise ContractError(f"model service {label}.{name} has invalid kind")
+        carriers = raw.get("carriers")
+        if carriers is None:
+            carriers = [raw.get("carrier", "artifact_ref")]
+        if not isinstance(carriers, list) or not carriers or any(
+            carrier not in _CARRIERS for carrier in carriers
+        ):
+            raise ContractError(f"model service {label}.{name} has invalid carrier")
+        cardinality = raw.get("cardinality", "one")
+        if cardinality not in _CARDINALITIES:
+            raise ContractError(f"model service {label}.{name} has invalid cardinality")
+        schema_name = raw.get("schema_name")
+        schema_version = raw.get("schema_version")
+        if not isinstance(schema_name, str) or not schema_name.strip():
+            raise ContractError(f"model service {label}.{name} requires schema_name")
+        if not isinstance(schema_version, str) or not schema_version.strip():
+            raise ContractError(f"model service {label}.{name} requires schema_version")
+        media_type = raw.get("media_type")
+        if media_type is not None and (
+            not isinstance(media_type, str)
+            or not media_type.strip()
+            or "/" not in media_type
+            or any(ord(char) < 33 or ord(char) > 126 for char in media_type)
+        ):
+            raise ContractError(f"model service {label}.{name} has invalid media_type")
+        spatial = any(kind in _SPATIAL_KINDS for kind in kinds)
+        requires_frame = bool(raw.get("requires_frame", spatial))
+        requires_unit = bool(raw.get("requires_unit", spatial))
+        if type(raw.get("requires_frame", requires_frame)) is not bool or type(
+            raw.get("requires_unit", requires_unit)
+        ) is not bool:
+            raise ContractError(f"model service {label}.{name} frame/unit flags are invalid")
+        if spatial and (not raw.get("frame_id") or not raw.get("unit")):
+            raise ContractError(f"model service {label}.{name} requires frame_id and unit")
+        normalized = {
+            "kinds": list(dict.fromkeys(kinds)),
+            "carriers": list(dict.fromkeys(carriers)),
+            "schema_name": schema_name,
+            "schema_version": schema_version,
+            "cardinality": cardinality,
+            "requires_frame": requires_frame,
+            "requires_unit": requires_unit,
+        }
+        for field in ("frame_id", "up_axis", "unit", "media_type"):
+            if field in raw:
+                if not isinstance(raw[field], str) or not raw[field].strip() or len(raw[field]) > 128:
+                    raise ContractError(f"model service {label}.{name} {field} is invalid")
+                normalized[field] = raw[field]
+        result[name] = normalized
+    return result
 
 
 def _validate_capability(value: object, index: int) -> dict[str, Any]:
@@ -66,18 +165,24 @@ def _validate_capability(value: object, index: int) -> dict[str, Any]:
     unknown = set(value) - _CAPABILITY_FIELDS
     if unknown:
         raise ContractError(f"model service capability has unknown fields: {sorted(unknown)}")
-    required = {"operator", "transport", "parameter_schema", "defaults"}
+    required = {"transport", "parameter_schema", "defaults"}
     if not required.issubset(value):
         raise ContractError("model service capability has missing fields")
-    operator = value["operator"]
+    operator = value.get("operator")
     transport = value["transport"]
-    if not isinstance(operator, str) or not operator.strip() or len(operator) > 128:
+    if operator is not None and (
+        not isinstance(operator, str) or not operator.strip() or len(operator) > 128
+    ):
         raise ContractError("model service capability operator is invalid")
     if not isinstance(transport, str) or not transport.strip() or len(transport) > 64:
         raise ContractError("model service capability transport is invalid")
     capability_id = value.get("capability_id", operator)
     if not isinstance(capability_id, str) or not capability_id.strip() or len(capability_id) > 128:
         raise ContractError("model service capability_id is invalid")
+    if operator is None:
+        operator = f"remote_{capability_id}"
+        if any(not part or not part.replace("_", "").isalnum() for part in operator.split("@")):
+            raise ContractError("dynamic capability_id cannot form an operator name")
     if "display_name" in value and (
         not isinstance(value["display_name"], str)
         or not value["display_name"].strip()
@@ -96,12 +201,59 @@ def _validate_capability(value: object, index: int) -> dict[str, Any]:
         raise ContractError("model service capability defaults must be declared parameters")
     if RESERVED_PARAMETERS.intersection(properties):
         raise ContractError("model service cannot declare reserved transport parameters")
+    has_ports = "inputs" in value or "outputs" in value
+    if has_ports and not {"inputs", "outputs"}.issubset(value):
+        raise ContractError("dynamic capability must declare both inputs and outputs")
+    if has_ports:
+        inputs = _validate_port_contracts(value["inputs"], "inputs")
+        outputs = _validate_port_contracts(value["outputs"], "outputs")
+        if set(inputs) & set(outputs):
+            raise ContractError("dynamic capability input/output port names must be disjoint")
+        if value.get("request_protocol", "remote_jobs@1") != "remote_jobs@1":
+            raise ContractError("unsupported dynamic capability request protocol")
+        if value.get("result_protocol", "remote_jobs@1") != "remote_jobs@1":
+            raise ContractError("unsupported dynamic capability result protocol")
     for field in ("frame_id", "up_axis", "unit"):
         if field in value:
             metadata = value[field]
             if not isinstance(metadata, str) or not metadata.strip() or len(metadata) > 128:
                 raise ContractError(f"model service capability {field} is invalid")
-    return {"capability_id": capability_id, **dict(value)}
+    normalized = {"capability_id": capability_id, "operator": operator, **dict(value)}
+    if has_ports:
+        normalized["inputs"] = inputs
+        normalized["outputs"] = outputs
+        normalized.setdefault("request_protocol", "remote_jobs@1")
+        normalized.setdefault("result_protocol", "remote_jobs@1")
+    return normalized
+
+
+def dynamic_operator_spec(capability: dict[str, Any]) -> OperatorSpec:
+    """Build a constrained OperatorSpec for a capability with declared ports."""
+    if "inputs" not in capability or "outputs" not in capability:
+        raise ContractError("capability does not declare dynamic ports")
+
+    def port(raw: dict[str, Any]) -> PortSpec:
+        return PortSpec(
+            tuple(raw["kinds"]),
+            raw["cardinality"],
+            tuple(raw["carriers"]),
+            raw["schema_name"],
+            raw["schema_version"],
+            raw["requires_frame"],
+            raw["requires_unit"],
+        )
+
+    # Operator identity is capability scoped. Backend identity remains in the
+    # node binding, so the same capability can be provided by multiple services.
+    operator = f"remote_{capability['capability_id']}"
+    if any(not part or not part.replace("_", "").isalnum() for part in operator.split("@")):
+        raise ContractError("capability_id cannot form a dynamic operator name")
+    return OperatorSpec(
+        name=operator,
+        version="1",
+        inputs={name: port(raw) for name, raw in capability["inputs"].items()},
+        outputs={name: port(raw) for name, raw in capability["outputs"].items()},
+    )
 
 
 def validate_descriptor(raw: object) -> dict[str, Any]:
