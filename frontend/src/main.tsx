@@ -1225,7 +1225,12 @@ function App() {
             aria-expanded={catalogOpen}
             aria-controls="workspace-catalog"
             title="节点目录、示例管线与模型服务配置"
-            onClick={() => setCatalogOpen((open) => !open)}
+            onClick={() =>
+              setCatalogOpen((open) => {
+                if (open) setInspectorOpen(false);
+                return !open;
+              })
+            }
           >
             {catalogOpen ? "收起节点目录" : "展开节点目录"}
           </button>
