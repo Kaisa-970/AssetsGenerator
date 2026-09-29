@@ -103,3 +103,18 @@ test("preview can collapse to select every node at 1280x720 without remounting",
   expect(imageReads).toBe(before);
   expect(writes).toBe(0);
 });
+
+test("opening run history closes the node preview dock", async ({ page }) => {
+  await page.route("**/api/**", async route => {
+    const path = new URL(route.request().url()).pathname;
+    await route.fulfill({ json: path === "/api/catalog"
+      ? { operators: {}, adapters: [], templates: [], execution_enabled: true }
+      : path === "/api/drafts" ? { drafts: [] } : { runs: [] } });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "展开节点预览", exact: true }).click();
+  await expect(page.locator("#node-preview-window")).toBeVisible();
+  await page.getByRole("button", { name: "运行记录与诊断", exact: true }).click();
+  await expect(page.locator("#node-preview-window")).toBeHidden();
+  await expect(page.getByRole("region", { name: "运行记录与诊断面板" })).toBeVisible();
+});

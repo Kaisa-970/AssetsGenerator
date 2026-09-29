@@ -949,7 +949,13 @@ function App() {
             <button
               aria-expanded={nodePreviewOpen}
               aria-controls="node-preview-window"
-              onClick={() => setNodePreviewOpen((open) => !open)}
+              onClick={() => {
+                setNodePreviewOpen((open) => {
+                  const next = !open;
+                  if (next) setHistoryOpen(false);
+                  return next;
+                });
+              }}
             >
               {nodePreviewOpen ? "收起节点预览" : "展开节点预览"}
             </button>
@@ -1223,6 +1229,7 @@ function App() {
             <button
               onClick={() => {
                 setInspectorOpen(true);
+                setNodePreviewOpen(false);
                 setHistoryOpen(true);
               }}
             >
@@ -1639,7 +1646,10 @@ function App() {
             {catalog.execution_enabled && (
               <button
                 className={historyOpen ? "active" : ""}
-                onClick={() => setHistoryOpen(true)}
+                onClick={() => {
+                  setNodePreviewOpen(false);
+                  setHistoryOpen(true);
+                }}
               >
                 运行
               </button>
@@ -2216,7 +2226,10 @@ function App() {
           </div>
           <div className="run-history-content">
             <ExecutionPanel
-              onOpenHistory={() => setHistoryOpen(true)}
+              onOpenHistory={() => {
+                setNodePreviewOpen(false);
+                setHistoryOpen(true);
+              }}
               pipeline={pipeline}
               configurationBlockedReason={configurationBlockedReason}
               onEditBlockedConfiguration={() => {
