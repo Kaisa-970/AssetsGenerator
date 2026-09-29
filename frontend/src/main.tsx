@@ -206,7 +206,6 @@ function App() {
   }, []);
   const showInspector = useCallback(() => {
     setInspectorOpen(true);
-    setCatalogOpen(false);
   }, []);
   // Keep the canvas as the primary workspace; previews open on demand from
   // the toolbar or a node's output action.
@@ -537,6 +536,10 @@ function App() {
     layoutRef.current = nextLayout;
     setLayout(nextLayout);
     setSelected(id);
+    // Newly added operators expose their configuration immediately.  The
+    // catalog remains open so users can continue adding nodes; only the
+    // explicit panel toggle is responsible for hiding it.
+    showInspector();
 
     // Adding a node is an editing action. Bring the new node into the
     // workbench viewport so its model selector and primary parameters are
