@@ -10,6 +10,7 @@ import pytest
 from assets_generator.artifact_store import LocalArtifactStore
 from assets_generator.contracts import ContractError
 from assets_generator.dag_adapters import NodeExecutionContext
+from assets_generator.model_service_adapters import GenericRemoteCapabilityAdapter
 from assets_generator.model_service_descriptor import (
     DiscoveredShapeAdapter,
     detect_service,
@@ -19,7 +20,6 @@ from assets_generator.model_service_descriptor import (
 )
 from assets_generator.remote_http import RemoteTransportUnknown
 from assets_generator.remote_protocol import RemoteIdentity
-from assets_generator.model_service_adapters import GenericRemoteCapabilityAdapter
 from assets_generator.remote_service_http import create_remote_server
 from assets_generator.remote_service_store import RemoteServiceStore
 from assets_generator.serialization import canonical_json_bytes, sha256_bytes
@@ -112,9 +112,25 @@ def test_dynamic_artifact_capability_is_validated_and_materializes_operator(desc
 @pytest.mark.parametrize(
     "change",
     [
-        {"inputs": {"prompt": {"kind": "not_a_kind", "schema_name": "x", "schema_version": "1"}}, "outputs": {"image": {"kind": "rgb_image", "schema_name": "x", "schema_version": "1"}}},
-        {"inputs": {"prompt": {"kind": "text", "carrier": "not_a_carrier", "schema_name": "x", "schema_version": "1"}}, "outputs": {"image": {"kind": "rgb_image", "schema_name": "x", "schema_version": "1"}}},
-        {"inputs": {"prompt": {"kind": "text", "schema_name": "x"}}, "outputs": {"image": {"kind": "rgb_image", "schema_name": "x", "schema_version": "1"}}},
+        {
+            "inputs": {"prompt": {"kind": "not_a_kind", "schema_name": "x", "schema_version": "1"}},
+            "outputs": {"image": {"kind": "rgb_image", "schema_name": "x", "schema_version": "1"}},
+        },
+        {
+            "inputs": {
+                "prompt": {
+                    "kind": "text",
+                    "carrier": "not_a_carrier",
+                    "schema_name": "x",
+                    "schema_version": "1",
+                }
+            },
+            "outputs": {"image": {"kind": "rgb_image", "schema_name": "x", "schema_version": "1"}},
+        },
+        {
+            "inputs": {"prompt": {"kind": "text", "schema_name": "x"}},
+            "outputs": {"image": {"kind": "rgb_image", "schema_name": "x", "schema_version": "1"}},
+        },
     ],
 )
 def test_dynamic_capability_rejects_invalid_port_contract(descriptor, change):
@@ -288,8 +304,11 @@ def test_discovered_shape_adapter_keeps_flat_descriptor_wire_contract(descriptor
     )
     payload = adapter.prepare_payload(
         NodeExecutionContext(
-            "run", "shape", {}, {"steps": 12, "quality": "fast"},
-            LocalArtifactStore(tmp_path / "store")
+            "run",
+            "shape",
+            {},
+            {"steps": 12, "quality": "fast"},
+            LocalArtifactStore(tmp_path / "store"),
         )
     )
     assert set(payload) == {"operation", "parameters"}

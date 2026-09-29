@@ -25,9 +25,8 @@ from .model_service_descriptor import (
 )
 from .models import ArtifactRef, StructuredValue
 from .remote_http import RemoteJobClient
-from .remote_protocol import RemoteJob, RemoteOutput
-from .serialization import canonical_json_bytes, sha256_bytes, to_primitive
-from .remote_protocol import RemoteIdentity
+from .remote_protocol import RemoteIdentity, RemoteJob, RemoteOutput
+from .serialization import sha256_bytes, to_primitive
 
 
 class GenericRemoteCapabilityAdapter(RemoteNodeAdapter):
@@ -81,7 +80,7 @@ class GenericRemoteCapabilityAdapter(RemoteNodeAdapter):
 
     def input_blobs(self, context: NodeExecutionContext) -> Mapping[str, ArtifactRef]:
         uploads: dict[str, ArtifactRef] = {}
-        for name, port in self._ports["inputs"].items():
+        for name, _port in self._ports["inputs"].items():
             value = context.inputs.get(name)
             values = value if isinstance(value, list) else [value]
             for index, item in enumerate(values):

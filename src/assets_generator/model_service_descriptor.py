@@ -10,8 +10,8 @@ from typing import Any
 
 from .compiled_plan import thaw
 from .contracts import ContractError, OperatorSpec, PortSpec
-from .models import ARTIFACT_KINDS, STRUCTURED_KINDS
 from .dag_adapters import AdapterSpec, NodeExecutionContext
+from .models import ARTIFACT_KINDS, STRUCTURED_KINDS
 
 try:
     from .dag_remote_shape import RemoteShapeAdapter
@@ -97,16 +97,22 @@ def _validate_port_contracts(value: object, label: str) -> dict[str, dict[str, A
         kinds = raw.get("kinds")
         if kinds is None:
             kinds = [raw.get("kind")]
-        if not isinstance(kinds, list) or not kinds or any(
-            not isinstance(kind, str) or kind not in (ARTIFACT_KINDS | STRUCTURED_KINDS)
-            for kind in kinds
+        if (
+            not isinstance(kinds, list)
+            or not kinds
+            or any(
+                not isinstance(kind, str) or kind not in (ARTIFACT_KINDS | STRUCTURED_KINDS)
+                for kind in kinds
+            )
         ):
             raise ContractError(f"model service {label}.{name} has invalid kind")
         carriers = raw.get("carriers")
         if carriers is None:
             carriers = [raw.get("carrier", "artifact_ref")]
-        if not isinstance(carriers, list) or not carriers or any(
-            carrier not in _CARRIERS for carrier in carriers
+        if (
+            not isinstance(carriers, list)
+            or not carriers
+            or any(carrier not in _CARRIERS for carrier in carriers)
         ):
             raise ContractError(f"model service {label}.{name} has invalid carrier")
         cardinality = raw.get("cardinality", "one")
@@ -129,9 +135,10 @@ def _validate_port_contracts(value: object, label: str) -> dict[str, dict[str, A
         spatial = any(kind in _SPATIAL_KINDS for kind in kinds)
         requires_frame = bool(raw.get("requires_frame", spatial))
         requires_unit = bool(raw.get("requires_unit", spatial))
-        if type(raw.get("requires_frame", requires_frame)) is not bool or type(
-            raw.get("requires_unit", requires_unit)
-        ) is not bool:
+        if (
+            type(raw.get("requires_frame", requires_frame)) is not bool
+            or type(raw.get("requires_unit", requires_unit)) is not bool
+        ):
             raise ContractError(f"model service {label}.{name} frame/unit flags are invalid")
         if spatial and (not raw.get("frame_id") or not raw.get("unit")):
             raise ContractError(f"model service {label}.{name} requires frame_id and unit")
@@ -146,7 +153,11 @@ def _validate_port_contracts(value: object, label: str) -> dict[str, dict[str, A
         }
         for field in ("frame_id", "up_axis", "unit", "media_type"):
             if field in raw:
-                if not isinstance(raw[field], str) or not raw[field].strip() or len(raw[field]) > 128:
+                if (
+                    not isinstance(raw[field], str)
+                    or not raw[field].strip()
+                    or len(raw[field]) > 128
+                ):
                     raise ContractError(f"model service {label}.{name} {field} is invalid")
                 normalized[field] = raw[field]
         result[name] = normalized
@@ -258,7 +269,9 @@ def dynamic_operator_key(capability: dict[str, Any]) -> str:
     capability_id = capability.get("capability_id")
     if not isinstance(capability_id, str) or not capability_id:
         raise ContractError("dynamic capability requires capability_id")
-    suffix = sha256_bytes(canonical_json_bytes({"capability_id": capability_id})).split(":", 1)[1][:24]
+    suffix = sha256_bytes(canonical_json_bytes({"capability_id": capability_id})).split(":", 1)[1][
+        :24
+    ]
     return f"remote_capability_{suffix}"
 
 
