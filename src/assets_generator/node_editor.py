@@ -124,7 +124,7 @@ class DraftEditor:
             raise ContractError("请使用 --store 启用执行服务后添加模型")
         if not isinstance(body, dict) or set(body) != {"endpoint"}:
             raise ContractError("服务检测需要 endpoint")
-        from .model_service_descriptor import DiscoveredShapeAdapter
+        from .model_service_adapters import discovered_service_adapter
 
         detection = self.model_services.detect(body["endpoint"])
         descriptor = detection["descriptor"]
@@ -132,7 +132,7 @@ class DraftEditor:
         for capability in descriptor.get("capabilities", [descriptor]):
             capability_id = capability.get("capability_id", capability["operator"])
             try:
-                DiscoveredShapeAdapter(
+                discovered_service_adapter(
                     detection["endpoint"],
                     descriptor,
                     capability_id if descriptor.get("capabilities") else None,

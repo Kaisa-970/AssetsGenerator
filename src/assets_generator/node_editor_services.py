@@ -82,18 +82,20 @@ class ModelServices:
                 raise ContractError("installed Backend identity mismatch")
 
     def summaries(self) -> list[dict[str, Any]]:
+        from .model_service_descriptor import select_capability
+
         with self.lock:
             return [
                 {
                     "backend": e["backend"],
                     "display_name": e["descriptor"]["display_name"],
-                    "operator": e["descriptor"]["operator"],
+                    "operator": selected["operator"],
                     "endpoint": e["endpoint"],
                     "descriptor_digest": e["descriptor_digest"],
                     "capability_id": e.get("capability_id", e["descriptor"].get("operator")),
-                    "frame_id": e["descriptor"].get("frame_id", "unknown"),
-                    "up_axis": e["descriptor"].get("up_axis", "unknown"),
-                    "unit": e["descriptor"].get("unit", "unknown"),
+                    "frame_id": selected.get("frame_id", "unknown"),
+                    "up_axis": selected.get("up_axis", "unknown"),
+                    "unit": selected.get("unit", "unknown"),
                     **(
                         {
                             "capabilities": [
@@ -109,6 +111,7 @@ class ModelServices:
                     ),
                 }
                 for e in self.entries
+                for selected in [select_capability(e["descriptor"], e.get("capability_id"))]
             ]
 
     @staticmethod
@@ -117,11 +120,11 @@ class ModelServices:
         from .dag_asset_export import AssetExportAdapter
         from .dag_canonicalize import CanonicalizeAdapter
         from .dag_geometry_validation import GeometryValidationAdapter
-        from .model_service_descriptor import DiscoveredShapeAdapter
+        from .model_service_adapters import discovered_service_adapter
 
         registry.register_backend(
             entry["backend"],
-            DiscoveredShapeAdapter(
+            discovered_service_adapter(
                 entry["endpoint"], entry["descriptor"], entry.get("capability_id")
             ),
         )
