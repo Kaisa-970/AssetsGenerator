@@ -4,9 +4,16 @@
 
 ## 当前冻结回归基线
 
-提交 `30736cb` 对应源码已完成一次完整 Playwright 回归：**107 passed / 0 failed**（约 2.2 分钟），命令为 `EDITOR_E2E_PORT=5328 npm --prefix frontend run test:e2e -- --workers=1`。同轮前端单测 **107/107**、生产构建、Ruff 和 mypy（159 个源文件）通过。构建仍有大于 500 kB 的 chunk 提示。
+提交 `a905651` 对应冻结源码完成同轮验证：
 
-本次覆盖默认收起目录、添加节点入口、模板/服务入口及现有浏览器操作回归。浏览器用例包含 mock，不代表最新界面的真实 GPU 全链路验收，也不关闭完整 v2。此前 100/4、98/6、95/3 等数字和“仍需完整复跑”的结论均是历史记录，已由本次回归覆盖。
+- 后端全套：`PYTHONPATH=src <MAIN_CHECKOUT>/.venv/bin/python -m pytest -q`，**1570 passed**（428.93 秒）；一项 Pillow `getdata` 弃用提醒。
+- Playwright 全套：`EDITOR_E2E_PORT=5328 npm --prefix frontend run test:e2e -- --workers=1`，**108 passed / 0 failed**（约 2.4 分钟）。
+- 前端单测 **107/107**、生产构建通过；构建仍有大于 500 kB 的 chunk 提示。
+- 本轮安装资格改动的 Ruff、mypy（159 个源文件）通过。
+
+覆盖默认画布、添加节点入口、服务能力安装资格，以及双 capability 的真实 CPU HTTP 检测、独立安装、离线目录恢复、执行路由、幂等提交和输出导入。检测资格仅是当前适配器可绑定，不保证服务实时可用或模型质量。协议仍只开放 `shape_generation@1 + remote_jobs@1` 的动态执行；其他能力只能查看。
+
+浏览器用例包含 mock，CPU HTTP 使用盒子替身；不代表最新界面的真实 GPU 全链路验收，也不关闭完整 v2。此前 107/0（`30736cb`）、100/4、98/6、95/3 等均为历史基线，当前以本节为准。
 
 ## 输入目录契约驱动修正
 
