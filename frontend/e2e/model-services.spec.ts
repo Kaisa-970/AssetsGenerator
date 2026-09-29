@@ -91,6 +91,7 @@ async function setup(page: Page, fail = false) {
       }
       body = {
         endpoint: service.endpoint,
+        capability_availability: { shape_generation: { installable: true } },
         descriptor,
         descriptor_digest: service.descriptor_digest,
       };
@@ -220,7 +221,8 @@ test("editing the URL invalidates confirmation and a late old detection cannot r
       .fulfill({
         json: {
           endpoint: service.endpoint,
-          descriptor,
+          capability_availability: { shape_generation: { installable: true } },
+        descriptor,
           descriptor_digest: service.descriptor_digest,
         },
       })
@@ -515,4 +517,23 @@ test("fixed deployment fields stay behind details while editable parameters rema
   await expect(page.getByLabel("节点参数 steps", { exact: true })).toHaveValue(
     "19",
   );
+});
+
+test("known port contract does not override backend installation refusal", async ({ page }) => {
+  const { requests } = await setup(page);
+  await page.route("**/api/model-services/detect", route => route.fulfill({ json: {
+    endpoint: service.endpoint,
+    descriptor,
+    descriptor_digest: service.descriptor_digest,
+    capability_availability: { shape_generation: {
+      installable: false, reason: "服务传输协议尚无执行适配器",
+    } },
+  } }));
+  await page.getByLabel("模型服务地址").fill(service.endpoint);
+  await page.getByRole("button", { name: "检测服务", exact: true }).click();
+  const detected = page.getByRole("region", { name: "检测到的模型" });
+  await expect(detected).toContainText("服务传输协议尚无执行适配器");
+  await expect(detected).toContainText("输入：");
+  await expect(detected.getByRole("button", { name: "确认添加模型", exact: true })).toBeDisabled();
+  expect(requests).toEqual([]);
 });

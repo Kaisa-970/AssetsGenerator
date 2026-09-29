@@ -326,3 +326,38 @@ def test_install_each_known_capability_creates_independent_backend(tmp_path, mon
         }
         assert len(execution.engine.registry.backend_catalog()) == 2
         execution.close()
+
+
+@pytest.mark.parametrize(
+    "operator,transport,installable",
+    [
+        ("shape_generation@1", "remote_jobs@1", True),
+        ("text_segmentation@1", "remote_jobs@1", False),
+        ("shape_generation@1", "other@1", False),
+    ],
+)
+def test_detection_reports_executable_adapter_boundary(
+    tmp_path, monkeypatch, operator, transport, installable
+):
+    current = detected()
+    current["descriptor"]["operator"] = operator
+    current["descriptor"]["transport"] = transport
+    current["descriptor"]["capabilities"] = [
+        {
+            key: current["descriptor"][key]
+            for key in ("operator", "transport", "parameter_schema", "defaults")
+        }
+    ]
+    current["descriptor"]["capabilities"][0]["capability_id"] = "selected"
+    monkeypatch.setattr(ModelServices, "detect", lambda *args: current)
+    with DagRepository(LocalArtifactStore(tmp_path / "store"), tmp_path / "runtime") as repo:
+        execution = NodeEditorExecution(DagEngine(repo, AdapterRegistry()))
+        try:
+            editor = DraftEditor(tmp_path / "editor", execution=execution)
+            result = editor.detect_model_service({"endpoint": current["endpoint"]})
+            status = result["capability_availability"]["selected"]
+            assert status["installable"] is installable
+            assert bool(status["reason"]) is not installable
+            assert not editor.model_services.path.exists()
+        finally:
+            execution.close()

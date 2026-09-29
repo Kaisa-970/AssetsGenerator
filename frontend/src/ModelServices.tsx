@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { portKinds, type Catalog, type ServiceCapability } from "./graph";
 
 type Detection = {
+  capability_availability?: Record<string, { installable: boolean; reason?: string | null }>;
   endpoint: string;
   descriptor_digest: string;
   descriptor: {
@@ -187,6 +188,9 @@ export function ModelServices({
                 const operator = capability.operator
                   ? catalog.operators[capability.operator]
                   : undefined;
+                const availability = detection.capability_availability?.[
+                  capability.capability_id || capability.operator || ""
+                ];
                 const schema = capability.parameter_schema as
                   | {
                       properties?: Record<string, { type?: string }>;
@@ -259,8 +263,11 @@ export function ModelServices({
                         ),
                       )}
                     </div>
+                    {!availability?.installable && (
+                      <p role="alert">仅查看，暂不可执行：{availability?.reason || "尚未取得后端安装资格，请重新检测。"}</p>
+                    )}
                     <button
-                      disabled={!operator || !!busy}
+                      disabled={!operator || !availability?.installable || !!busy}
                       onClick={() => {
                         const capabilityId =
                           capability.capability_id || capability.operator;
