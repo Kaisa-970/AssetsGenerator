@@ -592,13 +592,7 @@ footer {
     bottom: 35px;
     width: 240px;
     box-shadow: -5px 0 20px #0001;
-    transform: translateX(210px);
-    transition: transform 0.2s;
     z-index: 5;
-  }
-  .inspector:hover,
-  .inspector:focus-within {
-    transform: none;
   }
   .brand {
     width: auto;
@@ -1087,12 +1081,6 @@ footer {
 @media (max-width: 1000px) {
   .panel-resize-handle {
     display: none;
-  }
-  .workspace.catalog-collapsed {
-    grid-template-columns: minmax(240px, 1fr) 250px;
-  }
-  .workspace.catalog-collapsed.inspector-collapsed {
-    grid-template-columns: minmax(240px, 1fr);
   }
   .workspace-panel-group-locator {
     margin-left: 0;

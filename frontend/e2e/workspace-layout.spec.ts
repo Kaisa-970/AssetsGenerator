@@ -170,3 +170,25 @@ test("selecting a node keeps the advanced panel closed until explicitly opened",
   await page.getByRole("button", { name: "展开属性面板", exact: true }).click();
   await expect(page.locator(".inspector")).toBeVisible();
 });
+
+for (const width of [720, 960]) {
+  test(`opening properties preserves the canvas and shows the whole panel at ${width}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.route("**/api/**", route => route.fulfill({ json:
+      new URL(route.request().url()).pathname === "/api/catalog"
+        ? { operators: {}, adapters: [], templates: [], execution_enabled: false }
+        : { drafts: [] },
+    }));
+    await page.goto("/");
+    const canvas = page.locator(".react-flow");
+    const before = await canvas.boundingBox();
+    await page.getByRole("button", { name: "展开属性面板", exact: true }).click();
+    await page.mouse.move(0, 0);
+    const panel = page.locator("#workspace-inspector");
+    await expect(panel).toBeVisible();
+    await expect.poll(async () => (await panel.boundingBox())!.x + (await panel.boundingBox())!.width).toBeLessThanOrEqual(width);
+    const after = await canvas.boundingBox();
+    expect(after!.width).toBeCloseTo(before!.width, 0);
+    expect(after!.x).toBeCloseTo(before!.x, 0);
+  });
+}
