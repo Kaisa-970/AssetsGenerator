@@ -2,7 +2,7 @@
 
 [2026-09-24 交互收口](reports/editor-usability-20260924.md) · [节点编辑器使用指南](guides/node-editor.md) · [B2 实现状态与剩余项](reports/node-editor-b2-status.md)
 
-[生成结果材质状态](reports/shape-appearance-status.md) · [同一节点切换双真实模型服务](reports/dual-backend-discovery-real.md) · [服务能力发现扩展](../guides/sam3-text-segmentation.md) · [TripoSR 自动执行验收](reports/triposr-auto-work-real.md) · [TripoSR 新入口真实验收](reports/triposr-discovery-real.md) · [第二个真实 Shape 服务选型](reports/second-shape-service-selection.md) · [添加自己的图生 Mesh 模型](guides/add-shape-model-service.md) · [远程 shape 服务实验入口](guides/remote-shape-service.md) · [TRELLIS.2 远程真实 smoke](reports/remote-shape-real-smoke.md) · [五节点资产链真实 smoke](reports/remote-asset-chain-real-smoke.md)
+[生成结果材质状态](reports/shape-appearance-status.md) · [同一节点切换双真实模型服务](reports/dual-backend-discovery-real.md) · [服务能力发现扩展](../guides/sam3-text-segmentation.md) · [SAM3 真实发现验收](reports/sam3-discovery-real-20260929.md) · [TripoSR 自动执行验收](reports/triposr-auto-work-real.md) · [TripoSR 新入口真实验收](reports/triposr-discovery-real.md) · [第二个真实 Shape 服务选型](reports/second-shape-service-selection.md) · [添加自己的图生 Mesh 模型](guides/add-shape-model-service.md) · [远程 shape 服务实验入口](guides/remote-shape-service.md) · [TRELLIS.2 远程真实 smoke](reports/remote-shape-real-smoke.md) · [五节点资产链真实 smoke](reports/remote-asset-chain-real-smoke.md)
 
 ## 产品与交互 · product
 
