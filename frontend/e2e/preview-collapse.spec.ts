@@ -74,6 +74,7 @@ test("preview can collapse to select every node at 1280x720 without remounting",
     exact: true,
   });
   await expect(expand).toHaveAttribute("aria-expanded", "false");
+  await page.getByRole("button", { name: "收起节点目录", exact: true }).click();
   for (const id of ["input:image", "third", "second", "first"]) {
     await page.getByRole("button", { name: "Fit View", exact: true }).click();
     await page.getByRole("button", { name: "Zoom Out", exact: true }).click();

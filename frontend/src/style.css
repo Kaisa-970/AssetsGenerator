@@ -1026,6 +1026,32 @@ footer {
 .workspace.catalog-collapsed.inspector-collapsed {
   grid-template-columns: minmax(300px, 1fr);
 }
+.workspace,
+.workspace.catalog-collapsed,
+.workspace.inspector-collapsed,
+.workspace.catalog-collapsed.inspector-collapsed {
+  /* The canvas owns the workspace. Side panels float above it when opened so
+     opening a panel never shrinks the pipeline viewport. */
+  grid-template-columns: minmax(0, 1fr);
+}
+.workspace > .catalog,
+.workspace > .inspector {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 10;
+  box-shadow: 0 8px 24px #1b30401f;
+}
+.workspace > .catalog {
+  left: 0;
+  width: min(300px, 28vw);
+  border-right: 1px solid #c8d6df;
+}
+.workspace > .inspector {
+  right: 0;
+  width: var(--inspector-width, 280px);
+  border-left: 1px solid #c8d6df;
+}
 .workspace > aside[hidden] {
   display: none;
 }
@@ -1046,9 +1072,12 @@ footer {
   top: 0;
   bottom: 0;
   width: 8px;
-  z-index: 8;
+  z-index: 11;
   cursor: col-resize;
   touch-action: none;
+}
+.workspace:has(> .inspector[hidden]) .panel-resize-handle {
+  display: none;
 }
 .panel-resize-handle:hover,
 .panel-resize-handle:focus-visible {

@@ -35,7 +35,9 @@ for (const size of [
     const canvas = (await page.locator(".canvas").boundingBox())!;
     const inspector = (await page.locator(".inspector").boundingBox())!;
     expect(canvas.width).toBeGreaterThanOrEqual(300);
-    expect(canvas.x + canvas.width).toBeLessThanOrEqual(inspector.x + 1);
+    // Side panels are overlays; opening Details must not shrink the canvas.
+    expect(canvas.width).toBeGreaterThanOrEqual(size.width - 2);
+    expect(inspector.x + inspector.width).toBeGreaterThanOrEqual(size.width - 1);
     expect(inspector.x + inspector.width).toBeLessThanOrEqual(size.width);
     await expect(
       page.getByRole("button", { name: "运行记录与诊断", exact: true }),
