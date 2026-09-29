@@ -1287,7 +1287,7 @@ export function ExecutionPanel({
             />
             只运行到选中节点（包含必要上游）
           </label>
-          {!runToSelection && (
+          {!runToSelection && selectedNode && pipeline.nodes[selectedNode] && (
             <section
               className="selected-execution-context"
               aria-label="所选节点执行动作"
