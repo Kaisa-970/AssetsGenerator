@@ -84,8 +84,10 @@ service = ShapeModelService(
 ```
 
 首版要求这些能力共享服务级输出 `frame_id`、`up_axis` 和 `unit`，因为回调输出的
-GLB provenance 使用同一套坐标声明。不同坐标输出请拆成两个服务地址；未知 Operator
-仍只能检测和查看，不能直接进入标准发布链。
+GLB provenance 使用同一套坐标声明。不同坐标输出请拆成两个服务地址。通用执行资格
+由可验证的输入输出 Artifact 契约和 `remote_jobs@1` 传输协议决定，不要求 Core 预先
+认识该 Operator；已知语义 Operator 才能额外获得专用 QA、canonicalize 和标准发布
+链校验。无法验证契约的声明会被拒绝，而不是作为可执行节点安装。
 
 `infer` 收到经过验证的 RGBA 文件路径和按 schema 规范化的参数，必须同步返回自包含 GLB 字节。纹理应内嵌，保留顶点颜色或已有材质；不要返回外部纹理 URL。原生坐标和单位必须如实填写，不能假定所有模型都输出 Y-up 或米。默认材质摘要不替换 GLB 内的真实外观。
 
