@@ -63,6 +63,7 @@ def graph(backend):
                 "carriers": ["artifact_ref"],
                 "schema_name": "plain_text",
                 "schema_version": "1.0",
+                "media_type": "text/plain",
             },
         },
         "nodes": {
@@ -130,7 +131,11 @@ def test_payload_keeps_existing_sam3_wire_and_text_artifact(tmp_path):
     adapter = discovered_service_adapter("http://127.0.0.1:8773", descriptor(), "segment")
     store = LocalArtifactStore(tmp_path)
     text = store.persist_bytes(
-        b"chair", kind="text", schema_name="plain_text", schema_version="1.0"
+        b"chair",
+        kind="text",
+        schema_name="plain_text",
+        schema_version="1.0",
+        identity_metadata={"media_type": "text/plain"},
     )
     context = NodeExecutionContext(
         "run", "segment", {"text": text}, adapter.spec.normalize_parameters({}), store

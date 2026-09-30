@@ -1,7 +1,7 @@
-"""Closed service discovery for the existing image-to-mesh Operator contract.
+"""Validate service declarations and materialize constrained dynamic contracts.
 
-Service descriptions are data, never executable adapter or port definitions.
-The OperatorSpec remains authoritative for all inputs and outputs.
+Descriptors are data, never executable code. Validated declarations become an
+OperatorSpec, the authority for ports and locally implemented input relations.
 """
 
 from __future__ import annotations
@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from .compiled_plan import thaw
-from .contracts import ContractError, OperatorSpec, PortSpec
+from .contracts import ContractError, OperatorSpec, PortSpec, RelationSpec
 from .dag_adapters import AdapterSpec, NodeExecutionContext
 from .models import ARTIFACT_KINDS, STRUCTURED_KINDS
 
@@ -56,6 +56,7 @@ _CAPABILITY_FIELDS = {
     "outputs",
     "request_protocol",
     "result_protocol",
+    "relations",
 }
 
 _PORT_FIELDS = {
@@ -134,6 +135,13 @@ def _validate_port_contracts(value: object, label: str) -> dict[str, dict[str, A
             or any(ord(char) < 33 or ord(char) > 126 for char in media_type)
         ):
             raise ContractError(f"model service {label}.{name} has invalid media_type")
+        if "text" in kinds:
+            if (schema_name, schema_version) != ("plain_text", "1.0"):
+                raise ContractError(f"model service {label}.{name} text requires plain_text@1.0")
+            if "artifact_ref" in carriers and media_type != "text/plain":
+                raise ContractError(
+                    f"model service {label}.{name} text requires text/plain media_type"
+                )
         spatial = any(kind in _SPATIAL_KINDS for kind in kinds)
         requires_frame = bool(raw.get("requires_frame", spatial))
         requires_unit = bool(raw.get("requires_unit", spatial))
@@ -167,12 +175,7 @@ def _validate_port_contracts(value: object, label: str) -> dict[str, dict[str, A
 
 
 def _validate_capability(value: object, index: int) -> dict[str, Any]:
-    """Validate one advertised capability without making it executable.
-
-    The service may advertise capabilities that this Core does not know yet. We
-    therefore validate only the wire shape here; the adapter registry decides
-    whether a capability can be executed.
-    """
+    """Validate advertised contracts independently of model or Operator names."""
     if not isinstance(value, dict):
         raise ContractError(f"model service capability {index} must be an object")
     unknown = set(value) - _CAPABILITY_FIELDS
@@ -236,11 +239,29 @@ def _validate_capability(value: object, index: int) -> dict[str, Any]:
             if not isinstance(metadata, str) or not metadata.strip() or len(metadata) > 128:
                 raise ContractError(f"model service capability {field} is invalid")
     normalized = {"capability_id": capability_id, "operator": operator, **dict(value)}
+    if "relations" in value and not has_ports:
+        raise ContractError("capability relations require dynamic ports")
     if has_ports:
         normalized["inputs"] = inputs
         normalized["outputs"] = outputs
         normalized.setdefault("request_protocol", "remote_jobs@1")
         normalized.setdefault("result_protocol", "remote_jobs@1")
+        if "relations" in value:
+            raw_relations = value["relations"]
+            if not isinstance(raw_relations, list) or len(raw_relations) > 32:
+                raise ContractError("capability relations must be a bounded list")
+            for relation in raw_relations:
+                if not isinstance(relation, dict) or set(relation) != {"validator", "inputs"}:
+                    raise ContractError("capability relation requires validator and inputs")
+                RelationSpec(relation["validator"], relation["inputs"])
+            # Declarations only reference locally implemented validators; they
+            # never install executable validation code from the service.
+            from .relations import default_relation_registry
+
+            default_relation_registry().validate_static(
+                dynamic_operator_spec(normalized),
+                {name: f"pipeline.inputs.{name}" for name in inputs},
+            )
         normalized["operator"] = dynamic_operator_key(normalized)
     return normalized
 
@@ -271,6 +292,10 @@ def dynamic_operator_spec(capability: dict[str, Any]) -> OperatorSpec:
         version="1",
         inputs={name: port(raw) for name, raw in capability["inputs"].items()},
         outputs={name: port(raw) for name, raw in capability["outputs"].items()},
+        relations=tuple(
+            RelationSpec(item["validator"], item["inputs"])
+            for item in capability.get("relations", [])
+        ),
     )
 
 
@@ -292,8 +317,8 @@ def validate_descriptor(raw: object) -> dict[str, Any]:
     remains accepted byte-for-byte.  A descriptor may now instead provide a
     ``capabilities`` list; the first capability is mirrored into the legacy
     fields so existing registry and UI code can continue to consume known
-    ``shape_generation@1`` services. Unknown capabilities remain inspectable,
-    but are not executable until an OperatorSpec/adapter exists.
+    ``shape_generation@1`` services. Dynamic port declarations materialize an
+    OperatorSpec and execute through the generic remote adapter.
     """
     if isinstance(raw, dict) and "capabilities" in raw:
         base_fields = {

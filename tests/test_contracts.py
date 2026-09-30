@@ -129,6 +129,46 @@ def test_exact_kind_matching_rejects_implicit_conversion(tmp_path) -> None:
         validate_operator_inputs(spec, {"image": image}, store)
 
 
+def test_port_validation_checks_media_type_for_single_and_collection(tmp_path) -> None:
+    store = LocalArtifactStore(tmp_path / "store")
+    image = store.persist_bytes(
+        b"image",
+        kind="rgb_image",
+        schema_name="png",
+        schema_version="1.0",
+        identity_metadata={"media_type": "image/jpeg"},
+    )
+    spec = PortSpec(("rgb_image",), media_type="image/png")
+    with pytest.raises(ContractError, match="rejects media type"):
+        validate_port_value(
+            operator="consumer", port_name="image", spec=spec, value=image, store=store
+        )
+    collection = PortSpec(("rgb_image",), cardinality="one_or_more", media_type="image/png")
+    with pytest.raises(ContractError, match="rejects media type"):
+        validate_port_value(
+            operator="consumer", port_name="images", spec=collection, value=[image], store=store
+        )
+
+
+def test_pipeline_compile_rejects_media_type_mismatch() -> None:
+    specs = {
+        "consumer@1": OperatorSpec(
+            "consumer",
+            "1",
+            {"image": PortSpec(("rgb_image",), media_type="image/jpeg")},
+            {},
+        )
+    }
+    pipeline = PipelineDefinition(
+        "media",
+        "1",
+        {"image": PortSpec(("rgb_image",), media_type="image/png")},
+        {"consumer": {"operator": "consumer@1", "inputs": {"image": "pipeline.inputs.image"}}},
+    )
+    with pytest.raises(ContractError, match="media type mismatch"):
+        compile_pipeline(pipeline, specs)
+
+
 def test_port_validation_rejects_tampered_artifact_blob(tmp_path) -> None:
     store = LocalArtifactStore(tmp_path / "store")
     image = store.persist_bytes(

@@ -259,8 +259,8 @@ def create_editor_server(
     editor: DraftEditor, port: int = 8767, *, host: str = "127.0.0.1"
 ) -> ThreadingHTTPServer:
     address = ipaddress.IPv4Address(host)
-    if address.is_unspecified or address.is_multicast:
-        raise ValueError("Use a specific local IPv4 address, not a wildcard or multicast address")
+    if address.is_multicast:
+        raise ValueError("Use a unicast IPv4 address or 0.0.0.0")
     bind_host = str(address)
 
     class Handler(BaseHTTPRequestHandler):
@@ -283,6 +283,11 @@ def create_editor_server(
                 f"127.0.0.1:{cast(ThreadingHTTPServer, self.server).server_port}",
                 f"localhost:{cast(ThreadingHTTPServer, self.server).server_port}",
             }
+            if address.is_unspecified:
+                # Use the accepted socket's local destination, never a client-
+                # supplied hostname, when listening on every interface.
+                local_address, local_port = self.connection.getsockname()[:2]
+                allowed.add(f"{local_address}:{local_port}")
             if host not in allowed:
                 return False
             return not mutation or self.headers.get("Origin") in {None, f"http://{host}"}

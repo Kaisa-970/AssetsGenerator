@@ -124,7 +124,7 @@ class ModelServices:
 
     @staticmethod
     def register(registry: AdapterRegistry, entry: dict[str, Any]) -> list[Any]:
-        from .dag_asset_assembly import ShapeAssetAssemblyAdapter
+        from .dag_asset_assembly import MaskedShapeAssetAssemblyAdapter, ShapeAssetAssemblyAdapter
         from .dag_asset_export import AssetExportAdapter
         from .dag_canonicalize import CanonicalizeAdapter
         from .dag_geometry_validation import GeometryValidationAdapter
@@ -144,6 +144,7 @@ class ModelServices:
             CanonicalizeAdapter(),
             GeometryValidationAdapter(),
             ShapeAssetAssemblyAdapter(),
+            MaskedShapeAssetAssemblyAdapter(),
             AssetExportAdapter(),
         ):
             if adapter.spec.key not in existing:

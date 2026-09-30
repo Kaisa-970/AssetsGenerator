@@ -729,7 +729,7 @@ class NodeEditorExecution:
                 kind="text",
                 schema_name="plain_text",
                 schema_version="1.0",
-                identity_metadata={"media_type": "text/plain; charset=utf-8"},
+                identity_metadata={"media_type": "text/plain"},
             )
         return {"text_ref": to_primitive(ref)}
 

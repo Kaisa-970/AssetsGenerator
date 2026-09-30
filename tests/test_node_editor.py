@@ -632,10 +632,11 @@ def test_catalog_reports_template_readiness_without_claiming_runtime_health(tmp_
     assert template["service_status"] is None
 
 
-def test_explicit_listen_address_preserves_host_and_origin_checks(tmp_path):
+@pytest.mark.parametrize("listen_host", ["127.0.0.2", "0.0.0.0"])
+def test_explicit_listen_address_preserves_host_and_origin_checks(tmp_path, listen_host):
     import http.client
 
-    server = create_editor_server(fixture(tmp_path), 0, host="127.0.0.2")
+    server = create_editor_server(fixture(tmp_path), 0, host=listen_host)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     host = f"127.0.0.2:{server.server_port}"
@@ -658,5 +659,5 @@ def test_explicit_listen_address_preserves_host_and_origin_checks(tmp_path):
         server.shutdown()
         server.server_close()
         thread.join()
-    with pytest.raises(ValueError, match="specific"):
-        create_editor_server(fixture(tmp_path), 0, host="0.0.0.0")
+    with pytest.raises(ValueError, match="unicast"):
+        create_editor_server(fixture(tmp_path), 0, host="224.0.0.1")

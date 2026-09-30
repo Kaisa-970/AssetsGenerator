@@ -250,6 +250,10 @@ def discovered_service_adapter(
     selected = select_capability(checked, capability_id)
     if "inputs" in selected and "outputs" in selected:
         return GenericRemoteCapabilityAdapter(endpoint, checked, capability_id)
+    if selected["operator"] == "masked_shape_generation@1":
+        from .sam3d_discovery import discovered_sam3d_adapter
+
+        return discovered_sam3d_adapter(endpoint, checked, capability_id)
     if selected["operator"] == "shape_generation@1":
         return DiscoveredShapeAdapter(endpoint, checked, capability_id)
     if selected["operator"] == "text_segmentation@2":

@@ -2,7 +2,7 @@ pipeline: sam3_text_auto_extract_v1
 version: 1
 inputs:
   image: {kind: rgb_image, carriers: [artifact_ref]}
-  text: {kind: text, carriers: [artifact_ref], schema_name: plain_text, schema_version: "1.0"}
+  text: {kind: text, carriers: [artifact_ref], schema_name: plain_text, schema_version: "1.0", media_type: text/plain}
 nodes:
   segment:
     operator: text_segmentation@2

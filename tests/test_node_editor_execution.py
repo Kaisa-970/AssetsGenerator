@@ -222,7 +222,7 @@ def test_foreign_directory_cannot_read_mutate_or_export(tmp_path):
             first.close()
 
 
-def test_renamed_input_compiles_but_cannot_start(tmp_path):
+def test_renamed_generic_input_compiles_and_starts(tmp_path):
     from assets_generator.node_editor import DraftEditor
 
     store, _, profile = fixture_engine(tmp_path)
@@ -237,12 +237,9 @@ def test_renamed_input_compiles_but_cannot_start(tmp_path):
             graph["nodes"]["candidates"]["inputs"]["image"] = "pipeline.inputs.photo"
             result = editor.compile(graph)
             assert result["ok"] and result["bound_plan"]
-            assert not result["execution_ready"]
-            assert "named image" in result["execution_reason"]
-            with pytest.raises(ContractError) as caught:
-                service.start(graph, "/must-not-read.png")
-            assert str(caught.value) == result["execution_reason"]
-            assert service.list_runs() == []
+            assert result["execution_ready"]
+            started = service.start(graph, str(tmp_path / "fixture/scene.png"))
+            assert started["run"]["status"] in {"pending", "running"}
         finally:
             service.close()
 

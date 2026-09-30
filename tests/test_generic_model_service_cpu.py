@@ -41,13 +41,6 @@ def serve(directory, port=0):
 
 def test_discover_dynamic_text_to_image_resize_and_recover_offline(tmp_path):
     store = LocalArtifactStore(tmp_path / "store")
-    text = store.persist_bytes(
-        b"chair",
-        kind="text",
-        schema_name="plain_text",
-        schema_version="1.0",
-        identity_metadata={"media_type": "text/plain"},
-    )
     with serve(tmp_path / "service") as service:
         port = service.server.server_port
         registry = AdapterRegistry()
@@ -55,6 +48,15 @@ def test_discover_dynamic_text_to_image_resize_and_recover_offline(tmp_path):
         with DagRepository(store, tmp_path / "runtime") as repo:
             engine = DagEngine(repo, registry)
             execution = NodeEditorExecution(engine)
+            from assets_generator.models import ArtifactRef
+
+            # Same import path as the editor's Apply text action, not a fixture
+            # that manually supplies a media type matching the service.
+            text = ArtifactRef(**execution.upload_text(b"chair")["text_ref"])
+            assert (
+                store.get_manifest(text.artifact_id).identity.identity_metadata["media_type"]
+                == "text/plain"
+            )
             try:
                 editor = DraftEditor(tmp_path / "editor", execution=execution)
                 detected = editor.detect_model_service({"endpoint": service.endpoint})
@@ -77,6 +79,7 @@ def test_discover_dynamic_text_to_image_resize_and_recover_offline(tmp_path):
                             "carriers": ["artifact_ref"],
                             "schema_name": "plain_text",
                             "schema_version": "1.0",
+                            "media_type": "text/plain",
                         }
                     },
                     "nodes": {
@@ -131,6 +134,27 @@ def test_discover_dynamic_text_to_image_resize_and_recover_offline(tmp_path):
                 assert generated != resized
                 assert service.execute_next() is None
                 assert len(service.store.list_jobs()["jobs"]) == 1
+                import json
+                from copy import deepcopy
+
+                from assets_generator.models import ArtifactRef
+
+                snapshot = ArtifactRef(
+                    **json.loads((store.root / "runs" / f"{completed.run_id}.json").read_text())
+                )
+                changed = deepcopy(graph)
+                changed["nodes"]["resize"]["parameters"]["width"] = 4
+                bound = BoundDagPlan.from_dict(
+                    restored_editor.compile(changed)["bound_plan"], registry=engine.registry
+                )
+                reused = engine.drain(
+                    engine.create(bound, {"prompt": text}, reuse_source=snapshot).run_id
+                )
+                assert reused.status == "succeeded"
+                assert reused.dag.node_states["generate"].current().reused_from == snapshot
+                assert reused.dag.node_states["resize"].current().reused_from is None
+                assert len(service.store.list_jobs()["jobs"]) == 1
+                assert engine.recover(reused.run_id).status == "succeeded"
                 request = binding.request()
                 assert RemoteJobClient(service.endpoint).lookup(request).state == "succeeded"
                 repo.verify_reference_closure(

@@ -138,6 +138,12 @@ def validate_port_value(
             raise ContractError(f"{prefix} rejects schema {descriptor.schema_name}")
         if spec.schema_version is not None and descriptor.schema_version != spec.schema_version:
             raise ContractError(f"{prefix} rejects schema version {descriptor.schema_version}")
+        if spec.media_type is not None:
+            actual_media = descriptor.identity_metadata.get("media_type")
+            if actual_media != spec.media_type:
+                raise ContractError(
+                    f"{prefix} rejects media type {actual_media!r}; expected {spec.media_type!r}"
+                )
         if spec.requires_frame and not descriptor.identity_metadata.get("frame_id"):
             raise ContractError(f"{prefix} requires frame_id")
         if spec.requires_unit and not descriptor.identity_metadata.get("unit"):

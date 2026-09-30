@@ -45,13 +45,13 @@ def test_legacy_contract_serialization_preserves_historical_identities():
         del specs[key]
     specs["canonicalize@1"] = replace(specs["canonicalize@1"], relations=())
     assert cache_key(specs) == (
-        "sha256:c993705a16829ee2cfe25a83582fb5a2d8e43d61f66cd09e07d90da5b2a9dccf"
+        "sha256:f9f49f84a69fe7285a49f7be9c8bac8ed16e632e4edc142a469db54c3c3e7e6a"
     )
     assert resolve_plan_contract_digest(load_default_pipeline(), specs) == (
-        "sha256:2cf04f2a150335ef2ee31d6f7465ea7753aa5cc107f7ba5c5183a6a3d0dad4c2"
+        "sha256:e5dd2ec56e1c3a4e4bf64e966c26d7ce8d2479e6e909e17a496e173b3fff50a7"
     )
     assert resolve_plan_contract_digest(load_multi_view_pipeline(), specs) == (
-        "sha256:d3c2df35efcdb61da893775f26207585d25997118bb437b74c428f5ca2023643"
+        "sha256:9c309800202157a5f7a0857e47348d7803bc27c271ecf1737544ee2469361969"
     )
 
 

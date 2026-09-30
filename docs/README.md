@@ -15,6 +15,8 @@
 - [继续提取与阻塞操作提示](reports/node-editor-continuation-actions.md)
 - [A/B 输出比较首片](reports/node-editor-output-comparison.md)
 
+- [Qwen Image 2.1 动态文生图／图生图服务](guides/qwen-image-service.md) · [真实接入验收](reports/qwen-generic-real-20260929.md)
+
 ## 架构与契约 · design
 
 - [SAM3 文字遮罩接入首版](guides/sam3-text-segmentation.md)

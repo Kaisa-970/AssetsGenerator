@@ -105,6 +105,10 @@ HTTP/协议合跑最终 26 项通过；相关 Ruff、mypy（89 源码文件）�
 
 ## 结果下载传输边界
 
+动态能力的端口契约中，`media_type` 是编译和运行时的强约束。目标端口声明媒体类型时，来源端口必须声明相同值；运行时还会逐个核对实际 Artifact 的 `identity_metadata.media_type`，包括数组输入。服务声明 `text` 时，首版只接受 `plain_text@1.0` 与 `text/plain`，避免声明能够执行但没有内容验证器的文本格式。
+
+结构化输出必须使用 Core 已知的结构化 kind，并按 JSON 内容验证；未注册内容验证器的 kind 应在 descriptor 校验阶段拒绝。媒体类型只描述传输格式，不等同于 mesh、图像或其他媒体内容已经通过语义质量检查；进入标准几何和发布链仍需对应的格式验证器。
+
 成功 JobRecord 的首版结果格式为 `{"outputs": [{"output_id": "mesh", "blob_digest": "sha256:…", "byte_length": 123, "media_type": "model/gltf-binary"}]}`。描述符严格拒绝未知字段、重复 ID、非法标识和摘要；不允许服务提供任意 URL。GET `/v1/jobs/<job_id>/outputs/<output_id>` 返回原始字节；继续禁止 HTTP 重定向。
 
 `RemoteJobClient.download()` 查询并核对请求/job 身份和成功状态，解析所有描述符，先检查配置上限，再最多读取声明长度加一字节；媒体类型、实际长度、SHA256 全部匹配才返回 bytes。默认单输出上限 128 MiB，可由受信调用方收紧。非终态、未知输出、任意 URL 字段或重复 ID 均在下载前拒绝。
@@ -406,3 +410,19 @@ CPU 子进程，等待 Backend 开始后 SIGKILL 执行器，并重新打开服�
 
 与编辑器 HTTP 发布/放弃重试回归合跑 6 项通过。这里使用 CPU fixture，不替代
 真实模型父 DAG 故障后重试全链；真实执行器门控证据见上节报告。
+
+### 动态能力的多输入关系（2026-09-29）
+
+`remote_jobs@1` 的动态 capability 可以声明 `relations`，每项包含
+`validator`（本地已注册的版本化名称）及 `inputs`（端口名数组）。例如图生图：
+
+```json
+{"relations": [{"validator": "independent_inputs@1", "inputs": ["prompt", "source_image"]}]}
+```
+
+该声明进入动态 OperatorSpec 和能力身份摘要。检测时校验 validator 是否存在、
+端口是否有效及关系静态条件；执行时继续使用 DAG 原有关系校验。
+未声明关系的多输入节点仍不能通过严格汇合编译，不自动假定来源或坐标一致。
+`independent_inputs@1` 表示算子允许这些输入来自不同来源，不证明共享 observation、
+frame 或 lineage；需要这些约束的能力必须引用对应关系校验器，不能借独立输入声明
+替代空间或发布节点自身要求的证据校验。服务不能上传可执行 validator 代码。

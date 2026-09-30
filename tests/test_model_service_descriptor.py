@@ -151,6 +151,41 @@ def test_dynamic_capability_rejects_invalid_port_contract(descriptor, change):
         validate_descriptor(base)
 
 
+def test_dynamic_text_requires_supported_plain_text_schema(descriptor):
+    base = {
+        key: descriptor[key]
+        for key in ("schema_version", "display_name", "service_id", "backend_digest")
+    }
+    base["capabilities"] = [
+        {
+            "capability_id": "bad_text",
+            "transport": "remote_jobs@1",
+            "parameter_schema": {"type": "object", "properties": {}},
+            "defaults": {},
+            "inputs": {
+                "prompt": {
+                    "kind": "text",
+                    "carrier": "artifact_ref",
+                    "schema_name": "caption",
+                    "schema_version": "1.0",
+                    "media_type": "text/plain",
+                }
+            },
+            "outputs": {
+                "image": {
+                    "kind": "rgb_image",
+                    "carrier": "artifact_ref",
+                    "schema_name": "png",
+                    "schema_version": "1.0",
+                    "media_type": "image/png",
+                }
+            },
+        }
+    ]
+    with pytest.raises(ContractError, match="text requires plain_text@1.0"):
+        validate_descriptor(base)
+
+
 def test_dynamic_capability_rejects_multi_kind_or_carrier_ports(descriptor):
     base = {
         key: descriptor[key]
@@ -549,3 +584,59 @@ def test_cli_serve_discovers_verified_profile_frame(tmp_path, monkeypatch, backe
     else:
         with pytest.raises(ContractError):
             adapter.spec.normalize_parameters({"seed": 7})
+
+
+def test_dynamic_dual_input_relations_are_explicit_and_pinned(descriptor):
+    from assets_generator.relations import default_relation_registry
+
+    raw = {
+        key: descriptor[key]
+        for key in ("schema_version", "display_name", "service_id", "backend_digest")
+    }
+    port = {
+        "kind": "rgb_image",
+        "carrier": "artifact_ref",
+        "schema_name": "png",
+        "schema_version": "1.0",
+        "media_type": "image/png",
+    }
+    capability = {
+        "capability_id": "edit_image",
+        "transport": "remote_jobs@1",
+        "parameter_schema": {"type": "object", "properties": {}},
+        "defaults": {},
+        "inputs": {
+            "source": port,
+            "prompt": {
+                "kind": "text",
+                "carrier": "artifact_ref",
+                "schema_name": "plain_text",
+                "schema_version": "1.0",
+                "media_type": "text/plain",
+            },
+        },
+        "outputs": {"image": port},
+    }
+    raw["capabilities"] = [capability]
+    registry = default_relation_registry()
+    bindings = {"source": "pipeline.inputs.source", "prompt": "pipeline.inputs.prompt"}
+    before = dynamic_operator_spec(validate_descriptor(raw)["capabilities"][0])
+    with pytest.raises(ContractError, match="explicit relation"):
+        registry.validate_static(before, bindings, require_explicit_joins=True)
+    capability["relations"] = [
+        {"validator": "independent_inputs@1", "inputs": ["source", "prompt"]}
+    ]
+    checked = validate_descriptor(raw)
+    after = dynamic_operator_spec(checked["capabilities"][0])
+    assert after.name != before.name
+    assert validate_descriptor(checked) == checked
+    assert registry.validate_static(after, bindings, require_explicit_joins=True)
+    for relation, message in [
+        ({"validator": "untrusted@1", "inputs": ["source", "prompt"]}, "unknown relation"),
+        ({"validator": "independent_inputs@1", "inputs": ["missing", "prompt"]}, "unknown inputs"),
+        ({"validator": "independent_inputs@1", "inputs": ["source", "source"]}, "duplicate inputs"),
+        ({"validator": "independent_inputs@1", "inputs": "source"}, "sequence"),
+    ]:
+        capability["relations"] = [relation]
+        with pytest.raises(ContractError, match=message):
+            validate_descriptor(raw)

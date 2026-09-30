@@ -228,6 +228,8 @@ def compile_pipeline(
                 and source_spec.schema_version != port.schema_version
             ):
                 raise ContractError(f"{node_id}.{port_name} schema version mismatch")
+            if port.media_type is not None and source_spec.media_type != port.media_type:
+                raise ContractError(f"{node_id}.{port_name} media type mismatch")
         for output_name, output in operator.outputs.items():
             available[f"{node_id}.outputs.{output_name}"] = effective_output_spec(output)
 
