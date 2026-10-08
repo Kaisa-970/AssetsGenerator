@@ -43,6 +43,8 @@ def _port_spec(raw: dict[str, Any]) -> PortSpec:
         raw.get("requires_unit", False),
         raw.get("persist", False),
         raw.get("media_type"),
+        raw.get("frame_id"),
+        raw.get("unit"),
     )
 
 
@@ -215,8 +217,12 @@ def compile_pipeline(
                 raise ContractError(f"{node_id}.{port_name} cardinality mismatch")
             if port.requires_frame and not source_spec.requires_frame:
                 raise ContractError(f"{node_id}.{port_name} source does not guarantee frame")
+            if port.frame_id is not None and source_spec.frame_id != port.frame_id:
+                raise ContractError(f"{node_id}.{port_name} frame_id mismatch")
             if port.requires_unit and not source_spec.requires_unit:
                 raise ContractError(f"{node_id}.{port_name} source does not guarantee unit")
+            if port.unit is not None and source_spec.unit != port.unit:
+                raise ContractError(f"{node_id}.{port_name} unit mismatch")
             if not set(source_spec.kinds) <= set(port.kinds):
                 raise ContractError(f"{node_id}.{port_name} kind mismatch")
             if not set(source_spec.carriers) <= set(port.carriers):

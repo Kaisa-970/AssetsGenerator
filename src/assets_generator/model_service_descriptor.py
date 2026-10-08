@@ -11,6 +11,7 @@ from typing import Any
 from .compiled_plan import thaw
 from .contracts import ContractError, OperatorSpec, PortSpec, RelationSpec
 from .dag_adapters import AdapterSpec, NodeExecutionContext
+from .generic_artifact_content import validate_output_contract
 from .models import ARTIFACT_KINDS, STRUCTURED_KINDS
 
 try:
@@ -135,6 +136,13 @@ def _validate_port_contracts(value: object, label: str) -> dict[str, dict[str, A
             or any(ord(char) < 33 or ord(char) > 126 for char in media_type)
         ):
             raise ContractError(f"model service {label}.{name} has invalid media_type")
+        if len(carriers) == 1 and "structured" in carriers and media_type not in (
+            None,
+            "application/json",
+        ):
+            raise ContractError(
+                f"model service {label}.{name} structured media_type must be application/json"
+            )
         if "text" in kinds:
             if (schema_name, schema_version) != ("plain_text", "1.0"):
                 raise ContractError(f"model service {label}.{name} text requires plain_text@1.0")
@@ -152,6 +160,8 @@ def _validate_port_contracts(value: object, label: str) -> dict[str, dict[str, A
             raise ContractError(f"model service {label}.{name} frame/unit flags are invalid")
         if spatial and (not raw.get("frame_id") or not raw.get("unit")):
             raise ContractError(f"model service {label}.{name} requires frame_id and unit")
+        if spatial and (not requires_frame or not requires_unit):
+            raise ContractError(f"model service {label}.{name} cannot disable spatial requirements")
         normalized = {
             "kinds": list(dict.fromkeys(kinds)),
             "carriers": list(dict.fromkeys(carriers)),
@@ -233,6 +243,20 @@ def _validate_capability(value: object, index: int) -> dict[str, Any]:
                     raise ContractError(
                         f"dynamic capability {label}.{name} must declare one kind and carrier"
                     )
+                if port["carriers"][0] == "structured" and port.get("media_type") not in (
+                    None,
+                    "application/json",
+                ):
+                    raise ContractError(
+                        f"model service {label}.{name} structured media_type must be "
+                        "application/json"
+                    )
+        for name, port in outputs.items():
+            validate_output_contract(port)
+            if port["cardinality"] != "one":
+                raise ContractError(
+                    f"dynamic capability outputs.{name} currently requires cardinality one"
+                )
     for field in ("frame_id", "up_axis", "unit"):
         if field in value:
             metadata = value[field]
@@ -282,6 +306,8 @@ def dynamic_operator_spec(capability: dict[str, Any]) -> OperatorSpec:
             raw["requires_unit"],
             False,
             raw.get("media_type"),
+            raw.get("frame_id"),
+            raw.get("unit"),
         )
 
     # Operator identity is capability scoped. Backend identity remains in the

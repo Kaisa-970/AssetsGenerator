@@ -28,6 +28,8 @@ class PortSpec:
     requires_unit: bool = False
     persist: bool = False
     media_type: str | None = None
+    frame_id: str | None = field(default=None, metadata={"omit_none": True})
+    unit: str | None = field(default=None, metadata={"omit_none": True})
 
     def __post_init__(self) -> None:
         if self.cardinality not in _CARDINALITIES:
@@ -41,6 +43,13 @@ class PortSpec:
             not isinstance(self.media_type, str) or "/" not in self.media_type
         ):
             raise ContractError("port media_type must be a MIME type")
+        for field_name, value in (("frame_id", self.frame_id), ("unit", self.unit)):
+            if value is not None and (not isinstance(value, str) or not value.strip()):
+                raise ContractError(f"port {field_name} must be a nonempty string")
+        if self.frame_id is not None and not self.requires_frame:
+            raise ContractError("port frame_id requires requires_frame")
+        if self.unit is not None and not self.requires_unit:
+            raise ContractError("port unit requires requires_unit")
         known = ARTIFACT_KINDS | STRUCTURED_KINDS
         unknown = set(self.kinds) - known
         if unknown:
@@ -89,7 +98,13 @@ class ValueDescriptor:
 
 def describe_value(value: PortValue, store: LocalArtifactStore) -> ValueDescriptor:
     if isinstance(value, StructuredValue):
-        return ValueDescriptor("structured", value.kind, value.schema_name, value.schema_version)
+        return ValueDescriptor(
+            "structured",
+            value.kind,
+            value.schema_name,
+            value.schema_version,
+            {"media_type": "application/json"},
+        )
     if not isinstance(value, ArtifactRef):
         raise ContractError(f"port value has unsupported carrier type: {type(value).__name__}")
     if not store.verify_digest(value):
@@ -146,8 +161,17 @@ def validate_port_value(
                 )
         if spec.requires_frame and not descriptor.identity_metadata.get("frame_id"):
             raise ContractError(f"{prefix} requires frame_id")
+        if (
+            spec.frame_id is not None
+            and descriptor.identity_metadata.get("frame_id") != spec.frame_id
+        ):
+            actual_frame = descriptor.identity_metadata.get("frame_id")
+            raise ContractError(f"{prefix} rejects frame_id {actual_frame!r}")
         if spec.requires_unit and not descriptor.identity_metadata.get("unit"):
             raise ContractError(f"{prefix} requires unit")
+        if spec.unit is not None and descriptor.identity_metadata.get("unit") != spec.unit:
+            actual_unit = descriptor.identity_metadata.get("unit")
+            raise ContractError(f"{prefix} rejects unit {actual_unit!r}")
 
 
 def cardinality_compatible(source: Cardinality, target: Cardinality, *, optional: bool) -> bool:
@@ -204,6 +228,8 @@ def effective_output_spec(spec: PortSpec) -> PortSpec:
         spec.requires_unit,
         True,
         spec.media_type,
+        spec.frame_id,
+        spec.unit,
     )
 
 

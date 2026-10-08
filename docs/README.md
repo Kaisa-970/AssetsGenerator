@@ -81,6 +81,8 @@
 
 ## 评测报告 · reports
 
+- [通用能力契约审查修复与验证边界（2026-10-08）](reports/generic-contract-review-20261008.md)
+
 - [SAM3D 服务协议 1.1 部署记录](reports/sam3d-protocol-deployment.md)
 
 - [共享基础能力整理与回归记录](reports/shared-foundations-20260921.md)

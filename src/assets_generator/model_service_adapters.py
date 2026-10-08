@@ -5,13 +5,12 @@ validated descriptor supplies the port contracts and the remote-jobs transport
 does the execution; specialised adapters below remain for legacy wire profiles.
 """
 
-import json
 from collections.abc import Mapping
 from dataclasses import replace
 from typing import Any
 
 from .compiled_plan import thaw
-from .contracts import ContractError
+from .contracts import ContractError, validate_operator_inputs
 from .dag_adapters import AdapterSpec, NodeExecutionContext, NodeExecutionResult
 from .dag_remote_adapter import RemoteNodeAdapter
 from .dag_text_segmentation import RemoteTextInputSegmentationAdapter
@@ -79,6 +78,9 @@ class GenericRemoteCapabilityAdapter(RemoteNodeAdapter):
         return self._spec
 
     def input_blobs(self, context: NodeExecutionContext) -> Mapping[str, ArtifactRef]:
+        validate_operator_inputs(
+            dynamic_operator_spec(self.capability), dict(context.inputs), context.store
+        )
         uploads: dict[str, ArtifactRef] = {}
         for name, _port in self._ports["inputs"].items():
             value = context.inputs.get(name)
@@ -165,14 +167,9 @@ class GenericRemoteCapabilityAdapter(RemoteNodeAdapter):
                     "model/gltf-binary",
                 ):
                     raise ContractError("generic mesh requires glTF@2.0 and model/gltf-binary")
-                from .remote_shape_output import validate_self_contained_glb
+                from .generic_artifact_content import validate_mesh_content
 
-                try:
-                    validate_self_contained_glb(data)
-                except (ValueError, TypeError) as error:
-                    raise ContractError(
-                        f"generic output {name} is not a valid self-contained GLB"
-                    ) from error
+                validate_mesh_content(data)
             elif carrier == "structured":
                 if descriptor.media_type != "application/json":
                     raise ContractError(f"generic structured output {name} requires JSON")
@@ -181,12 +178,9 @@ class GenericRemoteCapabilityAdapter(RemoteNodeAdapter):
                     f"generic output {name} kind {kind} has no registered content validator"
                 )
             if carrier == "structured":
-                try:
-                    value = json.loads(data)
-                except (TypeError, ValueError) as error:
-                    raise ContractError(f"generic output {name} is not JSON") from error
-                if not isinstance(value, dict):
-                    raise ContractError(f"generic structured output {name} must be an object")
+                from .generic_artifact_content import validate_structured_content
+
+                value = validate_structured_content(data, kind, schema_name, schema_version)
                 outputs[name] = StructuredValue(kind, schema_name, schema_version, value)
             else:
                 outputs[name] = context.store.persist_bytes(

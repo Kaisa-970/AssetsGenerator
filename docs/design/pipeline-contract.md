@@ -52,6 +52,13 @@ image_warp schema: source_view_id + target_view_id + crop + resize + padding + p
 
 ## 2. OperatorSpec
 
+端口可选声明精确的 `frame_id` 和 `unit`（分别要求
+`requires_frame` / `requires_unit` 为 true）。编译时来源必须保证相同值，
+运行时逐项核对 Artifact identity metadata；不做隐式单位或坐标转换。
+未声明具体值的旧端口仍只要求字段存在；新增字段缺省不进入序列化身份。
+`StructuredValue` 的媒体描述为 `application/json`，媒体检查不替代 schema 内容校验。
+
+
 Operator 是 WHAT 的唯一契约来源：
 
 ```python

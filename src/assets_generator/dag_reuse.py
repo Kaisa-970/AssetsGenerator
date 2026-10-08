@@ -30,6 +30,7 @@ REUSABLE = {
     "apply_binary_mask@1",
     "resize_image@1",
     "encode_png@1",
+    "generic_remote_capability@1",
 }
 
 

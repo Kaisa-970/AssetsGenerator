@@ -6,6 +6,13 @@
 
 编辑器另支持已有 SAM3 的 `text_segmentation@2 + sam3_text_jobs@1`，见 [SAM3 文字分割](sam3-text-segmentation.md)。ShapeModelService 不提供分割推理回调；不同能力沿用各自已校验的执行和证据契约。
 
+通用 Adapter 当前可导入 PNG 图像/二值遮罩、UTF-8 plain_text、可加载的 GLB
+triangle/collision mesh，以及经过字段校验的 `semantic_info / SemanticInfo@1.0`
+结构化值。其他 schema 尚无内容验证器时，检测会拒绝安装。每个输出端口当前必须为
+`cardinality: one`，可声明多个独立输出端口；可选和集合输出尚不支持。
+空间输入的 `frame_id`、`unit` 必须与上游契约及实际 Artifact 一致，
+需要转换时使用显式处理节点。GLB 内容检查不等同于模型质量、真实尺度或坐标声明真实性验收。
+
 ## 画布使用者
 
 1. 打开编辑器的“模型服务”，填写服务地址，点击“检测”。

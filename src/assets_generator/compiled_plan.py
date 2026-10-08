@@ -68,6 +68,10 @@ class CompiledInputSpec:
             value = self.contract.get(key)
             if value is not None and (not isinstance(value, str) or not value):
                 raise ContractError(f"compiled port {key} must be nonempty text or null")
+        for key in ("frame_id", "unit", "media_type"):
+            value = self.contract.get(key)
+            if value is not None and (not isinstance(value, str) or not value):
+                raise ContractError(f"compiled port {key} must be nonempty text or null")
         object.__setattr__(self, "contract", freeze(self.contract))
 
     @classmethod

@@ -61,6 +61,10 @@ DAG 集成前必须新增明确 remote execution kind 和耐久 remote job 记�
 
 ## 当前落地证据
 
+通用动态输出按本地内容验证器注册表限制：首版支持 `plain_text@1.0`、PNG 图像/遮罩、GLB triangle/collision mesh，以及 `SemanticInfo@1.0` 结构化 JSON。未注册 schema 会在 descriptor 检测阶段拒绝；结构化值的传输 MIME 固定为 `application/json`，不复制进 StructuredValue 的业务 identity。空间动态输入会精确核对声明的 `frame_id` 与 `unit`，而不仅检查字段存在。动态输出当前要求 `cardinality: one`；集合和可选输出在检测阶段明确拒绝，避免推理后导入失败。GLB 在持久化 Artifact 前须能由 mesh loader 加载，并通过有限顶点和非空、有效三角面检查。
+
+主分支恢复打包校验时发现 SAM3D capability 的发现适配模块曾只存在于工作台 worktree；当前模块已纳入源码包，SAM3D 发现/身份绑定测试作为回归覆盖。当前发现和安装路径不需要工作台目录中的未跟踪文件。
+
 `remote_protocol.py` 实现 RemoteIdentity、RemoteRequest 与严格 JobRecord 解析。请求仅保留规范化 JSON bytes，调用方修改原字典不影响身份；结果/error 也复制为 bytes，尚不导入 Artifact Store。15 项协议测试通过，覆盖键不进入内容摘要、身份串线、job ID 改变、未知状态、终态约束、错误码保留和非规范 JSON 拒绝。mypy（88 源码文件）与相关 Ruff 通过。
 
 HTTP 客户端已在 remote_http.py 实现 submit/lookup/query，禁止自动重试和重定向，限制 JSON 响应体积。真实本机 HTTP 测试在服务已创建 job 后断开连接，验证 lookup 找回同一 job 且提交次数不增加；同键异摘要返回明确冲突，5xx/重定向/超大响应/读取超时/身份不符均为状态未知。已固定 job 查询 404 不当作终态，只有 lookup 404 返回未找到。服务明确 failed 保留原 error code/detail。
