@@ -35,7 +35,7 @@ def _parser() -> argparse.ArgumentParser:
     editor.add_argument("--directory", type=Path, required=True)
     editor.add_argument("--port", type=int, default=8767)
     editor.add_argument(
-        "--host", default="127.0.0.1", help="Specific local IPv4 address to listen on"
+        "--host", default="127.0.0.1", help="Local IPv4 address; 0.0.0.0 listens on all interfaces"
     )
     editor.add_argument("--operators", type=Path)
     editor.add_argument("--template", type=Path, action="append", default=[])

@@ -78,3 +78,36 @@ Ctrl+C/SIGTERM 请求停止；正在进行的有界 HTTP 调用结束后退出�
 
 在 serve、work、node-editor 均已启动且使用匹配配置时，上传 image 与 mask，点击一次启动，
 即可自动生成并发布。该路径已用真实 SAM3D 验证；这不包含服务部署的自动启动或故障自愈。
+
+## 2026-09-30：从模型服务 URL 添加
+
+SAM3D 兼容监听现在提供 `/v1/service-descriptor`。工作台填写兼容服务地址
+（本次为 `http://127.0.0.1:8772`）即可检测并添加 `masked_shape_generation@1`。
+原生 `7861` 网页不是工作台发现地址。发现入口复用既有 RemoteMaskedShapeAdapter，
+固定上游部署摘要、参数契约和 Y-up／relative_unit 声明；不会绕过实际 mask 与生成证据校验。
+添加后同时注册标准规范化、QA、masked assembly 和导出实现。
+
+本次服务已启动 serve 与 work；新目录 `<DATASET_ROOT>/sam3d-discovery-20260930`。
+工作台安装目录清空前已备份，历史运行与资产保留。Qwen URL 为
+`http://172.16.88.217:18082`，SAM3 发现隧道为 `http://127.0.0.1:18776`。
+回环 URL 由工作台后端访问，即使浏览器位于其他机器仍指向工作台所在主机。
+本轮发现/原有服务相关测试 15 项通过；未额外执行 GPU 推理。
+
+## 统一远端入口（2026-09-30）
+
+新安装统一填写远端 URL：
+
+- Qwen：`http://172.16.88.217:18082`
+- SAM3：`http://172.16.89.51:18776`
+- SAM3D：`http://172.16.89.51:18772`
+
+SAM3D 的 SQLite、协议桥接和 work 均迁到远端
+`/home/ypk/Workspace/Projects/assets-generator-lan-services`，独立 CPU 虚拟环境，
+没有修改模型环境或下载权重。迁移时数据库无任务，以 SQLite backup 转移完整库。
+SAM3 的原监听/worker保持原位，远端局域网 TCP 入口转发到同主机原协议监听。
+转发程序见 `examples/lan_model_services/tcp_forward.py`；它不修改协议身份或任务状态。
+
+两个新入口均已从工作台检测成功、身份保持一致，SAM3D work 为 idle。
+旧本机回环地址保留为兼容转发，已安装 Backend 和旧运行不被重写；
+新安装和新部署不依赖这些本机转发。此次未派发 GPU 推理。
+当前进程是后台启动，不宣称服务器重启后自动启动。

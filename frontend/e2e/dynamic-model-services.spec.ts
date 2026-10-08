@@ -141,6 +141,10 @@ for (const action of ["click", "drag"] as const) {
         capability_id: "text_to_image_v1",
       },
     ]);
+    await page.getByRole("button", { name: "＋ 添加节点", exact: true }).click();
+    await page.getByRole("button", { name: /文字输入.*文本提示/ }).click();
+    await expect.poll(() => compiles.at(-1)?.inputs?.text?.carriers).toEqual(["artifact_ref"]);
+    await expect.poll(() => compiles.at(-1)?.inputs?.text?.schema_name).toBe("plain_text");
     // Reload verifies creation works from the persisted catalog, without detection state.
     await page.reload();
     await page

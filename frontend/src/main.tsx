@@ -98,10 +98,10 @@ const quickInputDefinitions: Record<
   },
   text: {
     label: "文字输入",
-    detail: "文本提示 · 连接到文字分割节点",
+    detail: "文本提示 · 连接到文生图、图像编辑或分割节点",
     name: "text",
     kinds: ["text"],
-    carriers: ["structured"],
+    carriers: ["artifact_ref"],
   },
 };
 const nodeTypes = { operator: BlueprintNode };

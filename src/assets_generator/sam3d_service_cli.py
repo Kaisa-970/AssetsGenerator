@@ -67,7 +67,11 @@ def main() -> int:
         # No schema repair in serve/execute/recover.
         owner.db.execute("SELECT key,intent,receipt,completion FROM sam3d_jobs LIMIT 0")
         if args.action == "serve":
-            server = create_remote_server(owner, port=args.port)
+            from .sam3d_discovery import sam3d_descriptor
+
+            server = create_remote_server(
+                owner, port=args.port, descriptor=sam3d_descriptor(identity, bridge.backend_digest)
+            )
             print(f"http://127.0.0.1:{server.server_port}/ (Ctrl+C to close)", flush=True)
             try:
                 server.serve_forever()
